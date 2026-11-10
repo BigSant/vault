@@ -1,0 +1,2 @@
+@extends('layout')
+@section('content')<div class="auth-card"><span class="eyebrow">AGENTO TAPATYBĖ SUKURTA</span><h1>Išsaugokite prieigos raktą</h1><p>Raktas rodomas tik dabar. Įrašykite jį į privatų kliento failą (0600), ne į LLM pokalbį ar projekto kodą. Konkrečius veiksmus dar reikia leisti atskirai.</p><pre data-secret id="agent-token">{{ $token }}</pre><button type="button" data-copy="agent-token">Kopijuoti</button><p><a href="/workspaces/{{ $workspace }}/settings">Toliau: suteikti leidimus →</a></p></div>@endsection

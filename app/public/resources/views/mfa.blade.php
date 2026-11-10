@@ -1,0 +1,3 @@
+@extends('layout')
+@section('title','Patvirtinti tapatybę')
+@section('content')<div class="auth-card"><span class="eyebrow">ANTRAS ŽINGSNIS</span><h1>Patvirtinkite tapatybę</h1>@if($seed)<p>Autentifikatoriaus programėlėje pridėkite paskyrą „Vault“ naudodami šį raktą. Laikykite atkūrimo kopiją saugioje vietoje.</p><pre data-secret>{{ $seed }}</pre><p class="hint">Laiku pagrįstas kodas (TOTP), 6 skaitmenys, 30 sekundžių.</p>@else<p class="muted">Įveskite dabartinį kodą iš autentifikatoriaus programėlės.</p>@endif<form method="post" action="/mfa">@csrf<label>6 skaitmenų kodas<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required maxlength="6"></label><button class="full">Atrakinti saugyklą →</button></form></div>@endsection

@@ -1,0 +1,66 @@
+{
+  "format": 1,
+  "dialect": "mysql",
+  "tables": [
+    {
+      "name": "audit",
+      "file": "table-audit.sql"
+    },
+    {
+      "name": "cache",
+      "file": "table-cache.sql"
+    },
+    {
+      "name": "cache_locks",
+      "file": "table-cache_locks.sql"
+    },
+    {
+      "name": "entries",
+      "file": "table-entries.sql"
+    },
+    {
+      "name": "environments",
+      "file": "table-environments.sql"
+    },
+    {
+      "name": "grants",
+      "file": "table-grants.sql"
+    },
+    {
+      "name": "machines",
+      "file": "table-machines.sql"
+    },
+    {
+      "name": "members",
+      "file": "table-members.sql"
+    },
+    {
+      "name": "migrations",
+      "file": "table-migrations.sql"
+    },
+    {
+      "name": "operations",
+      "file": "table-operations.sql"
+    },
+    {
+      "name": "projects",
+      "file": "table-projects.sql"
+    },
+    {
+      "name": "sessions",
+      "file": "table-sessions.sql"
+    },
+    {
+      "name": "settings",
+      "file": "table-settings.sql"
+    },
+    {
+      "name": "users",
+      "file": "table-users.sql"
+    },
+    {
+      "name": "workspaces",
+      "file": "table-workspaces.sql"
+    }
+  ]
+}
