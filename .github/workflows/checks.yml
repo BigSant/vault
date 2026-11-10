@@ -24,6 +24,8 @@ jobs:
         run: |
           find app/public/app app/public/config app/public/routes app/public/tests app/public/database scripts tests -name '*.php' -print0 | xargs -0 -n1 php -l
           cd app/public && vendor/bin/phpunit
+      - name: Broker test dependencies
+        run: python3 -m pip install -r broker/requirements.txt
       - name: Backup authentication and client contracts
         run: |
           php tests/crypto.php

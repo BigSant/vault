@@ -1,12 +1,13 @@
 """Isolated action executor. Public results contain states only, never upstream bytes."""
 import asyncio
 import hmac
+import html
 import json
 import os
 import time
 import uuid
 import pymysql
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from browser_policy import origin, request_allowed
 from urllib.parse import urljoin
@@ -105,23 +106,33 @@ async def browser_action(op, action, value):
         context = await browser.new_context(accept_downloads=False, service_workers='block')
         try:
             async def route(request_route):
-                request=request_route.request
+                response=None
                 try:
+                    request=request_route.request
                     allowed=request.frame==page.main_frame and request_allowed(action,request.url,request.method) and await authorized(op)
+                    if not allowed:
+                        await request_route.abort();return
+                    # continue_ may follow redirects without another interception. Fetch one
+                    # response, validate Location, then let Chromium request the next URL.
+                    response=await request_route.fetch(max_redirects=0,timeout=12000)
+                    if response.status in (301,302,303,307,308):
+                        location=response.headers.get('location','')
+                        method='GET' if response.status==303 or response.status in (301,302) and request.method=='POST' else request.method
+                        destination=urljoin(request.url,location)
+                        if not location or method!='GET' or not request.is_navigation_request() or not request_allowed(action,destination,method):
+                            await request_route.abort();return
+                        # Do not deliver 3xx to Chromium: its redirect chain can bypass routing.
+                        # A fresh document navigation is intercepted again, including every hop.
+                        await request_route.fulfill(status=200,headers={'Content-Type':'text/html','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; base-uri 'none'"},
+                            body='<meta http-equiv="refresh" content="0;url='+html.escape(destination,quote=True)+'">')
+                        return
+                    await request_route.fulfill(response=response)
                 except Exception:
-                    allowed=False
-                if not allowed:
-                    await request_route.abort();return
-                # Chromium's continue_ can follow a redirect without another route callback.
-                # Fetch one response only; validate Location before delivering it to the browser.
-                response=await request_route.fetch(max_redirects=0,timeout=12000)
-                if response.status in (301,302,303,307,308):
-                    location=response.headers.get('location','')
-                    method='GET' if response.status==303 or response.status in (301,302) and request.method=='POST' else request.method
-                    if not location or not request_allowed(action,urljoin(request.url,location),method):
-                        await response.dispose();await request_route.abort();return
-                await request_route.fulfill(response=response)
-                await response.dispose()
+                    # Playwright errors can include request headers: never let event handlers log them.
+                    with suppress(Exception):await request_route.abort()
+                finally:
+                    if response:
+                        with suppress(Exception):await response.dispose()
             await context.route('**/*', route)
             await context.route_web_socket('**/*', lambda socket: socket.close())
             page = await context.new_page()
@@ -232,11 +243,14 @@ async def start(body: Start):
     oid = str(body.id)
     if oid in operations:
         return {'id': oid, 'state': operations[oid]['state']}
-    if sum(o['state'] in ('running', 'requires_user_action') for o in operations.values()) >= 4:
-        raise HTTPException(429)
     op = body.model_dump(mode='json') | {'state': 'running', 'mfa': asyncio.Queue(maxsize=1)}
     if not await authorized(op):
         raise HTTPException(403)
+    # Authorization awaited IO; another start can have claimed the same ID/capacity.
+    if oid in operations:
+        return {'id':oid,'state':operations[oid]['state']}
+    if sum(o['state'] in ('running','requires_user_action') for o in operations.values())>=4:
+        raise HTTPException(429)
     operations[oid] = op
     op['task'] = asyncio.create_task(run(op))
     return {'id': oid, 'state': 'running'}
