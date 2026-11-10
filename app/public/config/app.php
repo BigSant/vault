@@ -1,4 +1,5 @@
 <?php
+
 return [
     'name' => 'Vault', 'env' => env('APP_ENV', 'production'), 'debug' => false,
     'url' => env('APP_URL', 'https://vault.local'), 'timezone' => 'UTC', 'locale' => 'lt',

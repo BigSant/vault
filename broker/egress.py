@@ -2,6 +2,7 @@
 import asyncio
 import ipaddress
 import json
+import os
 import socket
 from urllib.parse import urlsplit
 
@@ -12,7 +13,7 @@ def destinations():
     for action in config.get('actions', {}).values():
         for url in [action.get('url', ''), *action.get('origins', [])]:
             parsed = urlsplit(url)
-            if parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username:
+            if parsed.scheme in (('http','https') if os.environ.get('VAULT_TEST_FIXTURES')=='1' else ('https',)) and parsed.hostname and not parsed.username:
                 key = (parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80))
                 result[key] = [ipaddress.ip_network(c) for c in action.get('allow_cidrs', [])]
     return result

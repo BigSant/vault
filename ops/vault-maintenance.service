@@ -1,0 +1,8 @@
+[Unit]
+Description=Vault operator maintenance and managed credential rotation
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/vault
+Environment=VAULT_ENV=local
+ExecStart=%h/Projects/vault/bin/vault maintenance
+UMask=0077

@@ -99,7 +99,7 @@ async def database_action(action, value):
 
 def origin(url):
     parsed = urlsplit(url)
-    if parsed.scheme not in ('http', 'https') or parsed.username or parsed.password:
+    if parsed.scheme not in (('http','https') if os.environ.get('VAULT_TEST_FIXTURES')=='1' else ('https',)) or parsed.username or parsed.password:
         return None
     return (parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80))
 

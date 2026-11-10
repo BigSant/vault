@@ -1,51 +1,51 @@
 # Vault
 
-Asmeninė prisijungimų saugykla su žmogui skirta WEB peržiūra ir kontroliuojamu prisijungimų naudojimu iš LLM įrankių.
+Prisijungimų saugykla su lietuviška WEB sąsaja ir veiksmų įrankiais LLM klientams, pirmiausia **ai-os**. Žmogus peržiūri reikšmes po autentifikacijos; agentas gauna tik jam leistinus alias, veiksmų pavadinimus ir būsenas. Slaptažodį panaudoja atskiras vykdytojas.
 
-**Dabartinė būsena: paruošimo etapas.** Veikia Docker kūrimo aplinka, pradinis informacinis puslapis ir DB pasiekiamumo patikra. Slaptažodžių saugojimas, autentifikacija, WEB valdymas ir LLM įrankiai dar neįgyvendinti. Tikrų prisijungimų į šį pagrindą nekelti.
+Veikia workspace → projektas → aplinka struktūra, tipai ir žymos, paieška, versijos, importas, archyvas, sunaikinimas, keli savininkai, MFA, atskleidimo auditas, laikinos agentų teisės, žmogaus patvirtinimai, API, fiksuotas CLI receptas ir izoliuotos naršyklės prisijungimas su MFA. OpenBao saugo šifruotas reikšmes; MySQL – metaduomenis. Kopijos šifruojamos ir atkuriamos atskiroje aplinkoje.
 
 ## Paleidimas
 
-Naudojamas bendras [setup](https://github.com/BigSant/DockerDevelopmentEnvironment), kaip `cliproxy` ir `zarskis` projektuose. Reikia veikiančio Docker ir vieną kartą pagal setup instrukcijas paruošto kompiuterio.
+Reikia Docker, Python 3.12+ ir bendro [setup](https://github.com/BigSant/DockerDevelopmentEnvironment), paruošto kaip kituose `~/Projects` projektuose. PHP 8.5, MySQL 8.4, Apache ir nginx-proxy parenka setup; papildomi servisai yra OpenBao, brokeris ir paskirčių proxy.
 
 ```bash
-git clone git@github.com:BigSant/vault.git ~/Projects/vault
-cd ~/Projects/vault/app
-make setup
+cd ~/Projects/vault
+bin/vault install
 ```
 
-Setup turi būti `~/Projects/setup`; kitur esantį galima nurodyti `make setup SETUP_DIRECTORY=/kelias/iki/setup`. Bootstrap sugeneruoja vietinius DB slaptažodžius, pasirenka laisvus portus, paruošia DNS ir TLS. Pakartotinis paleidimas išsaugo duomenis. `make setup` neimportuoja DB ir nekuria aplikacijos lentelių.
+`install` paruošia privačius failus, Docker, Composer priklausomybes, OpenBao tapatybes ir Laravel migracijas. Pakartotinis paleidimas nekeičia esamų paslapčių. `SETUP_DIRECTORY` galima nurodyti kitam setup katalogui. `install` skirtas local/test; serverio eiga – [runbook](docs/operations.md).
 
-- [Vietinis puslapis](https://vault.local/)
-- [Parengties patikra](https://vault.local/health.php): HTTP 200 tik kai pasiekiama DB ir įkeltas `sodium`; kitu atveju HTTP 503 be klaidos detalių. Tai infrastruktūros, ne būsimos saugyklos veikimo patikra.
+Atidarykite **https://vault.local/**. Pirmam savininkui reikia aktyvacijos kodo iš privataus `data/security/app/bootstrap.code` failo. Jo turinį įveskite tiesiai WEB, ne pokalbyje. Susikurkite slaptažodį ir užregistruokite TOTP autentifikatorių. Parengties adresas: `https://vault.local/health.php` (200 tik kai pasiekiama DB ir OpenBao atrakintas).
+
+1. Sukurkite projektą: automatiškai atsiras local, test, stage ir prod aplinkos.
+2. Pridėkite įrašą ir pasirinkite tipą. Alias yra agentui matomas vardas; jame nelaikykite jautrių duomenų.
+3. „Prieigos ir veiksmai“ sukurkite agento tapatybę bei leidimus konkretiems įrašams ir veiksmams. Numatytoji connector konfigūracija tuščia – agentas neturi jokių veiksmų.
+4. Prijunkite [ai-os arba MCP/CLI](docs/integrations.md). Konkrečius išorinius adresus ir saugius receptus operatorius aprašo privačioje konfigūracijoje.
+
+## Patikros
 
 ```bash
-make -C app doctor
-make -C app ps
-php tests/health-unavailable.php
+docker exec -w /var/www/html vault-local-php-fpm php vendor/bin/phpunit
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+VAULT_ENV=test bin/vault install
+VAULT_ENV=test bin/vault database
+python3 tests/integration.py
+VAULT_ENV=test bin/vault backup
+VAULT_ENV=test bin/vault restore-verify backups/<test-kopija>.vault
+python3 tests/restore_empty.py backups/<test-kopija>.vault
 ```
 
-`doctor` yra bendro setup infrastruktūros patikra, ne Vault saugumo auditas. Privatūs `app/env/local.env`, `app/.generated/` ir `data/` neversijuojami. `local.env.example` turi bootstrap pakeičiamą žymeklį, ne bendrą slaptažodį. Projekto Docker portai publikuojami tik į `127.0.0.1`; kompiuterio Nginx maršruto pasiekiamumą papildomai lemia host konfigūracija ir ugniasienė.
+Integraciniai testai naudoja tik `vault.test.local`, sintetinius prisijungimus ir izoliuotą fixture. Jie tikrina realų HTTPS, CSRF, TOTP, OpenBao, API/CLI, trumpalaikę DB prieigą, naršyklės MFA, neleistiną paskirtį, slaptažodžio atkartojimą ir atšaukimą. Atskiros patikros tikrina šifruotos kopijos sugadinimą, DNS adresų tikrinimą, teises ir klientų atsakymus. Po kodo pakeitimo test aplinką atnaujina `make -C app test-init refresh=1`, tada `make -C app up ENV=test`; brokerio pakeitimams dar reikia `make -C app build`.
 
-## Struktūra
+## Pasitikėjimo ribos
 
-```text
-app/
-  Makefile                 bendro setup komandos
-  env/                     bendri nustatymai ir privataus env pavyzdys
-  config/php/              PHP nustatymų papildymas
-  public/                  pradinis puslapis ir health.php
-docs/architecture.md       siūlomas duomenų modelis, WEB ir LLM veikimo sutartis
-research/secret-management.md  oficialių sistemų dokumentacijos tyrimas
-tests/                     parengties klaidos atsakymo patikra
-```
+**LLM, turintis host/root, Docker socket ar galintis keisti vykdytojo kodą, gali pasiekti paslaptis.** Produkcijoje Vault ir patikimas ai-os backend turi veikti agento neadministruojamame host/VM; agento sandbox neturi gauti šių diskų, konfigūracijos ar owner WEB sesijos. Vietinis Docker yra kūrimo aplinka, ne šios ribos įrodymas.
 
-Pagrindas: PHP 8.5, MySQL 8.4, Apache ir nginx-proxy. Atskiras Compose ar nukopijuotas CORE Dockerfile nereikalingas: juos parenka bendras setup. Papildomų servisų nėra; cache ir Xdebug išjungti. `DATABASE_AS_CODE=off`, kol nėra aplikacijos schemos. Pirma migracija turi kartu įjungti sutartą schemos apskaitą.
+Nėra `get_secret`, savavališko shell, HTTP proxy, DOM, cookies, CDP ar ekrano nuotraukų agentui. API ir CLI receptas tikrina registruoto HTTPS adreso 200 būseną; naršyklė prisijungia ir patikrina operatoriaus nustatytą paskyros būseną. Tai konkretūs naudingi veiksmai, ne universalus naršymas. Naujam veiksmui reikia operatoriaus aprašo ir jo rezultatų patikros. CAPTCHA, WebAuthn/SSO specialūs srautai, SSH vykdymas ir savavališkų išorinių paskyrų automatinis slaptažodžio keitimas nepalaikomi. SSH raktus ir slaptus užrašus galima saugoti bei peržiūrėti.
 
-CI tikrina PHP sintaksę ir saugų parengties klaidos atsakymą. Pilnas Docker paleidimas tikrinamas vietoje. Produkcinis deploy šiuo etapu nekonfigūruotas.
+Automatinė rotacija taikoma valdomiems AppRole ir OpenBao šifravimo raktams per operatoriaus maintenance laikmatį; dinaminės DB prieigos galioja iki 60 s. Kitų sistemų reikšmes žmogus pakeičia toje sistemoje ir tada Vault. `rotate_at` yra priminimas, ne išorinio slaptažodžio pakeitimo garantija.
 
-## Tolesnis įgyvendinimas
-
-Pradėti nuo [architektūros pasiūlymo](docs/architecture.md) ir [tyrimo](research/secret-management.md). Pagrindinis principas: LLM gauna įrašo nuorodą ir leidžiamo veiksmo rezultatą; tikrą prisijungimą panaudoja atskirtas vykdymo modulis. Vien `get_secret` įrankis ar rezultatų maskavimas šio reikalavimo neįvykdo.
-
-Naudotojo pasirinkimu **API/CLI ir naršyklės prisijungimai yra vienodai svarbūs**. Pirmasis LLM etapas apima abi kryptis: ribotus API/CLI veiksmus ir prisijungimą bei leidžiamą veiksmą izoliuotoje naršyklėje. Abiem taikomos bendros teisės ir auditas, tačiau atskiros vykdymo bei nuotėkio patikros. Vien API veikimas šio etapo neužbaigia.
+- [Architektūra ir priėmimo sutartis](docs/architecture.md)
+- [Diegimas, kopijos, atkūrimas, rotacija](docs/operations.md)
+- [ai-os, MCP/CLI ir connector sutartis](docs/integrations.md)
+- [Oficialių 1Password, Bitwarden, Infisical ir OpenBao sistemų tyrimas](research/secret-management.md)

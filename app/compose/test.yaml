@@ -1,4 +1,10 @@
 services:
+  broker:
+    environment:
+      VAULT_TEST_FIXTURES: "1"
+  egress:
+    environment:
+      VAULT_TEST_FIXTURES: "1"
   php-fpm-base:
     container_name: ${PROJECT_NAME}-${ENV}-php-fpm-base
   fixture:
