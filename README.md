@@ -26,7 +26,7 @@ Atidarykite **https://vault.local/**. Pirmam savininkui reikia aktyvacijos kodo 
 
 ```bash
 docker exec -w /var/www/html vault-local-php-fpm php vendor/bin/phpunit
-python3 -m unittest discover -s tests -p 'test_*.py' -v
+docker run --rm --network none --user 1000:1000 -v "$PWD:/workspace:ro" -w /workspace --entrypoint python3 vault-broker:1 -m unittest discover -s tests -p 'test_*.py' -v
 VAULT_ENV=test bin/vault install
 VAULT_ENV=test bin/vault database
 python3 tests/integration.py
@@ -35,7 +35,7 @@ VAULT_ENV=test bin/vault restore-verify backups/<test-kopija>.vault
 python3 tests/restore_empty.py backups/<test-kopija>.vault
 ```
 
-Integraciniai testai naudoja tik `vault.test.local`, sintetinius prisijungimus ir izoliuotą fixture. Jie tikrina realų HTTPS, CSRF, TOTP, OpenBao, API/CLI, trumpalaikę DB prieigą, naršyklės MFA, neleistiną paskirtį, slaptažodžio atkartojimą ir atšaukimą. Atskiros patikros tikrina šifruotos kopijos sugadinimą, DNS adresų tikrinimą, teises ir klientų atsakymus. Po kodo pakeitimo test aplinką atnaujina `make -C app test-init refresh=1`, tada `make -C app up ENV=test`; brokerio pakeitimams dar reikia `make -C app build`.
+Unit testų Docker komandoje UID/GID pritaikykite savo vartotojui. Integraciniai testai naudoja tik `vault.test.local`, sintetinius prisijungimus ir izoliuotą fixture. Jie tikrina realų HTTPS, CSRF, TOTP, OpenBao, API/CLI, trumpalaikę DB prieigą, naršyklės MFA, neleistiną paskirtį, slaptažodžio atkartojimą ir atšaukimą. Atskiros patikros tikrina šifruotos kopijos sugadinimą, DNS adresų tikrinimą, teises ir klientų atsakymus. Po kodo pakeitimo test aplinką atnaujina `make -C app test-init refresh=1`, tada `make -C app up ENV=test`; brokerio pakeitimams dar reikia `make -C app build`.
 
 ## Pasitikėjimo ribos
 

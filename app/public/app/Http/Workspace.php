@@ -25,7 +25,8 @@ final class Workspace
         $projects = $space ? DB::table('projects')->where('workspace_id', $id)->get() : collect();
         $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->get();
         $query = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('projects.workspace_id', $id)->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active')->select('entries.*', 'environments.name as environment', 'projects.name as project');
+            ->where('projects.workspace_id', $id)->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active')->select('entries.*', 'environments.name as environment', 'projects.name as project')
+            ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
         if ($r->filled('q')) {
             $term = mb_substr((string) $r->query('q'), 0, 100);
             $query->where(function ($q) use ($term) {
@@ -112,21 +113,33 @@ final class Workspace
 
     public function detail(string $id)
     {
+        return $this->entryView($id);
+    }
+
+    private function entryView(string $id, ?array $secret = null)
+    {
         $entry = $this->access->entry($id);
         $role = $this->access->workspace($entry->workspace_id)->role;
+        $grants = collect();
+        $events = collect();
+        if ($role === 'owner') {
+            $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
+                ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
+            $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
+                $query->where('subject', $id)->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
+                    ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
+            })->orderByDesc('id')->limit(30)->get();
+        }
 
-        return view('entry', compact('entry', 'role'));
+        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events'));
     }
 
     public function reveal(Request $r, string $id)
     {
         $this->access->recent($r);
         $d = $r->validate(['version' => 'nullable|integer|min:1']);
-        $secret = $this->catalog->reveal($id, (int) ($d['version'] ?? 0));
-        $entry = $this->access->entry($id);
-        $role = $this->access->workspace($entry->workspace_id)->role;
 
-        return view('entry', compact('entry', 'role', 'secret'));
+        return $this->entryView($id, $this->catalog->reveal($id, (int) ($d['version'] ?? 0)));
     }
 
     public function archive(Request $r, string $id)

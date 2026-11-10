@@ -40,11 +40,19 @@ class Recovery:
             fd=os.open(key,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
             with os.fdopen(fd,'wb') as f:f.write(secrets.token_bytes(32));f.flush();os.fsync(f.fileno())
         image=self.run(['docker','inspect',self.php,'--format','{{.Image}}']).decode().strip()
-        self.run(['docker','run','--rm','--network','none','--read-only','--cap-drop','ALL',
-            '--security-opt','no-new-privileges:true','--user',f'{os.getuid()}:{os.getgid()}',
-            '-v',str(self.root/'scripts/crypt.php')+':/crypt.php:ro','-v',str(key.resolve())+':/key:ro',
-            '-v',str(Path(source).resolve())+':/input:ro','-v',str(Path(target).resolve().parent)+':/output',
-            '--entrypoint','php',image,'/crypt.php',mode,'/key','/input','/output/'+Path(target).name])
+        target=Path(target).resolve();partial=target.with_name(target.name+'.partial-'+secrets.token_hex(6))
+        try:
+            self.run(['docker','run','--rm','--network','none','--read-only','--cap-drop','ALL',
+                '--security-opt','no-new-privileges:true','--user',f'{os.getuid()}:{os.getgid()}',
+                '-v',str(self.root/'scripts/crypt.php')+':/crypt.php:ro','-v',str(key.resolve())+':/key:ro',
+                '-v',str(Path(source).resolve())+':/input:ro','-v',str(Path(target).resolve().parent)+':/output',
+                '--entrypoint','php',image,'/crypt.php',mode,'/key','/input','/output/'+partial.name])
+            os.link(partial,target)  # atomically publish without overwriting an existing result
+            directory=os.open(target.parent,os.O_DIRECTORY)
+            try:os.fsync(directory)
+            finally:os.close(directory)
+        finally:
+            partial.unlink(missing_ok=True)
 
     def backup(self):
         lock=open(self.data/'.backup.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)

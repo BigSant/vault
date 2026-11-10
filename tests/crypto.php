@@ -4,11 +4,17 @@
 $root = sys_get_temp_dir().'/vault-crypto-'.bin2hex(random_bytes(8));
 mkdir($root, 0700);
 $script = dirname(__DIR__).'/scripts/crypt.php';
-function cryptRun(string $mode, string $key, string $input, string $output): int
+function cryptRun(string $mode, string $key, string $input, string $output, ?string $fault = null): int
 {
     global $script;
     $pipes = [];
-    $process = proc_open([PHP_BINARY, $script, $mode, $key, $input, $output], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    $command = [PHP_BINARY];
+    if ($fault !== null) {
+        $command[] = '-d';
+        $command[] = 'auto_prepend_file='.__DIR__.'/fixtures/fault_stream.php';
+    }
+    $command = [...$command, $script, $mode, $key, $input, $output];
+    $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, null, $fault !== null ? [...getenv(), 'VAULT_TEST_STREAM_FAULT' => $fault] : null);
     fclose($pipes[0]);
     stream_get_contents($pipes[1]);
     stream_get_contents($pipes[2]);
@@ -42,6 +48,11 @@ try {
         check(! file_exists($root.'/plain'));
         unlink($root.'/encrypted');
     }
+    foreach (['write', 'short', 'flush','sync'] as $fault) {
+        check(cryptRun('encrypt', $root.'/key', $root.'/input', 'fault://'.$root.'/fault', $fault) !== 0);
+        check(! file_exists($root.'/fault'));
+    }
+    echo "PASS: disk-full, partial-write, flush and fsync failures return failure and remove partial output.\n";
     echo "PASS: encrypted round trip, empty/multichunk files, corruption, truncation, appended data and wrong keys.\n";
 } finally {
     foreach (glob($root.'/*') as $file) {

@@ -15,7 +15,7 @@ VAULT_ENV=local bin/vault backup
 VAULT_ENV=local bin/vault restore-verify backups/<kopija>.vault
 ```
 
-Kopija atsisako pradėti esant aktyvioms operacijoms, įjungia maintenance ir sustabdo PHP/brokerį, tada surenka SQL, OpenBao raft snapshot, aplikacijos raktą, AppRole ir connector konfigūraciją. Operacijos dar kartą patikrinamos po sustabdymo. Sodium secretstream autentifikuoja visą srautą, įskaitant pabaigą. Pasibaigus bandymui PHP/brokeris paleidžiami. Tai trumpa planinė WEB pertrauka; nepavykus komandai patikrinkite servisų būseną ir `artisan up`.
+Kopija atsisako pradėti esant aktyvioms operacijoms, įjungia maintenance ir sustabdo PHP/brokerį, tada surenka SQL, OpenBao raft snapshot, aplikacijos raktą, AppRole ir connector konfigūraciją. Operacijos dar kartą patikrinamos po sustabdymo. Sodium secretstream autentifikuoja visą srautą, įskaitant pabaigą. Tikrinamas kiekvienas rašymas, flush ir fsync; galutinis kopijos vardas atominiu žingsniu paskelbiamas tik po sėkmės. Pilno disko, trumpo rašymo ir flush gedimai turi regresinius testus. Pasibaigus bandymui PHP/brokeris paleidžiami. Tai trumpa planinė WEB pertrauka; nepavykus komandai patikrinkite servisų būseną ir `artisan up`.
 
 Atskirai nuo `.vault` kopijos būtina išsaugoti **abu**:
 

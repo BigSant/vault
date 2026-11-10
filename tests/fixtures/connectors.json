@@ -223,6 +223,31 @@
           "url": "http://fixture:8000/redirect-bridge"
         }
       ]
+    },
+    "fixture.browser-download": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-download",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/attachment"
+        }
+      ]
     }
   }
 }

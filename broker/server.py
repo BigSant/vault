@@ -105,22 +105,30 @@ async def browser_action(op, action, value):
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
         context = await browser.new_context(accept_downloads=False, service_workers='block')
         try:
+            async def deny(request_route):
+                first=not op.get('policy_denied',False)
+                op['policy_denied']=True
+                with suppress(Exception):await request_route.abort()
+                if first:op['task'].cancel()
+
             async def route(request_route):
                 response=None
                 try:
                     request=request_route.request
                     allowed=request.frame==page.main_frame and request_allowed(action,request.url,request.method) and await authorized(op)
                     if not allowed:
-                        await request_route.abort();return
+                        await deny(request_route);return
                     # continue_ may follow redirects without another interception. Fetch one
                     # response, validate Location, then let Chromium request the next URL.
                     response=await request_route.fetch(max_redirects=0,timeout=12000)
+                    if 'attachment' in response.headers.get('content-disposition','').lower():
+                        await deny(request_route);return
                     if response.status in (301,302,303,307,308):
                         location=response.headers.get('location','')
                         method='GET' if response.status==303 or response.status in (301,302) and request.method=='POST' else request.method
                         destination=urljoin(request.url,location)
                         if not location or method!='GET' or not request.is_navigation_request() or not request_allowed(action,destination,method):
-                            await request_route.abort();return
+                            await deny(request_route);return
                         # Do not deliver 3xx to Chromium: its redirect chain can bypass routing.
                         # A fresh document navigation is intercepted again, including every hop.
                         await request_route.fulfill(status=200,headers={'Content-Type':'text/html','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; base-uri 'none'"},
@@ -134,7 +142,12 @@ async def browser_action(op, action, value):
                     if response:
                         with suppress(Exception):await response.dispose()
             await context.route('**/*', route)
-            await context.route_web_socket('**/*', lambda socket: socket.close())
+            async def deny_socket(socket):
+                first=not op.get('policy_denied',False)
+                op['policy_denied']=True
+                with suppress(Exception):await socket.close()
+                if first:op['task'].cancel()
+            await context.route_web_socket('**/*', deny_socket)
             page = await context.new_page()
             page.set_default_timeout(12000)
             await page.goto(action['url'], wait_until='domcontentloaded')
@@ -185,7 +198,7 @@ async def run(op):
     except TimeoutError:
         op['state'] = 'expired'
     except asyncio.CancelledError:
-        op['state'] = 'revoked'
+        op['state'] = 'failed' if op.get('policy_denied') else 'revoked'
         raise
     except Exception:
         op['state'] = 'failed'

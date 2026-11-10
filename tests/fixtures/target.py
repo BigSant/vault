@@ -23,6 +23,10 @@ class Target(BaseHTTPRequestHandler):
         if self.path.startswith('/login') and self.headers.get('Cookie'):COUNTS['cookie-leak']+=1
         if self.path=='/counts':
             self.respond(200,json.dumps(COUNTS));return
+        if self.path=='/attachment':
+            self.send_response(200);self.send_header('Content-Disposition','attachment; filename=secret.txt');self.end_headers();self.wfile.write(b'synthetic-export');return
+        if self.path=='/login-download':
+            self.respond(200,'<form><input name="username"><input name="password"></form><a id="login" download href="/attachment">Export</a>');return
         if self.path=='/login-form':
             self.respond(200,'<form method="post" action="/capture"><input name="username"><input name="password"><button id="login">Login</button></form>');return
         if self.path in ['/login-redirect-allowed','/login-redirect-chain']:
