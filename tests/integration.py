@@ -126,8 +126,8 @@ def run():
             if op['state'] in ['succeeded', 'failed', 'expired', 'revoked']:
                 break
             time.sleep(2.5)
-        assert op['state'] == ('expired' if action=='fixture.browser-timeout' else ('failed' if action in ['fixture.redirect','fixture.browser-echo','fixture.browser-escape','fixture.browser-form','fixture.browser-redirect'] else 'succeeded')), f'{action}: {op["state"]}'
-        if action in ['fixture.browser','fixture.browser-echo','fixture.browser-frames']:
+        assert op['state'] == ('expired' if action=='fixture.browser-timeout' else ('failed' if action in ['fixture.redirect','fixture.browser-echo','fixture.browser-escape','fixture.browser-form','fixture.browser-redirect','fixture.browser-redirect-chain'] else 'succeeded')), f'{action}: {op["state"]}'
+        if action in ['fixture.browser','fixture.browser-echo','fixture.browser-frames','fixture.browser-redirect-allowed']:
             assert mfa_sent
         print('PASS:', action, 'safe state, no upstream payload')
     counts=json.loads(subprocess.check_output(['docker','exec','vault-test-fixture','python3','-c',"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))

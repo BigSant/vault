@@ -9,6 +9,7 @@ import pymysql
 from contextlib import asynccontextmanager
 from pathlib import Path
 from browser_policy import origin, request_allowed
+from urllib.parse import urljoin
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -109,8 +110,18 @@ async def browser_action(op, action, value):
                     allowed=request.frame==page.main_frame and request_allowed(action,request.url,request.method) and await authorized(op)
                 except Exception:
                     allowed=False
-                if allowed:await request_route.continue_()
-                else:await request_route.abort()
+                if not allowed:
+                    await request_route.abort();return
+                # Chromium's continue_ can follow a redirect without another route callback.
+                # Fetch one response only; validate Location before delivering it to the browser.
+                response=await request_route.fetch(max_redirects=0,timeout=12000)
+                if response.status in (301,302,303,307,308):
+                    location=response.headers.get('location','')
+                    method='GET' if response.status==303 or response.status in (301,302) and request.method=='POST' else request.method
+                    if not location or not request_allowed(action,urljoin(request.url,location),method):
+                        await response.dispose();await request_route.abort();return
+                await request_route.fulfill(response=response)
+                await response.dispose()
             await context.route('**/*', route)
             await context.route_web_socket('**/*', lambda socket: socket.close())
             page = await context.new_page()

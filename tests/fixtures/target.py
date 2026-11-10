@@ -25,6 +25,10 @@ class Target(BaseHTTPRequestHandler):
             self.respond(200,json.dumps(COUNTS));return
         if self.path=='/login-form':
             self.respond(200,'<form method="post" action="/capture"><input name="username"><input name="password"><button id="login">Login</button></form>');return
+        if self.path in ['/login-redirect-allowed','/login-redirect-chain']:
+            self.send_response(302);self.send_header('Location','/login' if self.path.endswith('allowed') else '/redirect-bridge');self.end_headers();return
+        if self.path=='/redirect-bridge':
+            self.send_response(302);self.send_header('Location','/unlisted');self.end_headers();return
         if self.path=='/login-redirect':
             self.send_response(302);self.send_header('Location','/unlisted');self.end_headers();return
         if self.path=='/login-frames':
