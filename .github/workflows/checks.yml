@@ -1,0 +1,24 @@
+name: Foundation checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: php:8.5-cli-bookworm@sha256:104890ada56869090c9cd0ec709fe205834d3e383b46d9995dc16cd6388a9302
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: PHP syntax
+        run: |
+          set -eu
+          for file in app/public/*.php tests/*.php; do
+            php -l "$file"
+          done
+      - name: Readiness fails closed without database access
+        run: php tests/health-unavailable.php
