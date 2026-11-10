@@ -23,6 +23,13 @@ class Target(BaseHTTPRequestHandler):
         if self.path.startswith('/login') and self.headers.get('Cookie'):COUNTS['cookie-leak']+=1
         if self.path=='/counts':
             self.respond(200,json.dumps(COUNTS));return
+        if self.path in ['/login-blob', '/login-srcdoc', '/login-popup-blank']:
+            effect = {
+                '/login-blob': "const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['synthetic-export']));a.download='export.txt';a.click();",
+                '/login-srcdoc': "const f=document.createElement('iframe');f.srcdoc='<p>nested</p>';document.body.append(f);",
+                '/login-popup-blank': "window.open('about:blank');",
+            }[self.path]
+            self.respond(200, '<input name="username"><input name="password"><button id="login">Login</button><div id="account-state">connected</div><script>document.querySelector("#login").onclick=()=>{'+effect+'};</script>');return
         if self.path=='/attachment':
             self.send_response(200);self.send_header('Content-Disposition','attachment; filename=secret.txt');self.end_headers();self.wfile.write(b'synthetic-export');return
         if self.path=='/login-download':

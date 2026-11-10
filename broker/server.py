@@ -105,11 +105,16 @@ async def browser_action(op, action, value):
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
         context = await browser.new_context(accept_downloads=False, service_workers='block')
         try:
+            def policy_violation(*_):
+                first = not op.get('policy_denied', False)
+                op['policy_denied'] = True
+                if first:
+                    op['task'].cancel()
+
             async def deny(request_route):
-                first=not op.get('policy_denied',False)
-                op['policy_denied']=True
-                with suppress(Exception):await request_route.abort()
-                if first:op['task'].cancel()
+                policy_violation()
+                with suppress(Exception):
+                    await request_route.abort()
 
             async def route(request_route):
                 response=None
@@ -143,12 +148,14 @@ async def browser_action(op, action, value):
                         with suppress(Exception):await response.dispose()
             await context.route('**/*', route)
             async def deny_socket(socket):
-                first=not op.get('policy_denied',False)
-                op['policy_denied']=True
+                policy_violation()
                 with suppress(Exception):await socket.close()
-                if first:op['task'].cancel()
             await context.route_web_socket('**/*', deny_socket)
             page = await context.new_page()
+            # Non-network documents/downloads must fail too; context teardown closes them.
+            context.on('page', policy_violation)
+            page.on('frameattached', policy_violation)
+            page.on('download', policy_violation)
             page.set_default_timeout(12000)
             await page.goto(action['url'], wait_until='domcontentloaded')
             await page.locator(action['username_selector']).fill(value['username'])
@@ -194,7 +201,7 @@ async def run(op):
             else:
                 raise ValueError()
             value.clear()
-            op['state'] = ('succeeded' if ok else 'failed') if await authorized(op) else 'revoked'
+            op['state'] = ('succeeded' if ok and not op.get('policy_denied') else 'failed') if await authorized(op) else 'revoked'
     except TimeoutError:
         op['state'] = 'expired'
     except asyncio.CancelledError:

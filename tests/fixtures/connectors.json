@@ -248,6 +248,36 @@
           "url": "http://fixture:8000/attachment"
         }
       ]
+    },
+    "fixture.browser-blob": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-blob",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": []
+    },
+    "fixture.browser-srcdoc": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-srcdoc",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": []
+    },
+    "fixture.browser-popup-blank": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-popup-blank",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": []
     }
   }
 }
