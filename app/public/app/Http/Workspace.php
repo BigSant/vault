@@ -122,7 +122,9 @@ final class Workspace
         $role = $this->access->workspace($entry->workspace_id)->role;
         $grants = collect();
         $events = collect();
+        $operations = collect();
         if ($role === 'owner') {
+            $operations = DB::table('operations')->where('entry_id', $id)->orderByDesc('created_at')->limit(25)->get();
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
                 ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
             $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
@@ -131,7 +133,7 @@ final class Workspace
             })->orderByDesc('id')->limit(30)->get();
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events'));
+        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations'));
     }
 
     public function reveal(Request $r, string $id)
