@@ -1,0 +1,45 @@
+{
+  "actions": {
+    "fixture.api": {
+      "kind": "http",
+      "url": "http://fixture:8000/api/status",
+      "allow_cidrs": [
+        "10.210.0.0/16"
+      ]
+    },
+    "fixture.cli": {
+      "kind": "cli",
+      "url": "http://fixture:8000/api/status",
+      "allow_cidrs": [
+        "10.210.0.0/16"
+      ]
+    },
+    "fixture.redirect": {
+      "kind": "http",
+      "url": "http://fixture:8000/api/redirect",
+      "allow_cidrs": [
+        "10.210.0.0/16"
+      ]
+    },
+    "fixture.browser": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login",
+      "allow_cidrs": [
+        "10.210.0.0/16"
+      ],
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected"
+    },
+    "fixture.database": {
+      "kind": "database",
+      "role": "vault-probe",
+      "host": "database",
+      "port": 3306
+    }
+  }
+}

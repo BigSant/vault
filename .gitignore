@@ -2,5 +2,6 @@
 /data/
 /.generated/
 /.worktrees/
+/backups/
 __pycache__/
 *.pyc

@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Operator entry point. Secret-bearing subprocess output is captured, never printed."""
+import base64
+import json
+import os
+from pathlib import Path
+import secrets
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+ENV = os.environ.get('VAULT_ENV', 'local')
+if ENV not in ('local', 'test', 'stage', 'prod'):
+    raise SystemExit('Invalid VAULT_ENV')
+DATA = ROOT / 'data' if ENV == 'local' else (ROOT/'app/.generated/test/data' if ENV == 'test' else ROOT/'data'/ENV)
+RECOVERY = Path.home() / '.config' / 'vault' / ENV
+CONTAINER = f'vault-{ENV}-openbao'
+
+
+def save(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_suffix(path.suffix + '.new')
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'w') as out:
+        out.write(value)
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(tmp, path)
+
+
+def bao(args, payload=None, token='', acceptable=(0,), container=None):
+    result = subprocess.run(['docker', 'exec', '-i', '-w', '/', container or CONTAINER, 'sh', '-c',
+                             'IFS= read -r BAO_TOKEN; export BAO_TOKEN; exec bao "$@"', 'sh', *args],
+                            input=(token + '\n' + (json.dumps(payload) if isinstance(payload, dict) else payload or '')).encode(),
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode not in acceptable:
+        raise RuntimeError('OpenBao operator command failed: ' + args[0])
+    return result.stdout
+
+
+def prepare():
+    for part in ('bootstrap/cache','storage/framework/cache/data','storage/framework/sessions','storage/framework/views','storage/logs'):
+        (ROOT/'app/public'/part).mkdir(parents=True,exist_ok=True,mode=0o700)
+    for part in ('openbao', 'security/app', 'security/broker', 'connectors'):
+        (DATA / part).mkdir(parents=True, exist_ok=True, mode=0o700)
+    RECOVERY.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for path, value in [(DATA/'security/app/app.key', 'base64:'+base64.b64encode(secrets.token_bytes(32)).decode()),
+                        (DATA/'security/app/bootstrap.code', secrets.token_urlsafe(32)),
+                        (DATA/'security/app/broker.key', secrets.token_hex(32))]:
+        if not path.exists():
+            save(path, value)
+    broker_key = DATA/'security/broker/broker.key'
+    if not broker_key.exists():
+        save(broker_key, (DATA/'security/app/broker.key').read_text())
+    if not (DATA/'connectors/connectors.json').exists():
+        save(DATA/'connectors/connectors.json', (ROOT/'app/config/connectors.example.json').read_text())
+
+
+def initialize():
+    status = json.loads(bao(['status', '-format=json'], acceptable=(0, 2)))
+    recovery_path = RECOVERY/'openbao.json'
+    if not status['initialized']:
+        if recovery_path.exists():
+            raise RuntimeError('Recovery material already exists; refusing to replace an existing identity')
+        material = json.loads(bao(['operator', 'init', '-format=json', '-key-shares=3', '-key-threshold=2']))
+        save(recovery_path, json.dumps(material))
+    else:
+        if not recovery_path.is_file():
+            raise RuntimeError('Existing OpenBao requires its original recovery file')
+        material = json.loads(recovery_path.read_text())
+    if status['sealed']:
+        for share in material['unseal_keys_b64'][:2]:
+            bao(['write', '-format=json', 'sys/unseal', '-'], {'key': share})
+    token = material['root_token']
+    mounts = json.loads(bao(['secrets', 'list', '-format=json'], token=token))
+    if 'secret/' not in mounts:
+        bao(['secrets', 'enable', '-path=secret', 'kv-v2'], token=token)
+    bao(['write', 'secret/config', '-'], {'cas_required': True, 'max_versions': 20}, token)
+    auth = json.loads(bao(['auth', 'list', '-format=json'], token=token))
+    if 'approle/' not in auth:
+        bao(['auth', 'enable', 'approle'], token=token)
+    policies = {
+        'app': 'path "secret/data/entries/*" { capabilities=["create","read","update"] }\n'
+               'path "secret/metadata/entries/*" { capabilities=["read","delete"] }\n'
+               'path "secret/data/auth/*" { capabilities=["create","read","update"] }\n',
+        'broker': 'path "secret/data/entries/*" { capabilities=["read"] }\n'
+                  'path "database/creds/vault-*" { capabilities=["read"] }\n'
+                  'path "auth/token/revoke-self" { capabilities=["update"] }\n',
+    }
+    for name, policy in policies.items():
+        bao(['policy', 'write', 'vault-'+name, '-'], policy, token)
+        bao(['write', 'auth/approle/role/vault-'+name, '-'],
+            {'token_policies': ['vault-'+name], 'token_no_default_policy': True,
+             'token_type': 'service' if name=='broker' else 'batch', 'token_ttl': '5m', 'token_max_ttl': '5m', 'secret_id_ttl': 0}, token)
+        path = DATA/'security'/name/'bao.json'
+        if not path.exists():
+            role = json.loads(bao(['read', '-format=json', 'auth/approle/role/vault-'+name+'/role-id'], token=token))['data']['role_id']
+            credential = json.loads(bao(['write', '-f', '-format=json', 'auth/approle/role/vault-'+name+'/secret-id'], token=token))['data']['secret_id']
+            save(path, json.dumps({'role_id': role, 'secret_id': credential}))
+    print('OpenBao initialized/unsealed; scoped application credentials are ready.')
+    print('Recovery material (keep offline):', recovery_path)
+    print('First owner activation code (enter in WEB, never in an LLM session):', DATA/'security/app/bootstrap.code')
+
+
+def database():
+    material=json.loads((RECOVERY/'openbao.json').read_text()); token=material['root_token']
+    password=secrets.token_hex(32)
+    sql=("CREATE DATABASE IF NOT EXISTS vault_probe; "
+         "CREATE USER IF NOT EXISTS 'vault_lease_admin'@'%' IDENTIFIED BY '"+password+"'; "
+         "ALTER USER 'vault_lease_admin'@'%' IDENTIFIED BY '"+password+"'; "
+         "GRANT CREATE USER ON *.* TO 'vault_lease_admin'@'%'; "
+         "GRANT SELECT ON vault_probe.* TO 'vault_lease_admin'@'%' WITH GRANT OPTION;")
+    result=subprocess.run(['docker','exec','-i','-w','/',f'vault-{ENV}-mysql-8.4','sh','-c',
+        'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root'],input=sql.encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    if result.returncode: raise RuntimeError('Database lease provisioning failed')
+    mounts=json.loads(bao(['secrets','list','-format=json'],token=token))
+    if 'database/' not in mounts: bao(['secrets','enable','database'],token=token)
+    bao(['write','database/config/vault-mysql','-'],{'plugin_name':'mysql-database-plugin',
+        'allowed_roles':['vault-probe'],'connection_url':'{{username}}:{{password}}@tcp(database:3306)/',
+        'username':'vault_lease_admin','password':password},token)
+    bao(['write','database/roles/vault-probe','-'],{'db_name':'vault-mysql','default_ttl':'60s','max_ttl':'60s',
+        'creation_statements':["CREATE USER '{{name}}'@'%' IDENTIFIED BY '{{password}}'; GRANT SELECT ON vault_probe.* TO '{{name}}'@'%';"],
+        'revocation_statements':["DROP USER IF EXISTS '{{name}}'@'%';"]},token)
+    print('Dynamic read-only database role vault-probe configured (60s maximum lease).')
+
+
+def rotate_service_credentials():
+    token=json.loads((RECOVERY/'openbao.json').read_text())['root_token']
+    for name in ('app','broker'):
+        path=DATA/'security'/name/'bao.json';old=json.loads(path.read_text())
+        new=json.loads(bao(['write','-f','-format=json','auth/approle/role/vault-'+name+'/secret-id'],token=token))['data']['secret_id']
+        save(path,json.dumps({'role_id':old['role_id'],'secret_id':new}))
+        bao(['write','auth/approle/role/vault-'+name+'/secret-id/destroy','-'],{'secret_id':old['secret_id']},token)
+    # Previously issued tokens expire independently within five minutes.
+    print('Service credentials rotated; old SecretIDs revoked. Existing tokens expire within five minutes.')
+
+
+def main():
+    command = sys.argv[1] if len(sys.argv)>1 else 'help'
+    if command == 'prepare':
+        prepare()
+    elif command == 'initialize':
+        prepare(); initialize()
+    elif command == 'database':
+        database()
+    elif command in ('backup','restore-verify','restore'):
+        sys.path.insert(0,str(ROOT/'scripts'))
+        from recovery import Recovery
+        recovery=Recovery(globals())
+        if command=='backup':recovery.backup()
+        elif command=='restore-verify':recovery.verify(sys.argv[2])
+        else:recovery.restore(sys.argv[2])
+    elif command == 'rotate-service-credentials':
+        rotate_service_credentials()
+    elif command == 'rotate-encryption-key':
+        token=json.loads((RECOVERY/'openbao.json').read_text())['root_token']
+        bao(['operator','rotate'],token=token)
+        print('OpenBao encryption key rotated; existing entries remain readable.')
+    elif command == 'recover-user':
+        password=secrets.token_urlsafe(32)
+        result=subprocess.run(['docker','exec','-i','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','vault:recover-user',sys.argv[2]],input=json.dumps({'password':password}).encode(),capture_output=True)
+        if result.returncode:raise RuntimeError('User recovery failed')
+        path=RECOVERY/'recovered-user.json'
+        save(path,json.dumps({'email':sys.argv[2],'password':password}))
+        print('Temporary credentials saved privately at',path,'; enroll MFA in WEB, then delete this file.')
+    elif command == 'maintenance':
+        import time
+        subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','vault:maintenance'],check=True)
+        stamp=RECOVERY/'last-service-rotation'
+        if not stamp.exists() or time.time()-float(stamp.read_text())>=30*86400:
+            rotate_service_credentials()
+            token=json.loads((RECOVERY/'openbao.json').read_text())['root_token']
+            bao(['operator','rotate'],token=token)
+            save(stamp,str(time.time()))
+        print('Maintenance completed; managed service credentials rotate every 30 days.')
+    elif command == 'install':
+        if ENV not in ('local','test'):raise RuntimeError('Use the documented server provisioning workflow for stage/prod')
+        prepare()
+        subprocess.run(['docker','pull','openbao/openbao:2.7.2'],check=True)
+        if ENV == 'test':
+            subprocess.run(['make','-C',str(ROOT/'app'),'test-init'],check=True)
+        subprocess.run(['make','-C',str(ROOT/'app'),'setup','ENV='+ENV],check=True)
+        subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','composer','install','--no-interaction','--prefer-dist','--no-progress'],check=True)
+        initialize()
+        subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','migrate','--force'],check=True)
+    else:
+        print('bin/vault prepare | initialize | install | database | backup | restore-verify FILE | restore FILE | rotate-service-credentials | rotate-encryption-key (VAULT_ENV=local|test|stage|prod)')
+
+
+if __name__ == '__main__':
+    os.umask(0o077)
+    try:
+        main()
+    except RuntimeError as error:
+        print(str(error)+'. Existing data and recovery material preserved.',file=sys.stderr)
+        sys.exit(1)
+    except Exception as error:
+        print('Vault operator action failed ('+type(error).__name__+'). Existing data and recovery material preserved.',file=sys.stderr)
+        sys.exit(1)

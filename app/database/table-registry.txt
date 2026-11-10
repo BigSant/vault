@@ -1,0 +1,17 @@
+# Vault backups MUST use bin/vault backup: SQL + OpenBao + keys, authenticated encryption.
+# Generic DDE datasets/exports intentionally contain schema only, never identities or metadata.
+settings                 vault empty skip
+users                    vault empty skip
+workspaces               vault empty skip
+members                  vault empty skip
+projects                 vault empty skip
+environments             vault empty skip
+entries                  vault empty skip
+machines                 vault empty skip
+grants                   vault empty skip
+operations               vault empty skip
+audit                    vault empty skip
+migrations               vault empty skip
+sessions                 vault empty skip
+cache                    vault empty skip
+cache_locks              vault empty skip

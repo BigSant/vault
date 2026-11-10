@@ -1,0 +1,4 @@
+{
+  "actions": {},
+  "note": "Register reviewed API, CLI and browser targets in the private connectors.json file. Empty means deny all."
+}

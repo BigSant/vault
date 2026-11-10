@@ -1,0 +1,17 @@
+CREATE TABLE `operations` (
+  `id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `machine_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `grant_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `entry_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `action` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `version` int unsigned NOT NULL,
+  `state` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `request_id` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `approved_by` char(36) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `expires_at` timestamp NOT NULL,
+  `result` text COLLATE utf8mb4_unicode_ci,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `operations_machine_id_request_id_unique` (`machine_id`,`request_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

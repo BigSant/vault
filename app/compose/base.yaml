@@ -1,0 +1,73 @@
+services:
+  openbao:
+    image: openbao/openbao:2.7.2
+    container_name: ${PROJECT_NAME}-${ENV}-openbao
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["bao", "server", "-config=/bao/config/server.hcl"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+    volumes:
+      - ${PROJECT_DOCKER_DIRECTORY}/config/openbao/:/bao/config/:ro
+      - ${PROJECT_DATA_DIRECTORY}/openbao/:/bao/data/
+    networks: [vault_control]
+  broker:
+    image: ${PROJECT_NAME}-broker:1
+    container_name: ${PROJECT_NAME}-${ENV}-broker
+    build:
+      context: ${PROJECT_DOCKER_DIRECTORY}/../broker
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    # Modern Docker's default-deny profile additionally permits Chromium user namespaces.
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${PROJECT_DOCKER_DIRECTORY}/../broker/seccomp.json
+    tmpfs: [/tmp]
+    shm_size: 256m
+    mem_limit: 1g
+    pids_limit: 256
+    volumes:
+      - ${PROJECT_DATA_DIRECTORY}/security/broker/:/run/vault/:ro
+      - ${PROJECT_DATA_DIRECTORY}/connectors/:/config/:ro
+    environment:
+      BAO_ADDR: http://openbao:8200
+      APP_URL: http://webserver
+      EGRESS_PROXY: http://egress:8080
+    networks: [vault_control]
+  egress:
+    image: ${PROJECT_NAME}-broker:1
+    container_name: ${PROJECT_NAME}-${ENV}-egress
+    command: ["python3", "egress.py"]
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    mem_limit: 128m
+    pids_limit: 32
+    volumes:
+      - ${PROJECT_DATA_DIRECTORY}/connectors/:/config/:ro
+    networks: [vault_control, vault_egress]
+  php-fpm:
+    environment:
+      APP_URL: https://${DOMAIN}
+      APP_ENV: production
+    volumes:
+      - ${PROJECT_DATA_DIRECTORY}/security/app/:/run/vault/:ro
+      - ${PROJECT_DATA_DIRECTORY}/connectors/:/opt/vault/:ro
+    networks: [network_app, vault_control]
+  webserver:
+    networks: [network_app, vault_control]
+  database:
+    networks: [network_app, vault_control]
+networks:
+  vault_control:
+    internal: true
+  vault_egress: {}
