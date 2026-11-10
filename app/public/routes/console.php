@@ -1,12 +1,8 @@
 <?php
 
-use App\Models\User;
-use App\Vault\Access;
-use App\Vault\Secrets;
+use App\Vault\AccountRecovery;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use OTPHP\TOTP;
 
 Artisan::command('vault:status', function () {
     $this->info('Database: '.(DB::select('SELECT 1') ? 'ready' : 'unavailable'));
@@ -14,17 +10,8 @@ Artisan::command('vault:status', function () {
 });
 
 Artisan::command('vault:recover-user {email}', function () {
-    $user = User::where('email', strtolower($this->argument('email')))->firstOrFail();
     $input = json_decode(stream_get_contents(STDIN), true, flags: JSON_THROW_ON_ERROR);
-    if (! is_string($input['password'] ?? null) || strlen($input['password']) < 24) {
-        throw new RuntimeException('Invalid recovery input');
-    }
-    DB::transaction(function () use ($user, $input) {
-        app(Secrets::class)->resetMfa($user->id, TOTP::generate()->getSecret());
-        DB::table('users')->where('id', $user->id)->update(['password' => Hash::make($input['password']), 'mfa_enabled' => false, 'totp_counter' => -1]);
-        DB::table('sessions')->where('user_id', $user->id)->delete();
-        app(Access::class)->audit(null, 'user.recover', $user->id, 'ok', 'operator');
-    });
+    app(AccountRecovery::class)->reset($this->argument('email'), $input['password'] ?? '');
     $this->info('User recovered; password replaced, MFA enrollment required, sessions revoked.');
 });
 Artisan::command('vault:maintenance', function () {

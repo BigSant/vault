@@ -21,7 +21,17 @@
       "mfa_selector": "input[name=code]",
       "mfa_submit_selector": "#mfa",
       "success_selector": "#account-state",
-      "success_text": "connected"
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
     },
     "fixture.database": {
       "kind": "database",
@@ -38,7 +48,17 @@
       "mfa_selector": "input[name=code]",
       "mfa_submit_selector": "#mfa",
       "success_selector": "#echo",
-      "success_text": "connected"
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
     },
     "fixture.browser-escape": {
       "kind": "browser",
@@ -49,7 +69,102 @@
       "mfa_selector": "input[name=code]",
       "mfa_submit_selector": "#mfa",
       "success_selector": "#account-state",
-      "success_text": "connected"
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
+    },
+    "fixture.browser-form": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-form",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
+    },
+    "fixture.browser-redirect": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-redirect",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
+    },
+    "fixture.browser-frames": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-frames",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ]
+    },
+    "fixture.browser-timeout": {
+      "kind": "browser",
+      "url": "http://fixture:8000/login-timeout",
+      "username_selector": "input[name=username]",
+      "password_selector": "input[name=password]",
+      "submit_selector": "#login",
+      "mfa_selector": "input[name=code]",
+      "mfa_submit_selector": "#mfa",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login"
+        },
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/mfa"
+        }
+      ],
+      "timeout_seconds": 3
     }
   }
 }

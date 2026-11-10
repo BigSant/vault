@@ -59,12 +59,27 @@ final class Catalog
 
     public function update(string $id, array $input): void
     {
-        $data = $this->validate($input);
         $entry = $this->access->entry($id, ['owner', 'editor']);
-        // Moving an entry requires explicit export/import; existing grants must never silently follow it.
-        abort_unless($data['environment_id'] === $entry->environment_id && $data['type'] === $entry->type && $entry->state === 'active', 422);
-        DB::transaction(function () use ($entry, $id, $data) {
+        DB::transaction(function () use ($entry, $id, $input) {
             $current = DB::table('entries')->where('id', $id)->lockForUpdate()->first();
+            if (! isset($input['secret'])) {
+                $fields = $input['secret_fields'] ?? [];
+                abort_unless(is_array($fields), 422);
+                foreach ($fields as $value) {
+                    abort_unless(is_string($value) || $value === null, 422);
+                }
+                $payload = $this->secrets->read('entries/'.$id, $current->version);
+                $payload = array_replace($payload, array_filter($fields, fn ($value) => is_string($value) && $value !== ''));
+                $clear = $input['clear_fields'] ?? [];
+                abort_unless(is_array($clear) && ! array_diff($clear, ['passphrase']), 422);
+                foreach ($clear as $field) {
+                    unset($payload[$field]);
+                }
+                $input['secret'] = json_encode($payload, JSON_THROW_ON_ERROR);
+            }
+            $data = $this->validate($input);
+            // No moving, type changes or archive resurrection through a stale edit form.
+            abort_unless($data['environment_id'] === $current->environment_id && $data['type'] === $current->type && $current->state === 'active', 422);
             $this->access->audit($entry->workspace_id, 'entry.rotate', $id);
             $version = $this->secrets->write('entries/'.$id, $data['payload'], $current->version);
             unset($data['payload']);
@@ -143,7 +158,7 @@ final class Catalog
                 $this->create($row);
             }
 
-return count($rows);
+            return count($rows);
         });
     }
 }

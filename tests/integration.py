@@ -105,13 +105,13 @@ def run():
     token = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
     human.request('/workspaces/'+workspace+'/settings')
     machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', human.last)[1]
-    for action in ['fixture.api', 'fixture.cli', 'fixture.browser', 'fixture.redirect', 'fixture.database', 'fixture.browser-echo', 'fixture.browser-escape']:
+    for action in config['actions']:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': machine, 'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'days': '1'})
     agent = Client()
     catalog = agent.request('/api/v1/catalog', token=token)
-    assert len(catalog['entries']) == 7
+    assert len(catalog['entries']) == len(config['actions'])
     assert 'Private' not in agent.last and 'synthetic-' not in agent.last
-    for action in ['fixture.api', 'fixture.cli', 'fixture.redirect', 'fixture.database', 'fixture.browser', 'fixture.browser-echo', 'fixture.browser-escape']:
+    for action in config['actions']:
         request = {'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'request_id': secrets.token_hex(16)}
         op = agent.request('/api/v1/execute', request, token=token)
         deadline = time.monotonic()+50
@@ -125,16 +125,19 @@ def run():
                 mfa_sent = True
             if op['state'] in ['succeeded', 'failed', 'expired', 'revoked']:
                 break
-            time.sleep(1)
-        assert op['state'] == ('failed' if action in ['fixture.redirect','fixture.browser-echo','fixture.browser-escape'] else 'succeeded'), f'{action}: {op["state"]}'
-        if 'browser' in action and action!='fixture.browser-escape':
+            time.sleep(2.5)
+        assert op['state'] == ('expired' if action=='fixture.browser-timeout' else ('failed' if action in ['fixture.redirect','fixture.browser-echo','fixture.browser-escape','fixture.browser-form','fixture.browser-redirect'] else 'succeeded')), f'{action}: {op["state"]}'
+        if action in ['fixture.browser','fixture.browser-echo','fixture.browser-frames']:
             assert mfa_sent
         print('PASS:', action, 'safe state, no upstream payload')
+    counts=json.loads(subprocess.check_output(['docker','exec','vault-test-fixture','python3','-c',"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
+    assert all(counts.get(path,0)==0 for path in ['/capture','/unlisted','/blocked-frame','/blocked-popup','/download','cookie-leak'])
+    print('PASS: same-origin form/redirect, iframe, popup and export requests never reach target')
     op=agent.request('/api/v1/execute',{'entry_id':ids['login'],'action':'fixture.browser','request_id':secrets.token_hex(16)},token=token)
     for _ in range(20):
         op=agent.request('/api/v1/operations/'+op['id'],token=token)
         if op['state']=='requires_user_action':break
-        time.sleep(1)
+        time.sleep(2.5)
     assert op['state']=='requires_user_action'
     cancelled=agent.request('/api/v1/operations/'+op['id']+'/cancel',{},token=token)
     assert cancelled['state']=='revoked'
@@ -151,6 +154,21 @@ def run():
         print('PASS: real ai-os backend HTTPS/MCP action integration')
     human.request('/workspaces/'+workspace+'/revoke/machines/'+machine, {})
     agent.request('/api/v1/catalog', token=token, expected=401)
+    pending=Client();pending.request('/login');pending.request('/login',{'email':state['email'],'password':state['password']})
+    recovery=subprocess.run([str(ROOT/'bin/vault'),'recover-user',state['email']],env={**os.environ,'VAULT_ENV':'test'},capture_output=True)
+    assert recovery.returncode==0,'Synthetic owner recovery failed'
+    recovered_file=Path.home()/'.config/vault/test/recovered-user.json'
+    recovered=json.loads(recovered_file.read_text());recovered_file.unlink()
+    state['password']=recovered['password'];statefile.write_text(json.dumps(state))
+    pending.request('/mfa',expected=401)
+    pending.request('/mfa',{'code':otp(state['seed'])},expected=401)
+    human.request('/')
+    assert human.url.endswith('/login'),'Old authenticated session survived recovery'
+    human.request('/login',{'email':state['email'],'password':state['password']})
+    state['seed']=re.search(r'<pre data-secret>([^<]+)</pre>',human.last)[1]
+    statefile.write_text(json.dumps(state))
+    human.request('/mfa',{'code':otp(state['seed'])})
+    print('PASS: real owner recovery revokes pending MFA and authenticated sessions; new credentials enroll MFA')
     print('PASS: MCP action-only interface, secret-free audit, immediate token revocation')
 
 

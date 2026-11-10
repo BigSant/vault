@@ -4,6 +4,7 @@ namespace App\Vault;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 final class Operations
@@ -30,18 +31,28 @@ final class Operations
             ->where('grants.expires_at', '>', now())->where('machines.expires_at', '>', now())->where('entries.state', 'active');
     }
 
-    public function catalog(object $machine): array
+    public function catalog(object $machine, array $filters = []): array
     {
-        $rows = $this->grantQuery()->where('machines.id', $machine->id)->select('entries.id', 'entries.alias', 'entries.type', 'grants.action')->get();
-        $defs = $this->definitions();
-        $out = [];
-        foreach ($rows as $row) {
-            if (isset($defs[$row->action])) {
-                $out[] = ['id' => $row->id, 'alias' => $row->alias, 'type' => $row->type, 'action' => $row->action];
+        $filters = Validator::make($filters, [
+            'query' => 'sometimes|string|max:100', 'project_id' => 'sometimes|uuid', 'environment_id' => 'sometimes|uuid',
+            'type' => 'sometimes|in:login,api_key,database,dynamic_database,ssh,secure_note',
+            'page' => 'sometimes|integer|min:1|max:10000', 'per_page' => 'sometimes|integer|min:1|max:100',
+        ])->validate();
+        $query = $this->grantQuery()->where('machines.id', $machine->id)->whereIn('grants.action', array_keys($this->definitions()));
+        if (isset($filters['query'])) {
+            $query->where('entries.alias', 'like', '%'.$filters['query'].'%');
+        }
+        foreach (['project_id' => 'projects.id', 'environment_id' => 'environments.id', 'type' => 'entries.type'] as $key => $column) {
+            if (isset($filters[$key])) {
+                $query->where($column, $filters[$key]);
             }
         }
+        $page = (int) ($filters['page'] ?? 1);
+        $limit = (int) ($filters['per_page'] ?? 50);
+        $rows = $query->select('entries.id', 'entries.alias', 'entries.type', 'grants.action', 'projects.id as project_id', 'projects.name as project', 'environments.id as environment_id', 'environments.name as environment')
+            ->orderBy('entries.id')->orderBy('grants.action')->offset(($page - 1) * $limit)->limit($limit + 1)->get();
 
-        return $out;
+        return ['entries' => $rows->take($limit)->map(fn ($row) => (array) $row)->values()->all(), 'next_page' => $rows->count() > $limit ? $page + 1 : null];
     }
 
     public function authorized(string $id, bool $includePending = false): ?object
@@ -120,7 +131,7 @@ final class Operations
                 if (in_array($state, ['succeeded', 'failed', 'expired', 'revoked'])) {
                     $this->terminal($op, $state, $machine);
                 } else {
-                    DB::table('operations')->where('id', $id)->update(['state' => $state, 'updated_at' => now()]);
+                    DB::table('operations')->where('id', $id)->whereIn('state', ['running', 'requires_user_action'])->update(['state' => $state, 'updated_at' => now()]);
                 }
             }
         }
@@ -138,15 +149,15 @@ final class Operations
             }
         });
         if (in_array($state, ['revoked', 'expired'])) {
-            $this->broker('POST','/operations/'.$op->id.'/cancel');
+            $this->broker('POST', '/operations/'.$op->id.'/cancel');
         }
     }
 
-    public function cancel(object $machine,string $id): array
+    public function cancel(object $machine, string $id): array
     {
-        $op = DB::table('operations')->where('id',$id)->where('machine_id',$machine->id)->first();
-        abort_unless($op,404);
-        $this->terminal($op,'revoked',$machine);
+        $op = DB::table('operations')->where('id', $id)->where('machine_id', $machine->id)->first();
+        abort_unless($op, 404);
+        $this->terminal($op, 'revoked', $machine);
 
         return $this->status($machine,$id);
     }

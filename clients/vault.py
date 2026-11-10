@@ -68,7 +68,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, help='Private operator-owned JSON file (url, token), mode 0600')
     sub = parser.add_subparsers(dest='command', required=True)
-    sub.add_parser('list'); sub.add_parser('mcp')
+    listing=sub.add_parser('list'); sub.add_parser('mcp')
+    listing.add_argument('--query');listing.add_argument('--project-id');listing.add_argument('--environment-id');listing.add_argument('--page',type=int,default=1)
     execute = sub.add_parser('execute')
     execute.add_argument('entry'); execute.add_argument('action'); execute.add_argument('--request-id', required=True)
     for command in ['status','cancel']:
@@ -79,7 +80,8 @@ def main():
         if args.command == 'mcp':
             return client.mcp()
         if args.command == 'list':
-            answer = client.call('/api/v1/catalog')
+            filters={key:getattr(args,key) for key in ('query','project_id','environment_id','page') if getattr(args,key) is not None}
+            answer = client.call('/api/v1/catalog?'+urllib.parse.urlencode(filters))
         elif args.command == 'execute':
             answer = client.call('/api/v1/execute', {'entry_id':args.entry,'action':args.action,'request_id':args.request_id})
         else:

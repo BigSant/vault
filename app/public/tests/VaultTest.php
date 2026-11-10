@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Models\User;
+use App\Vault\AccountRecovery;
 use App\Vault\Catalog;
 use App\Vault\Operations;
 use Illuminate\Foundation\Testing\TestCase;
@@ -61,7 +62,7 @@ final class VaultTest extends TestCase
                 parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
                 $version = (int) ($query['version'] ?? count($this->backend[$path] ?? []));
 
-                return isset($this->backend[$path][$version]) ? Http::response(['data' => ['data' => $this->backend[$path][$version]]]) : Http::response([], 404);
+                return isset($this->backend[$path][$version]) ? Http::response(['data' => ['data' => $this->backend[$path][$version], 'metadata' => ['version' => $version]]]) : Http::response([], 404);
             }
             if (str_starts_with($path, '/operations')) {
                 return Http::response(['state' => 'succeeded']);
@@ -77,7 +78,7 @@ final class VaultTest extends TestCase
         DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $this->owner->id, 'role' => 'owner']);
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'Test project']);
         DB::table('environments')->insert(['id' => $this->environment, 'project_id' => $project, 'name' => 'stage']);
-        $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time()]);
+        $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $this->owner->credentialRevision()]);
     }
 
     protected function tearDown(): void
@@ -140,7 +141,7 @@ final class VaultTest extends TestCase
         $id = $this->entry();
         [$machine,$token,$grant] = $this->machine($id);
         DB::table('grants')->where('id', $grant)->update(['expires_at' => now()->subSecond()]);
-        $this->withToken($token)->getJson('/api/v1/catalog')->assertExactJson(['entries' => []]);
+        $this->withToken($token)->getJson('/api/v1/catalog')->assertExactJson(['entries' => [], 'next_page' => null]);
         $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-1234'])->assertNotFound();
         DB::table('grants')->where('id', $grant)->update(['expires_at' => now()->addHour()]);
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
@@ -164,8 +165,8 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         $other = User::create(['id' => (string) Str::uuid(), 'name' => 'Other', 'email' => 'other@example.test', 'password' => 'unused']);
-        $this->actingAs($other)->get('/entries/'.$id)->assertNotFound();
-        $this->actingAs($this->owner)->post('/workspaces/'.$this->workspace.'/members', ['email' => $this->owner->email, 'name' => 'Owner', 'role' => 'remove'])->assertConflict();
+        $this->actingAs($other)->withSession(['auth_revision' => $other->credentialRevision()])->get('/entries/'.$id)->assertNotFound();
+        $this->actingAs($this->owner)->withSession(['auth_revision' => $this->owner->credentialRevision()])->post('/workspaces/'.$this->workspace.'/members', ['email' => $this->owner->email, 'name' => 'Owner', 'role' => 'remove'])->assertConflict();
     }
 
     public function test_import_validates_all_rows_before_any_write(): void
@@ -216,7 +217,7 @@ final class VaultTest extends TestCase
         $this->post('/entries/'.$id.'/reveal')->assertConflict();
         $this->get('/?state=archived')->assertOk()->assertSee('/entries/'.$id, false);
         $this->post('/entries/'.$id.'/unarchive')->assertRedirect();
-        $this->withToken($token)->getJson('/api/v1/catalog')->assertExactJson(['entries' => []]);
+        $this->withToken($token)->getJson('/api/v1/catalog')->assertExactJson(['entries' => [], 'next_page' => null]);
         $this->post('/entries/'.$id.'/destroy', ['confirmation' => 'DELETE'])->assertConflict();
     }
 
@@ -229,13 +230,82 @@ final class VaultTest extends TestCase
         $this->withToken($token)->postJson('/entries/'.$id.'/reveal')->assertRedirect('/login');
     }
 
+    public function test_recovery_invalidates_pending_mfa_and_authenticated_revisions(): void
+    {
+        $totp = TOTP::generate();
+        $this->backend['/v1/secret/data/auth/'.$this->owner->id][1] = ['totp' => $totp->getSecret()];
+        $this->app['auth']->logout();
+        $this->post('/login', ['email' => $this->owner->email, 'password' => 'Synthetic-password-123!'])->assertRedirect('/mfa');
+        app(AccountRecovery::class)->reset($this->owner->email, 'New-synthetic-password-long-enough');
+        $this->get('/mfa')->assertUnauthorized();
+        $this->post('/mfa', ['code' => $totp->now()])->assertUnauthorized();
+        $this->post('/login', ['email' => $this->owner->email, 'password' => 'Synthetic-password-123!'])->assertUnauthorized();
+        $this->post('/login', ['email' => $this->owner->email, 'password' => 'New-synthetic-password-long-enough'])->assertRedirect('/mfa');
+        $this->get('/mfa')->assertOk();
+        $oldRevision = $this->owner->credentialRevision();
+        $this->owner->refresh();
+        $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'auth_revision' => $oldRevision])->get('/')->assertRedirect('/login');
+    }
+
+    public function test_regrant_never_revives_an_old_approval(): void
+    {
+        $id = $this->entry();
+        [$machine,$token,$grant] = $this->machine($id, true);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-before-revoke'])->json('id');
+        $this->post('/workspaces/'.$this->workspace.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
+        $this->post('/workspaces/'.$this->workspace.'/revoke/grants/'.$grant)->assertRedirect();
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1, 'approval' => '1'])->assertRedirect();
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertJsonPath('state', 'revoked');
+        $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-after-revoke'])->assertJsonPath('state', 'pending');
+    }
+
+    public function test_late_broker_poll_cannot_overwrite_cancellation(): void
+    {
+        $id = $this->entry();
+        [$machine,$token] = $this->machine($id);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'concurrent-cancel'])->json('id');
+        Http::swap(new Factory);
+        Http::fake(function () use ($op) {
+            DB::table('operations')->where('id', $op)->update(['state' => 'revoked']);
+
+            return Http::response(['state' => 'running']);
+        });
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertJsonPath('state', 'revoked');
+        $this->assertNull(app(Operations::class)->authorized($op));
+    }
+
+    public function test_web_partial_edit_preserves_ssh_passphrase_and_imported_fields(): void
+    {
+        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret' => json_encode(['private_key' => 'synthetic-key', 'passphrase' => 'synthetic-passphrase', 'custom' => 'synthetic-extra'])]);
+        $data = ['environment_id' => $this->environment, 'name' => 'Renamed key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret_fields' => ['private_key' => 'synthetic-new-key', 'passphrase' => '']];
+        $this->post('/entries/'.$id, $data)->assertRedirect();
+        $this->assertSame(['private_key' => 'synthetic-new-key', 'passphrase' => 'synthetic-passphrase', 'custom' => 'synthetic-extra'], app(Catalog::class)->reveal($id));
+        $this->post('/entries/'.$id, [...$data, 'clear_fields' => ['passphrase']])->assertRedirect();
+        $this->assertArrayNotHasKey('passphrase', app(Catalog::class)->reveal($id));
+        $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$id)->assertOk()->assertDontSee('synthetic-new-key')->assertDontSee('synthetic-extra');
+    }
+
+    public function test_machine_search_filters_authorized_scope_and_paginates(): void
+    {
+        $id = $this->entry();
+        [$machine,$token] = $this->machine($id);
+        $other = $this->entry();
+        $grant = (string) Str::uuid();
+        DB::table('grants')->insert(['id' => $grant, 'machine_id' => $machine, 'entry_id' => $other, 'action' => 'test.http', 'approval' => false, 'expires_at' => now()->addHour()]);
+        $this->withToken($token)->getJson('/api/v1/catalog?query=safe&per_page=1')->assertJsonCount(1, 'entries')->assertJsonPath('next_page', 2)->assertJsonPath('entries.0.environment', 'stage');
+        $this->withToken($token)->getJson('/api/v1/catalog?query=safe&per_page=1&page=2')->assertJsonCount(1, 'entries')->assertJsonPath('next_page', null);
+        $this->withToken($token)->getJson('/api/v1/catalog?query=missing')->assertExactJson(['entries' => [], 'next_page' => null]);
+        $this->withToken($token)->getJson('/api/v1/catalog?environment_id='.(string) Str::uuid())->assertExactJson(['entries' => [], 'next_page' => null]);
+        $this->withToken($token)->postJson('/api/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'vault_search', 'arguments' => ['per_page' => 101]]])->assertJsonPath('error.code', -32602);
+    }
+
     public function test_mfa_replay_is_rejected(): void
     {
         $this->app['auth']->logout();
         $totp = TOTP::generate();
         $this->backend['/v1/secret/data/auth/'.$this->owner->id][1] = ['totp' => $totp->getSecret()];
-        $this->withSession(['pending_user' => $this->owner->id, 'pending_at' => time()])->post('/mfa', ['code' => $totp->now()])->assertRedirect('/');
+        $this->withSession(['pending_user' => $this->owner->id, 'pending_at' => time(), 'pending_revision' => $this->owner->credentialRevision()])->post('/mfa', ['code' => $totp->now()])->assertRedirect('/');
         $this->app['auth']->logout();
-        $this->withSession(['pending_user' => $this->owner->id, 'pending_at' => time()])->post('/mfa',['code' => $totp->now()])->assertUnauthorized();
+        $this->withSession(['pending_user' => $this->owner->id, 'pending_at' => time(), 'pending_revision' => $this->owner->credentialRevision()])->post('/mfa',['code' => $totp->now()])->assertUnauthorized();
     }
 }

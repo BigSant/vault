@@ -32,7 +32,7 @@ Būsenos: `pending` → `approved` → `running` → `requires_user_action` / `s
 
 ## Izoliacija
 
-Brokeris prijungtas tik prie `internal` Docker tinklo. Egress proxy atskirai turi išorinį tinklą; leidžia tik operatoriaus registruotus host/port, tikrina visus DNS adresus ir jungiasi prie patikrinto IP. Privatūs adresai turi turėti aiškų CIDR leidimą. API/CLI neseka redirect; naršyklė leidžia tik registruotus origins, blokuoja WebSocket ir service workers. HTTP fixture išimtis egzistuoja tik test Compose aplinkoje. Išoriniams tikslams naudojamas HTTPS.
+Brokeris prijungtas tik prie `internal` Docker tinklo. Egress proxy atskirai turi išorinį tinklą; leidžia tik operatoriaus registruotus host/port, tikrina visus DNS adresus ir jungiasi prie patikrinto IP. Privatūs adresai turi turėti aiškų CIDR leidimą. API/CLI neseka redirect; naršyklė leidžia tik tikslius registruotus URL ir metodus registruotuose origins, blokuoja iframe/popup, WebSocket ir service workers. HTTP fixture išimtis egzistuoja tik test Compose aplinkoje. Išoriniams tikslams naudojamas HTTPS.
 
 Chromium paleidžiamas su user namespace sandbox, cap-drop ALL, no-new-privileges, ribotais procesais ir atmintimi. Kiekvienai operacijai naujas kontekstas, baigiant ar atšaukiant jis uždaromas. Agentas negauna browser valdymo, DOM, cookies, screenshots, HAR, trace ar CDP. Brokerio fiksuotas CLI vykdomas jo paties patikimame procese; modelis negali nurodyti shell, programos, URL, headers ar kodo.
 
@@ -42,7 +42,7 @@ Tai nėra zero-knowledge sistema. WEB ir patikimas vykdytojas turi mokėti persk
 
 Lietuviška responsive sąsaja: darbo srities pasirinkimas, paieška, projekto/aplinkos/tipo/būsenos filtrai, puslapiuojamas sąrašas ir atskiras detalės vaizdas. Prod turi tekstinę žymą. Slapti duomenys neatsiunčiami pradiniame detalės puslapyje; atskleidžiami atskira POST užklausa po penkių minučių galiojimo slaptažodžio patvirtinimo ir audito. Po 30 s paslepiami. Clipboard yra žmogaus OS funkcija – jo istorijos išvalymo negarantuojame.
 
-TOTP apsaugotas nuo to paties laiko kodo pakartojimo. Sesijos idle terminas 20 min, absoliutus – 8 h. Naudojami HttpOnly/Secure/SameSite strict cookies, CSRF, CSP, no-store, rate limits ir bendri klaidų pranešimai. Mašinos tapatybė nesuteikia WEB reveal prieigos. Sunaikinant reikalaujama aiškaus DELETE patvirtinimo, kopijų retencija lieka atskira.
+Pending ir atrakintos sesijos susietos su slaptažodžio revizija; recovery ir MFA serializuojami vartotojo eilutės užraktu. TOTP apsaugotas nuo to paties laiko kodo pakartojimo. Sesijos idle terminas 20 min, absoliutus – 8 h. Naudojami HttpOnly/Secure/SameSite strict cookies, CSRF, CSP, no-store, rate limits ir bendri klaidų pranešimai. Mašinos tapatybė nesuteikia WEB reveal prieigos. Sunaikinant reikalaujama aiškaus DELETE patvirtinimo, kopijų retencija lieka atskira.
 
 ## Etapai ir patikros
 

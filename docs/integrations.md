@@ -18,7 +18,7 @@ AIOS_EXTERNAL_VAULT_DIRECTORY=/run/aios-vault
 
 Failo teisės 0600, savininkas – backend procesas; katalogai operatoriaus valdomi. JSON laukai `url` (fiksuotas HTTPS origin, be path/query) ir `token` (Vault WEB vieną kartą parodytas machine raktas). Tikrą token įrašykite tiesiai į failą. Rekomenduojama atskira machine tapatybė kiekvienam workspace/agent/project kontekstui ir minimalūs grants. Ai-os workspace UUID neprivalo sutapti su Vault workspace UUID: ryšį nusako konkretaus failo ribotas token.
 
-Modelis negali pateikti workspace, agent ar project. Jie gaunami iš `AgentQueue::guard` autorizuoto run. `vault_search`, `vault_execute`, `vault_status`, `vault_cancel` naudojami per esamą ai-os įrankių transportą. Execute priima entry UUID, action ir 8–80 simbolių `request_id`; pakartojimui naudokite tą patį ID. Status/cancel gauna grąžintą opaque handle, galiojantį tik tam ticket ir kontekstui. Atsakymas papildomai tikrinamas pagal siaurą tipų sutartį; jokie upstream laukai neperduodami automatiškai.
+Modelis negali pakeisti savo workspace, agent ar project autorizacijos konteksto. Paieškoje `project_id` ir `environment_id` tik susiaurina jau leistus įrašus. Jie gaunami iš `AgentQueue::guard` autorizuoto run. `vault_search`, `vault_execute`, `vault_status`, `vault_cancel` naudojami per esamą ai-os įrankių transportą. Paieška priima `query` (alias), `project_id`, `environment_id`, `type`, `page`, `per_page` (1–100); atsakymas turi `next_page` arba null. Projektų ir aplinkų vardai yra agentui patvirtinti metaduomenys, juose nelaikykite paslapčių. Execute priima entry UUID, action ir 8–80 simbolių `request_id`; pakartojimui naudokite tą patį ID. Status/cancel gauna grąžintą opaque handle, galiojantį tik tam ticket ir kontekstui. Atsakymas papildomai tikrinamas pagal siaurą tipų sutartį; jokie upstream laukai neperduodami automatiškai.
 
 **Įjungus external mode, senieji `credentials` ir `credential_use` atsisako darbo su `use_external_vault_actions`.** Nėra fallback į modelio kontekstą išduodamą plaintext, net kai trūksta naujo failo ar Vault nepasiekiamas. Esami senos saugyklos įrašai automatiškai nemigruojami ir netrinami. Išjungtas jungiklis išlaiko ankstesnį ai-os elgesį; todėl išjungimo negalima laikyti saugaus Vault naudojimo režimu.
 
@@ -52,7 +52,9 @@ Privatus `data/connectors/connectors.json` (atitinkamas aplinkos data kelias) tu
     "service.account": {
       "kind":"browser", "url":"https://service.example/login", "origins":[],
       "username_selector":"input[name=username]", "password_selector":"input[name=password]",
-      "submit_selector":"button[type=submit]", "success_selector":"#account-state", "success_text":"connected"
+      "submit_selector":"button[type=submit]",
+      "allowed_requests":[{"method":"POST","url":"https://service.example/login"},{"method":"GET","url":"https://service.example/account"}],
+      "success_selector":"#account-state", "success_text":"connected"
     }
   }
 }
@@ -60,7 +62,7 @@ Privatus `data/connectors/connectors.json` (atitinkamas aplinkos data kelias) tu
 
 API/CLI naudoja įrašo `token` lauką kaip Bearer ir grąžina sėkmę tik gavę 200. HTTP kūnas ir antraštės ignoruojami, CLI stdout/stderr sunaikinami. Tai fiksuotas receptas, ne savavališkos komandos paleidimas. Browser naudoja login `username`/`password`; MFA srautui pridėkite `mfa_selector` ir `mfa_submit_selector`. `success_text` tiksliai palyginamas, jo tekstas negrąžinamas. Vietinis kontekstas uždaromas; target serverio sesija gali gyventi iki jo nustatyto TTL.
 
-`origins` leiskite tik būtinus, patikimus svetainės origin; neleiskite wildcard. Privatų tikslą leidžia tik tikslus operatoriaus CIDR, pvz. `"allow_cidrs":["10.20.30.40/32"]`. DNS proxy tikrina visus atsakymus ir pin'ina tikrą IP. HTTP leidžiamas tik test Compose fixture režime. Target, selectors, headers, command ir URL nėra modelio argumentai. Konfigūracija skaitoma kiekvieną operaciją, todėl prieš keičiant veiksmo prasmę atšaukite jo grants / užbaikite aktyvias operacijas ir iš naujo suteikite leidimus.
+`allowed_requests` turi tiksliai įvardyti kiekvieną papildomą URL (įskaitant query) ir metodą: formas, MFA, redirect ir statinius resursus. Tik pradinis GET automatiškai leidžiamas. Iframe ir popup užklausos blokuojamos net jei jų URL yra sąraše. `timeout_seconds` gali sutrumpinti, bet ne pailginti 180 s ribą. `origins` leiskite tik būtinus, patikimus svetainės origin; neleiskite wildcard. Privatų tikslą leidžia tik tikslus operatoriaus CIDR, pvz. `"allow_cidrs":["10.20.30.40/32"]`. DNS proxy tikrina visus atsakymus ir pin'ina tikrą IP. HTTP leidžiamas tik test Compose fixture režime. Target, selectors, headers, command ir URL nėra modelio argumentai. Konfigūracija skaitoma kiekvieną operaciją, todėl prieš keičiant veiksmo prasmę atšaukite jo grants / užbaikite aktyvias operacijas ir iš naujo suteikite leidimus.
 
 DB connector: `kind=database`, `role=vault-...`, fiksuotas `host` ir `port`. Įrašo tipas `dynamic_database` ir slaptas `role` turi sutapti; vykdomas tik SELECT 1. Nereikia ir negalima pateikti DB slaptažodžio agentui. Testinis provisioninimas aprašytas runbook.
 

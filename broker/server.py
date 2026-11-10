@@ -8,7 +8,7 @@ import uuid
 import pymysql
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
+from browser_policy import origin, request_allowed
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -97,25 +97,20 @@ async def database_action(action, value):
             revoked.raise_for_status()
 
 
-def origin(url):
-    parsed = urlsplit(url)
-    if parsed.scheme not in (('http','https') if os.environ.get('VAULT_TEST_FIXTURES')=='1' else ('https',)) or parsed.username or parsed.password:
-        return None
-    return (parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80))
-
-
 async def browser_action(op, action, value):
-    allowed = {origin(action['url']), *(origin(url) for url in action.get('origins', []))}
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, chromium_sandbox=True, proxy={'server': proxy},
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
         context = await browser.new_context(accept_downloads=False, service_workers='block')
         try:
             async def route(request_route):
-                if origin(request_route.request.url) not in allowed or not await authorized(op):
-                    await request_route.abort()
-                else:
-                    await request_route.continue_()
+                request=request_route.request
+                try:
+                    allowed=request.frame==page.main_frame and request_allowed(action,request.url,request.method) and await authorized(op)
+                except Exception:
+                    allowed=False
+                if allowed:await request_route.continue_()
+                else:await request_route.abort()
             await context.route('**/*', route)
             await context.route_web_socket('**/*', lambda socket: socket.close())
             page = await context.new_page()
@@ -145,11 +140,11 @@ async def browser_action(op, action, value):
 
 async def run(op):
     try:
-        async with asyncio.timeout(180):
+        action = definitions()[op['action']]
+        async with asyncio.timeout(min(180,max(1,int(action.get('timeout_seconds',180))))):
             if not await authorized(op):
                 op['state'] = 'revoked'
                 return
-            action = definitions()[op['action']]
             if action['kind'] != 'database' and origin(action['url']) is None:
                 raise ValueError()
             value = await secret(op)

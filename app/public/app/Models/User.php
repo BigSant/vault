@@ -12,5 +12,10 @@ final class User extends Authenticatable
 
     protected $guarded = [];
 
+    public function credentialRevision(): string
+    {
+        return hash('sha256', $this->password);
+    }
+
     protected $hidden = ['password', 'remember_token'];
 }

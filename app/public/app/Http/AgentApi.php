@@ -5,6 +5,7 @@ namespace App\Http;
 use App\Vault\Operations;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 final class AgentApi
@@ -13,7 +14,7 @@ final class AgentApi
 
     public function catalog(Request $r)
     {
-        return ['entries' => $this->ops->catalog($r->attributes->get('machine'))];
+        return $this->ops->catalog($r->attributes->get('machine'), $r->query());
     }
 
     public function execute(Request $r)
@@ -42,7 +43,7 @@ final class AgentApi
             if (! is_string($id) && ! is_int($id)) {
                 $id = null;
             }
-            $status = $error instanceof HttpExceptionInterface ? $error->getStatusCode() : 503;
+            $status = $error instanceof HttpExceptionInterface ? $error->getStatusCode() : ($error instanceof ValidationException ? 422 : 503);
             $code = in_array($status, [400, 415, 422]) ? -32602 : -32000;
 
             return response()->json(['jsonrpc' => '2.0', 'id' => $id, 'error' => ['code' => $code, 'message' => $code === -32602 ? 'Invalid parameters' : 'Action unavailable or refused']]);
@@ -60,7 +61,7 @@ final class AgentApi
         $id = $message['id'];
         abort_unless(is_string($id) || is_int($id) || $id === null, 400);
         $schemas = [
-            'vault_search' => ['description' => 'List authorized aliases and actions. Never returns credentials.', 'properties' => [], 'required' => []],
+            'vault_search' => ['description' => 'List authorized aliases and actions. Never returns credentials.', 'properties' => ['query' => ['type' => 'string'], 'project_id' => ['type' => 'string'], 'environment_id' => ['type' => 'string'], 'type' => ['type' => 'string'], 'page' => ['type' => 'integer'], 'per_page' => ['type' => 'integer']], 'required' => []],
             'vault_execute' => ['description' => 'Execute a registered action; requires a unique request_id for idempotency.', 'properties' => ['entry_id' => ['type' => 'string'], 'action' => ['type' => 'string'], 'request_id' => ['type' => 'string']], 'required' => ['entry_id', 'action', 'request_id']],
             'vault_status' => ['description' => 'Read your operation status.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
             'vault_cancel' => ['description' => 'Cancel your operation.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
@@ -90,7 +91,7 @@ final class AgentApi
             }
             $m = $r->attributes->get('machine');
             $data = match ($name) {
-                'vault_search' => ['entries' => $this->ops->catalog($m)],'vault_execute' => $this->ops->execute($m, $args['entry_id'], $args['action'], $args['request_id']),
+                'vault_search' => $this->ops->catalog($m, $args),'vault_execute' => $this->ops->execute($m, $args['entry_id'], $args['action'], $args['request_id']),
                 'vault_status' => $this->ops->status($m, $args['id']),'vault_cancel' => $this->ops->cancel($m, $args['id'])
             };
             $result = ['content' => [['type' => 'text', 'text' => json_encode($data, JSON_THROW_ON_ERROR)]], 'isError' => false];

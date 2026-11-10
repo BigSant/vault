@@ -42,7 +42,7 @@ final class Identity
             return $user;
         });
         $r->session()->regenerate();
-        $r->session()->put(['pending_user' => $user->id, 'pending_at' => time()]);
+        $r->session()->put(['pending_user' => $user->id, 'pending_at' => time(), 'pending_revision' => $user->credentialRevision()]);
 
         return redirect('/mfa');
     }
@@ -56,7 +56,7 @@ final class Identity
         $valid = password_verify($d['password'], $user?->password ?? $dummy);
         abort_unless($valid && $user, 401);
         $r->session()->regenerate();
-        $r->session()->put(['pending_user' => $user->id, 'pending_at' => time()]);
+        $r->session()->put(['pending_user' => $user->id, 'pending_at' => time(), 'pending_revision' => $user->credentialRevision()]);
 
         return redirect('/mfa');
     }
@@ -65,15 +65,20 @@ final class Identity
     {
         abort_unless(time() - (int) $r->session()->get('pending_at', 0) < 300, 401);
 
-        return User::findOrFail($r->session()->get('pending_user'));
+        $user = User::where('id', $r->session()->get('pending_user'))->lockForUpdate()->firstOrFail();
+        abort_unless(hash_equals($user->credentialRevision(), (string) $r->session()->get('pending_revision')), 401);
+
+        return $user;
     }
 
     public function mfaForm(Request $r)
     {
-        $user = $this->pending($r);
-        $seed = $user->mfa_enabled ? null : $this->secrets->read('auth/'.$user->id)['totp'];
+        return DB::transaction(function () use ($r) {
+            $user = $this->pending($r);
+            $seed = $user->mfa_enabled ? null : $this->secrets->read('auth/'.$user->id)['totp'];
 
-        return view('mfa', ['seed' => $seed]);
+            return view('mfa', ['seed' => $seed]);
+        });
     }
 
     private function verify(User $user, #[\SensitiveParameter] string $code): void
@@ -89,12 +94,16 @@ final class Identity
     public function mfa(Request $r)
     {
         $d = $r->validate(['code' => 'required|string|size:6']);
-        $user = $this->pending($r);
-        $this->verify($user, $d['code']);
+        $user = DB::transaction(function () use ($r, $d) {
+            $user = $this->pending($r);
+            $this->verify($user, $d['code']);
+
+            return $user;
+        });
         Auth::login($user);
         $r->session()->regenerate();
-        $r->session()->forget(['pending_user', 'pending_at']);
-        $r->session()->put(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time()]);
+        $r->session()->forget(['pending_user', 'pending_at', 'pending_revision']);
+        $r->session()->put(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $user->credentialRevision()]);
         $this->access->audit(null, 'session.login', null);
 
         return redirect('/');
@@ -112,8 +121,9 @@ final class Identity
     public function changePassword(Request $r)
     {
         $d = $r->validate(['current_password' => 'required|string|max:200', 'password' => 'required|string|min:14|max:200|confirmed']);
-        abort_unless(Hash::check($d['current_password'], $r->user()->password), 401);
         DB::transaction(function () use ($r, $d) {
+            $user = User::where('id', $r->user()->id)->lockForUpdate()->firstOrFail();
+            abort_unless(Hash::check($d['current_password'], $user->password), 401);
             DB::table('users')->where('id', $r->user()->id)->update(['password' => Hash::make($d['password'])]);
             DB::table('sessions')->where('user_id', $r->user()->id)->delete();
             $this->access->audit(null, 'user.password', $r->user()->id);

@@ -11,7 +11,7 @@ const type = document.getElementById('entry-type');
 const fields = () => document.querySelectorAll('[data-types]').forEach(el => {
   const active = el.dataset.types.split(',').includes(type.value);
   el.hidden = !active;
-  el.querySelectorAll('input,textarea').forEach(input => { input.disabled = !active; input.required = active; });
+  el.querySelectorAll('input,textarea').forEach(input => { input.disabled = !active; input.required = active && input.closest('form').dataset.editing !== '1' && !input.hasAttribute('data-optional'); });
 });
 if (type) { type.addEventListener('change', fields); fields(); }
 document.querySelector('[data-generate]')?.addEventListener('click', () => {

@@ -55,5 +55,5 @@ Route::middleware('vault.auth')->group(function () {
     Route::post('/workspaces/{workspace}/grants', [Workspace::class, 'grant']);
     Route::post('/workspaces/{workspace}/revoke/{kind}/{id}', [Workspace::class, 'revoke']);
     Route::post('/workspaces/{workspace}/operations/{id}/decision', [Workspace::class, 'decision']);
-    Route::post('/workspaces/{workspace}/operations/{id}/mfa',[Workspace::class, 'mfa'])->middleware('throttle:sensitive');
+    Route::post('/workspaces/{workspace}/operations/{id}/mfa', [Workspace::class, 'mfa'])->middleware('throttle:sensitive');
 });

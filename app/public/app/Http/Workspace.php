@@ -246,7 +246,11 @@ final class Workspace
         };
         abort_unless($entry->type === $type, 422);
         DB::transaction(function () use ($workspace, $d) {
+            DB::table('machines')->where('id', $d['machine_id'])->lockForUpdate()->first();
             $existing = DB::table('grants')->where('machine_id', $d['machine_id'])->where('entry_id', $d['entry_id'])->where('action', $d['action'])->first();
+            if ($existing) {
+                DB::table('operations')->where('grant_id', $existing->id)->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->update(['state' => 'revoked', 'updated_at' => now()]);
+            }
             DB::table('grants')->updateOrInsert(['machine_id' => $d['machine_id'], 'entry_id' => $d['entry_id'], 'action' => $d['action']],
                 ['id' => $existing?->id ?? (string) Str::uuid(), 'approval' => isset($d['approval']), 'expires_at' => now()->addDays((int) $d['days']), 'revoked_at' => null, 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($workspace, 'grant.create', $d['entry_id']);
@@ -264,7 +268,9 @@ final class Workspace
         abort_unless($row, 404);
         $machine = $kind === 'machines' ? $row : DB::table('machines')->where('id', $row->machine_id)->first();
         abort_unless($machine?->workspace_id === $workspace, 404);
-        DB::transaction(function () use ($workspace, $kind, $id) {
+        DB::transaction(function () use ($workspace, $kind, $id, $machine) {
+            DB::table('machines')->where('id', $machine->id)->lockForUpdate()->first();
+            DB::table('operations')->where($kind === 'machines' ? 'machine_id' : 'grant_id', $id)->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->update(['state' => 'revoked', 'updated_at' => now()]);
             DB::table($kind)->where('id', $id)->update(['revoked_at' => now()]);
             $this->access->audit($workspace, $kind.'.revoke', $id);
         });
@@ -299,18 +305,18 @@ final class Workspace
         $this->access->recent($r);
         $d = $r->validate(['code' => 'required|regex:/^\d{6,8}$/D']);
         $op = $this->ops->authorized($id);
-        abort_unless($op && $op->state === 'requires_user_action',409);
-        abort_unless(DB::table('machines')->where('id',$op->machine_id)->where('workspace_id',$workspace)->exists(),404);
-        $this->access->audit($workspace,'operation.mfa',$id);
-        $this->ops->broker('POST','/operations/'.$id.'/mfa',$d);
+        abort_unless($op && $op->state === 'requires_user_action', 409);
+        abort_unless(DB::table('machines')->where('id', $op->machine_id)->where('workspace_id', $workspace)->exists(), 404);
+        $this->access->audit($workspace, 'operation.mfa', $id);
+        $this->ops->broker('POST', '/operations/'.$id.'/mfa', $d);
 
         return redirect('/workspaces/'.$workspace.'/settings');
     }
 
     public function audit(string $workspace)
     {
-        $space = $this->access->workspace($workspace,['owner']);
-        $events = DB::table('audit')->where('workspace_id',$workspace)->orderByDesc('id')->paginate(50);
+        $space = $this->access->workspace($workspace, ['owner']);
+        $events = DB::table('audit')->where('workspace_id', $workspace)->orderByDesc('id')->paginate(50);
 
         return view('audit',compact('space','events'));
     }

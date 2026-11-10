@@ -13,7 +13,7 @@ final class OwnerSession
         if (! Auth::check()) {
             return redirect('/login');
         }
-        if (! $r->session()->get('mfa_at') || time() - (int) $r->session()->get('login_at', 0) > 28800) {
+        if (! hash_equals(Auth::user()->credentialRevision(), (string) $r->session()->get('auth_revision')) || ! $r->session()->get('mfa_at') || time() - (int) $r->session()->get('login_at', 0) > 28800) {
             Auth::logout();
             $r->session()->invalidate();
             $r->session()->regenerateToken();
