@@ -47,3 +47,5 @@ CI tikrina PHP sintaksę ir saugų parengties klaidos atsakymą. Pilnas Docker p
 ## Tolesnis įgyvendinimas
 
 Pradėti nuo [architektūros pasiūlymo](docs/architecture.md) ir [tyrimo](research/secret-management.md). Pagrindinis principas: LLM gauna įrašo nuorodą ir leidžiamo veiksmo rezultatą; tikrą prisijungimą panaudoja atskirtas vykdymo modulis. Vien `get_secret` įrankis ar rezultatų maskavimas šio reikalavimo neįvykdo.
+
+Naudotojo pasirinkimu **API/CLI ir naršyklės prisijungimai yra vienodai svarbūs**. Pirmasis LLM etapas apima abi kryptis: ribotus API/CLI veiksmus ir prisijungimą bei leidžiamą veiksmą izoliuotoje naršyklėje. Abiem taikomos bendros teisės ir auditas, tačiau atskiros vykdymo bei nuotėkio patikros. Vien API veikimas šio etapo neužbaigia.
