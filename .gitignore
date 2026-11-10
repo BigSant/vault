@@ -1,0 +1,6 @@
+# Runtime data and generated configuration never belong in source control.
+/data/
+/.generated/
+/.worktrees/
+__pycache__/
+*.pyc
