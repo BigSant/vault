@@ -1,48 +1,48 @@
-# ai-os, MCP ir veiksmų konfigūracija
+# ai-os, MCP and action configuration
 
 ## ai-os
 
-Integracija įgyvendinta ai-os `App\Application\Vault\ExternalVault`, `AgentTools` ir native MCP transportuose. Įjunkite **tik patikimame WEB/worker backend**:
+The integration is implemented in ai-os `App\Application\Vault\ExternalVault`, `AgentTools` and the native MCP transports. Enable it **only in the trusted web/worker backend**:
 
 ```dotenv
 AIOS_EXTERNAL_VAULT_ENABLED=true
 AIOS_EXTERNAL_VAULT_DIRECTORY=/run/aios-vault
 ```
 
-Į katalogą prijunkite privatų read-only mount, prieinamą backend UID. Jo **neprijunkite** prie native modelio konteinerių, checkout ar agento įrankių. Kiekvienam autorizuotam kontekstui failas:
+Attach a private read-only mount to the directory, accessible to the backend UID. Do **not** attach it to the native model containers, the checkout or the agent tools. One file per authorized context:
 
 ```text
 /run/aios-vault/<ai-os-workspace-uuid>/<agent-uuid>/<project-uuid>.json
-/run/aios-vault/<ai-os-workspace-uuid>/<agent-uuid>/workspace.json  # tik ticket be projekto
+/run/aios-vault/<ai-os-workspace-uuid>/<agent-uuid>/workspace.json  # only for a ticket without a project
 ```
 
-Failo teisės 0600, savininkas – backend procesas; katalogai operatoriaus valdomi. JSON laukai `url` (fiksuotas HTTPS origin, be path/query) ir `token` (Vault WEB vieną kartą parodytas machine raktas). Tikrą token įrašykite tiesiai į failą. Rekomenduojama atskira machine tapatybė kiekvienam workspace/agent/project kontekstui ir minimalūs grants. Ai-os workspace UUID neprivalo sutapti su Vault workspace UUID: ryšį nusako konkretaus failo ribotas token.
+File permissions are 0600, the owner is the backend process; the directories are operator-managed. The JSON fields are `url` (a fixed HTTPS origin, without path/query) and `token` (the machine key shown once in the Vault web UI). Write the real token directly into the file. A separate machine identity for each workspace/agent/project context and minimal grants are recommended. The ai-os workspace UUID does not have to match the Vault workspace UUID: the link is defined by the restricted token of the specific file.
 
-Modelis negali pakeisti savo workspace, agent ar project autorizacijos konteksto. Paieškoje `project_id` ir `environment_id` tik susiaurina jau leistus įrašus. Jie gaunami iš `AgentQueue::guard` autorizuoto run. `vault_search`, `vault_execute`, `vault_status`, `vault_cancel` naudojami per esamą ai-os įrankių transportą. Paieška priima `query` (alias), `project_id`, `environment_id`, `type`, `page`, `per_page` (1–100); atsakymas turi `next_page` arba null. Projektų ir aplinkų vardai yra agentui patvirtinti metaduomenys, juose nelaikykite paslapčių. Execute priima entry UUID, action ir 8–80 simbolių `request_id`; pakartojimui naudokite tą patį ID. Status/cancel gauna grąžintą opaque handle, galiojantį tik tam ticket ir kontekstui. Atsakymas papildomai tikrinamas pagal siaurą tipų sutartį; jokie upstream laukai neperduodami automatiškai.
+The model cannot change its workspace, agent or project authorization context. In search, `project_id` and `environment_id` only narrow the already allowed entries. They come from the run authorized by `AgentQueue::guard`. `vault_search`, `vault_execute`, `vault_status` and `vault_cancel` are used through the existing ai-os tool transport. Search accepts `query` (alias), `project_id`, `environment_id`, `type`, `page`, `per_page` (1–100); the response has `next_page` or null. `vault_search` also returns `entries.type` to the agent – an identifier built from the name of the type the user chose. Do not keep sensitive data in the names of types, projects and environments. Execute accepts the entry UUID, action and an 8–80 character `request_id`; use the same ID for a retry. Status/cancel take the returned opaque handle, valid only for that ticket and context. The response is additionally checked against a narrow type contract; no upstream fields are passed through automatically.
 
-**Įjungus external mode, senieji `credentials` ir `credential_use` atsisako darbo su `use_external_vault_actions`.** Nėra fallback į modelio kontekstą išduodamą plaintext, net kai trūksta naujo failo ar Vault nepasiekiamas. Esami senos saugyklos įrašai automatiškai nemigruojami ir netrinami. Išjungtas jungiklis išlaiko ankstesnį ai-os elgesį; todėl išjungimo negalima laikyti saugaus Vault naudojimo režimu.
+**With external mode enabled, the old `credentials` and `credential_use` refuse to work with `use_external_vault_actions`.** There is no fallback to plaintext issued into the model context, even when the new file is missing or Vault is unreachable. Existing entries of the old store are not migrated or deleted automatically. The disabled switch keeps the previous ai-os behavior; so disabling it cannot be treated as a safe mode of using Vault.
 
-MFA ir `pending` patvirtinimus žmogus užbaigia Vault WEB „Prieigos ir veiksmai“. ai-os neturi owner cookie, OTP seed ar machine token savo modelio kontekste. Perduodant tik būseną nėra automatinio ticket pažadinimo; agentas gali tikrinti `vault_status` savo įprastu darbo ciklu.
+A human completes MFA and `pending` approvals in the Vault web UI under "Access". ai-os has no owner cookie, OTP seed or machine token in its model context. Since only the state is passed, there is no automatic ticket wake-up; the agent can check `vault_status` in its normal work cycle.
 
-## Bendras MCP ir CLI
+## General MCP and CLI
 
-`POST /api/mcp` yra stateless JSON-RPC transportas (initialize, ping, tools/list, tools/call); `/api/v1/catalog`, `/execute`, `/operations/{id}`, `/operations/{id}/cancel` – HTTP sąsaja. Abu naudoja bearer machine tapatybę, atmeta naršyklės Origin ir taiko IP bei token limitus. Ilgos SSE sesijos nereikia. Nežinomos po brokerio restarto operacijos žymimos failed ir nekartojamos.
+`POST /api/mcp` is a stateless JSON-RPC transport (initialize, ping, tools/list, tools/call); `/api/v1/catalog`, `/execute`, `/operations/{id}`, `/operations/{id}/cancel` are the HTTP interface. Both use the bearer machine identity, reject a browser Origin and apply IP and token limits. No long SSE session is needed. Operations unknown after a broker restart are marked failed and not retried.
 
-`clients/vault.py` gali veikti patikimame host kaip CLI arba stdio MCP bridge:
+`clients/vault.py` can run on a trusted host as a CLI or a stdio MCP bridge:
 
 ```bash
-python3 clients/vault.py --config /privatus/klientas.json list
-python3 clients/vault.py --config /privatus/klientas.json execute <entry-uuid> <action> --request-id <stabilus-id>
-python3 clients/vault.py --config /privatus/klientas.json status <operation-uuid>
-python3 clients/vault.py --config /privatus/klientas.json cancel <operation-uuid>
-python3 clients/vault.py --config /privatus/klientas.json mcp
+python3 clients/vault.py --config /private/client.json list
+python3 clients/vault.py --config /private/client.json execute <entry-uuid> <action> --request-id <stable-id>
+python3 clients/vault.py --config /private/client.json status <operation-uuid>
+python3 clients/vault.py --config /private/client.json cancel <operation-uuid>
+python3 clients/vault.py --config /private/client.json mcp
 ```
 
-Failo schema tokia pati (url/token), teisės 0600, be symlink. Klientas nevykdo redirect ir neperima aplinkos HTTP proxy. Šio proceso failų skaitymas ar shell nėra modelio įrankis; jei LLM turi tą patį host administravimą, paslapčių atskyrimo pažadas nebegalioja. Integracijai ai-os naudokite jo trusted backend, ne config failą agento sandbox.
+The file schema is the same (url/token), permissions 0600, no symlinks. The client does not follow redirects and does not pick up the environment's HTTP proxy. This process's file reading or shell is not a model tool; if the LLM has the same host administration, the promise of secret separation no longer holds. For the ai-os integration, use its trusted backend, not a config file in the agent sandbox.
 
-## Connector aprašas
+## Connector definition
 
-Privatus `data/connectors/connectors.json` (atitinkamas aplinkos data kelias) turi `actions` objektą. Numatyta tuščia konfigūracija. Pavyzdys be tikrų reikšmių:
+The private `data/connectors/connectors.json` (the corresponding environment's data path) has an `actions` object. The default configuration is empty. An example without real values:
 
 ```json
 {
@@ -60,10 +60,10 @@ Privatus `data/connectors/connectors.json` (atitinkamas aplinkos data kelias) tu
 }
 ```
 
-API/CLI naudoja įrašo `token` lauką kaip Bearer ir grąžina sėkmę tik gavę 200. HTTP kūnas ir antraštės ignoruojami, CLI stdout/stderr sunaikinami. Tai fiksuotas receptas, ne savavališkos komandos paleidimas. Browser naudoja login `username`/`password`; MFA srautui pridėkite `mfa_selector` ir `mfa_submit_selector`. `success_text` tiksliai palyginamas, jo tekstas negrąžinamas. Vietinis kontekstas uždaromas; target serverio sesija gali gyventi iki jo nustatyto TTL.
+API/CLI use the entry's `token` field as the Bearer and return success only on a 200. The HTTP body and headers are ignored, CLI stdout/stderr are discarded. This is a fixed recipe, not arbitrary command execution. Browser uses the login `username`/`password`; for an MFA flow add `mfa_selector` and `mfa_submit_selector`. `success_text` is compared exactly, and its text is not returned. The local context is closed; the target server session can live until the TTL it sets.
 
-`allowed_requests` turi tiksliai įvardyti kiekvieną papildomą URL (įskaitant query) ir metodą: formas, MFA, redirect ir statinius resursus. Tik pradinis GET automatiškai leidžiamas. Kiekvienas navigacijos redirect į leidžiamą GET perleidžiamas per naują patikrą; POST išsaugantys 307/308 ir subresursų redirect atmetami. Neleistina užklausa, iframe/popup, WebSocket ar atsisiuntimo bandymas nutraukia visą operaciją su failed; net leidžiamo URL Content-Disposition attachment neperduodamas naršyklei. `timeout_seconds` gali sutrumpinti, bet ne pailginti 180 s ribą. `origins` leiskite tik būtinus, patikimus svetainės origin; neleiskite wildcard. Privatų tikslą leidžia tik tikslus operatoriaus CIDR, pvz. `"allow_cidrs":["10.20.30.40/32"]`. DNS proxy tikrina visus atsakymus ir pin'ina tikrą IP. HTTP leidžiamas tik test Compose fixture režime. Target, selectors, headers, command ir URL nėra modelio argumentai. Konfigūracija skaitoma kiekvieną operaciją, todėl prieš keičiant veiksmo prasmę atšaukite jo grants / užbaikite aktyvias operacijas ir iš naujo suteikite leidimus.
+`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources. Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
 
-DB connector: `kind=database`, `role=vault-...`, fiksuotas `host` ir `port`. Įrašo tipas `dynamic_database` ir slaptas `role` turi sutapti; vykdomas tik SELECT 1. Nereikia ir negalima pateikti DB slaptažodžio agentui. Testinis provisioninimas aprašytas runbook.
+DB connector: `kind=database`, `role=vault-...`, a fixed `host` and `port`. The entry type `dynamic_database` and the secret `role` must match; only SELECT 1 is executed. The DB password need not and cannot be given to the agent. Test provisioning is described in the runbook.
 
-Naują connector pradėkite su sintetine paskyra: patikrinkite normalų atsakymą, paslapties echo ir koduotą echo, redirect, neleistiną adresą, atšaukimą ir klaidas. Tik tada žmogus įveda tikrus prisijungimus WEB. Tipas `ssh` leidžia saugojimą/peržiūrą, bet šioje versijoje neturi vykdymo recepto.
+Start a new connector with a synthetic account: check the normal response, secret echo and encoded echo, redirect, a disallowed address, revocation and errors. Only then does a human enter the real credentials in the web UI. The `ssh` type allows storage/viewing but has no execution recipe in this version.

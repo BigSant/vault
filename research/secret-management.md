@@ -1,141 +1,141 @@
-# Prisijungimų saugykla žmonėms ir LLM: tyrimas ir siūloma kryptis
+# A credential vault for people and LLMs: research and proposed design
 
-Patikrinta 2026-11-10. Kontekstas: `BigSant/vault`, planuojama PHP 8.5 ir MySQL 8.4 aplikacija. Tai dokumentacijos tyrimas ir architektūros pasiūlymas, ne įdiegtos sistemos saugumo auditas ar konkrečių versijų suderinamumo bandymas. Realios paslaptys neskaitytos, niekas nediegta.
+Reviewed 2026-11-10 for this vault project, a planned PHP 8.5 and MySQL 8.4 application. This documentation review and architecture proposal did not audit a deployed system or test specific versions for compatibility. No real secrets were read and nothing was installed.
 
-**Pagrindinė rekomendacija:** kurti žmogui patogų paslapčių katalogą ir ribotų veiksmų brokerį virš patikimo paslapčių saugojimo backend. LLM gauna įrašų identifikatorius, leistinus metaduomenis ir veiksmų rezultatus; tik patikimas vykdytojas gauna tikrąją reikšmę. LLM skirtame API neturi būti `get_secret`, universalaus shell ar nevaržomo autentifikuoto HTTP tarpininko.
+**Main recommendation:** Build a secret catalog for people and a broker for narrowly defined actions on top of a trusted secrets backend. The LLM gets entry identifiers, permitted metadata and action results. Only the trusted executor gets the actual value. The LLM API must exclude `get_secret`, general-purpose shell access and unrestricted authenticated HTTP proxying.
 
-Naudotojas patikslino, kad **API/CLI ir naršyklės prisijungimai yra vienodai svarbūs**. Toliau pateiktos mūsų rekomendacijos suderintos su šiuo prioritetu: abi kryptys įtrauktos į pirmą LLM etapą. Konkreti vykdymo sutartis ir priėmimo scenarijai aprašyti [architektūros pasiūlyme](../docs/architecture.md). Tiekėjų dokumentacijos faktai dėl šio prioriteto nesikeičia.
+**API/CLI and browser logins have equal priority.** Both are part of the first LLM phase. The [architecture proposal](../docs/architecture.md) defines the execution contract and acceptance scenarios. This priority does not change the facts documented by vendors.
 
-Toliau skyriuje „Dokumentacijos faktai“ pateikti tiekėjų dokumentuoti mechanizmai. Likę skyriai yra **mūsų rekomendacijos ir grėsmių modelio išvados**, o ne šaltinių žadamos garantijos.
+The documentation findings below describe vendor-documented mechanisms. The remaining sections give **design recommendations and threat model conclusions**. The sources do not guarantee these outcomes.
 
-## Dokumentacijos faktai ir pritaikymas
+## Documentation findings and application
 
-Penkios pagrindinės oficialios nuorodos; papildomi patikrinti puslapiai prie atitinkamo punkto pagrindžia atskiras funkcijas.
+Five primary official references follow, with additional pages documenting individual features.
 
-### 1. 1Password: nuorodos ir `op run`
+### 1. 1Password: references and `op run`
 
-Šaltinis: [Load secrets into the environment](https://www.1password.dev/cli/secrets-environment-variables). Senasis `developer.1password.com/docs/cli/secrets-environment-variables/` tyrimo metu nukreipė į šį adresą.
+Source: [Load secrets into the environment](https://www.1password.dev/cli/secrets-environment-variables). During the review, the old `developer.1password.com/docs/cli/secrets-environment-variables/` address redirected here.
 
-**Faktai.** Secret reference identifikuoja vault, item, section ir field vardais arba ID; pavyzdinė forma yra `op://vault/item/field`. `op run` išsprendžia nuorodas ir paleidžia procesą su tikrosiomis reikšmėmis aplinkos kintamuosiuose. Dokumentacija perspėja: „You should assume that processes on your computer can access the environment of other processes run by the same user.“
+**Findings.** A secret reference identifies a vault, item, section and field by name or ID, for example `op://vault/item/field`. `op run` resolves references and starts a process with the actual values in environment variables. The documentation warns, “You should assume that processes on your computer can access the environment of other processes run by the same user.”
 
-**Mūsų pritaikymas.** Repo ir agento kontekste naudoti stabilius identifikatorius. Nuoroda yra adresas, ne leidimas: ją išsprendžiantis komponentas privalo patikrinti teises. `op run` tinkamas patikimai programai paleisti, tačiau LLM valdoma programa, turinti jos aplinką, gali perskaityti paslaptį. Tai nėra izoliacija nuo tos programos.
+**Application.** Use stable identifiers in the repository and agent context. A reference identifies a location. The component that resolves it must check permissions. Use `op run` to launch a trusted program. An LLM-controlled program can read a secret in its environment, so this provides no isolation from that program.
 
-### 2. 1Password Connect: backend integravimo pavyzdys
+### 2. 1Password Connect: backend integration example
 
-Šaltinis: [1Password Connect](https://www.1password.dev/connect).
+Source: [1Password Connect](https://www.1password.dev/connect).
 
-**Faktai.** Connect suteikia privatų REST API programoms pasiekti 1Password įrašus ir vault. Jis talpina duomenų kopiją organizacijos infrastruktūroje; dokumentacija tai įvardija kaip „cache your data in your infrastructure“.
+**Findings.** Connect provides a private REST API for applications to access 1Password items and vaults. It caches a copy of the data on the organization's infrastructure, described as “cache your data in your infrastructure.”
 
-**Mūsų pritaikymas.** Backend adapteris gali skaityti paslaptis per Connect, jeigu 1Password jau naudojamas. Connect API ir jo prieigos duomenis pasiekia brokeris, o ne LLM įrankis. Vietinė kopija reiškia papildomą saugotiną komponentą. Privatus REST API savaime nepaverčia grąžinamos paslapties nematoma klientui.
+**Application.** A backend adapter can read secrets through Connect where 1Password is already in use. Restrict the Connect API and credentials to the broker and keep them out of the LLM tool. The local copy is another component to protect. A private REST API still exposes returned secrets to its client.
 
-### 3. Bitwarden Secrets Manager: projektai ir mašininės tapatybės
+### 3. Bitwarden Secrets Manager: projects and machine identities
 
-Šaltinis: [Machine Accounts](https://bitwarden.com/help/machine-accounts/). Papildomai: [Projects](https://bitwarden.com/help/projects/).
+Source: [Machine Accounts](https://bitwarden.com/help/machine-accounts/). Additional reference: [Projects](https://bitwarden.com/help/projects/).
 
-**Faktai.** Machine account atstovauja ne žmogui, o programai ar vykdymo procesui. Jai priskiriami projektai ir prieigos teisės, o access token leidžia programinę prieigą prie paslapčių. `Can read` leidžia nuskaityti projektų paslaptis; tai nėra vien teisė jas panaudoti slepiant reikšmę. Projektai grupuoja paslaptis, žmones ir machine accounts; pagal patikrintą puslapį viena paslaptis vienu metu priklauso vienam projektui.
+**Findings.** A machine account represents an application or running process. It receives project assignments and permissions, and an access token allows programmatic access to secrets. `Can read` exposes project secret values to the reader. Projects group secrets, people and machine accounts. The reviewed page says a secret belongs to one project at a time.
 
-**Mūsų pritaikymas.** Atskiros agentų tapatybės ir atskiros brokerio backend tapatybės. Agentui suteikti `metadata:read` ir konkrečius `action:execute`, brokeriui – tik reikiamos aplinkos paslapčių skaitymą. Nesuteikti vieno visiems projektams bendro token. Mūsų `use` teisė būtų papildoma brokerio semantika, ne Bitwarden `read` pervadinimas.
+**Application.** Give agents their own identities and the broker separate backend identities. Grant the agent `metadata:read` and specific `action:execute` permissions. Restrict broker reads to secrets in the required environment. Avoid sharing one token across projects. A `use` permission would introduce additional broker semantics distinct from Bitwarden's `read`.
 
-### 4. Infisical: aplinkos, keliai ir dinaminės paslaptys
+### 4. Infisical: environments, paths and dynamic secrets
 
-Šaltinis: [Access control in Secrets Management](https://infisical.com/docs/documentation/platform/secrets-mgmt/concepts/access-control). Papildomai: [Dynamic secrets](https://infisical.com/docs/documentation/platform/dynamic-secrets/overview).
+Source: [Access control in Secrets Management](https://infisical.com/docs/documentation/platform/secrets-mgmt/concepts/access-control). Additional reference: [Dynamic secrets](https://infisical.com/docs/documentation/platform/dynamic-secrets/overview).
 
-**Faktai.** Paslaptys susiejamos su aplinka ir keliu; aplinkos atskiria `development`, `staging`, `production`, o keliai grupuoja, pavyzdžiui, `/redis` ar `/checkout-service`. Projektų rolės riboja pasiekiamas aplinkas ir kelius. Dinaminės paslaptys generuojamos pagal poreikį, numatytas jų atšaukimas. Tyrimo metu dinaminių paslapčių puslapis nurodė „Advanced“ planą ir licencijos poreikį savarankiškam diegimui.
+**Findings.** Secrets belong to an environment and path. Environments separate `development`, `staging` and `production`. Paths group secrets under locations such as `/redis` or `/checkout-service`. Project roles restrict accessible environments and paths. Dynamic secrets are generated on demand and support revocation. At the time of review, the dynamic secrets page specified the “Advanced” plan and a license requirement for self-hosting.
 
-**Mūsų pritaikymas.** Aplinka turi būti privaloma saugumo riba, folder – papildomas grupavimas. `prod` negali būti automatinė trūkstamo `dev` įrašo alternatyva. Dinaminius prisijungimus planuoti vėlesniam etapui, įvertinus licenciją ir tikslinių paslaugų galimybes. Trumpas galiojimas sumažina panaudojimo langą, bet nepašalina nutekėjimo ar piktnaudžiavimo galiojančiu prisijungimu.
+**Application.** Make the environment a mandatory security boundary and use folders for additional grouping. Never fall back to `prod` when a `dev` entry is missing. Plan dynamic credentials for a later phase after evaluating licensing and target service capabilities. Short lifetimes reduce the window for use. Credentials can still leak or be misused while valid.
 
-### 5. OpenBao: response wrapping ir dinaminiai DB prisijungimai
+### 5. OpenBao: response wrapping and dynamic DB credentials
 
-Šaltinis: [Response wrapping](https://openbao.org/docs/concepts/response-wrapping/). Papildomai: [Databases](https://openbao.org/docs/secrets/databases/). Atvertuose puslapiuose buvo nurodyta dokumentacijos versija 2.7.x.
+Source: [Response wrapping](https://openbao.org/docs/concepts/response-wrapping/). Additional reference: [Databases](https://openbao.org/docs/secrets/databases/). The reviewed pages identified documentation version 2.7.x.
 
-**Faktai.** Response wrapping pakeičia tikrą API atsakymą vienkartiniu token; atsakymas atgaunamas per `unwrap`. Token galiojimo laikas yra atskiras nuo perduodamos paslapties galiojimo. DB secrets engine pagal roles generuoja unikalius prisijungimus kiekvienai užklausai ir naudoja lease bei atšaukimo mechanizmą. Dokumentacija kalba apie atšaukimą per pagrįstą laiką pasibaigus lease, todėl tai nėra garantuotas momentinis visų aktyvių sesijų nutraukimas.
+**Findings.** Response wrapping replaces the API response with a single-use token. The recipient retrieves the response via `unwrap`. Token lifetime is independent of the secret's lifetime. The DB secrets engine generates unique credentials per request based on roles and supports leases and revocation. The documentation describes revocation within a reasonable time after lease expiry. Active sessions may survive expiry.
 
-**Mūsų pritaikymas.** Wrapping naudingas perduodant atsakymą tarp patikimų komponentų. LLM jo token neduoti: kas gali token išpakuoti, tas gali gauti paslaptį. DB veiksmui brokeris ateityje galėtų išduoti trumpalaikį, tik tam veiksmui tinkamą prisijungimą savo vykdytojui, po veiksmo jį atšaukti ir stebėti nesėkmingus atšaukimus. Dinaminio MySQL 8.4 vartotojo kūrimą, teises, atšaukimą ir aktyvias sesijas reikės patikrinti integraciniu bandymu.
+**Application.** Use wrapping to transfer responses between trusted components. Keep wrapping tokens away from the LLM because anyone who can unwrap one can retrieve the secret. For a future DB action, the broker could issue short-lived, action-specific credentials to its executor, revoke them afterward and monitor revocation failures. Test dynamic MySQL 8.4 user creation, privileges, revocation and active sessions in an integration test.
 
-## Pasitikėjimo ribos ir API
+## Trust boundaries and API
 
-Tikslas – sumažinti galimybę tikrosioms reikšmėms patekti į modelio įvestį, įrankių atsakymus, pokalbio istoriją ir agento skaitomus artefaktus. Modelio raginimas „neatskleisk slaptažodžio“ nėra techninė prieigos kontrolė.
+Reduce the risk of secret values reaching model inputs, tool responses, conversation history and agent-readable artifacts. Telling a model “do not reveal the password” provides no technical access control.
 
-Rekomenduojamas srautas:
+Recommended flow:
 
 ```text
-Žmogus → atskiras WEB prisijungimas → katalogas / įvedimas / atskleidimas pagal teises
-LLM → autentifikuotas veiksmų API → politika → patikimas brokeris → tikslinė paslauga
-                                                    ↓
-                                           paslapčių backend
-LLM ← tik apibrėžtas rezultatas ← išvesties schema ← brokeris
+Human → separate web login → catalog / input / reveal according to permissions
+LLM → authenticated action API → policy → trusted broker → target service
+                                                 ↓
+                                           secrets backend
+LLM ← defined result only ← output schema ← broker
 ```
 
-`get_secret(id) → plaintext` tiesiogiai prieštarauja tikslui, jeigu atsakymą gauna LLM įrankis. Galimas vidinis backend skaitymo metodas, kurį kviečia tik patikimas brokeris. Žmogaus atskleidimo funkcija turi atskirą autentifikaciją ir leidimą; jos negali pasiekti agento tapatybė.
+`get_secret(id) → plaintext` defeats the objective if an LLM tool receives the response. A backend may expose an internal read method exclusively to the trusted broker. Human reveal requires separate authentication and permission. Agent identities must have no access to it.
 
-Siūlomas agento API:
+Proposed agent API:
 
-- `list_entries(workspace_id, project_id, environment_id, type)` grąžina tik leidžiamus metaduomenis ir galimus veiksmus.
-- `execute_action(entry_id, action_id, parameters, request_id)` leidžia tik serverio apibrėžtą veiksmą ir griežtą parametrų schemą.
-- `get_action_result(operation_id)` grąžina ribotą rezultatą; patikrinama operacijos priklausomybė kvietėjui ir workspace.
+- `list_entries(workspace_id, project_id, environment_id, type)` returns only permitted metadata and available actions.
+- `execute_action(entry_id, action_id, parameters, request_id)` accepts only a server-defined action with a strict parameter schema.
+- `get_action_result(operation_id)` checks that the operation belongs to the caller and workspace before returning a limited result.
 
-Pirmas konkretus veiksmas galėtų būti `database.check_connection`: serveris pasirenka registruotą MySQL tikslą, prisijungia ir įvykdo fiksuotą `SELECT 1`, o grąžina tik `ok`, bendrą klaidos kodą bei `operation_id`. Nei connection string, nei slaptažodis, nei neapdorota DB klaida negrąžinami. LLM negali pateikti SQL, shell, host, proxy, URL ar savavališkų HTTP antraščių.
+A first action could be `database.check_connection`. The server selects a registered MySQL target, connects and runs a fixed `SELECT 1`. It returns only `ok`, a generic error code and `operation_id`. The connection string, password and raw DB error stay private. The LLM cannot supply SQL, shell commands, hosts, proxies, URLs or arbitrary HTTP headers.
 
-Brokerio vykdomas kodas, veiksmų registras, paskirties adresai ir politika turi būti neprieinami agento rašymui. Jeigu agentas gali pakeisti vykdytojo skriptą prieš paleidimą, leistinų veiksmų sąrašas nebesaugo. Gamybinį brokerį diegti iš peržiūrėto artefakto, ne iš agento redaguojamo bind mount.
+The agent must have no write access to broker code, the action registry, destinations or policy. An allowlist loses its protection if the agent can edit the executor script before launch. Deploy the production broker from a reviewed artifact. Keep agent-editable bind mounts out of the deployment.
 
-## Išnešimo rizikos ir valdymas
+## Exfiltration risks and controls
 
-**Šis skyrius – mūsų grėsmių analizė.** Kontrolės riboja konkrečius kanalus, tačiau nėra visų galimų nutekėjimų nebuvimo įrodymas.
+**This section gives the threat analysis.** Each control limits specific channels. Other leaks may still be possible.
 
-| Kanalas | Kaip paslaptis gali patekti agentui arba pašaliniam gavėjui | Rekomenduojama riba |
+| Channel | How a secret can reach the agent or another recipient | Recommended control |
 | --- | --- | --- |
-| Arbitrary shell / procesas | Agentas pasirenka kodą, kuris nuskaito jam įduotą paslaptį, pakeičia koduotę ir išsiunčia ją. | Veiksmų API nepriima komandų ar vykdomų failų. Vykdytojas nekrauna agento valdomo kodo, įskiepių ar konfigūracijos. |
-| `stdout`, `stderr`, klaidos | SDK, HTTP ar DB klaida, diagnostika arba pats procesas išspausdina reikšmę. | Fiksuota rezultatų schema, bendri klaidų kodai, jokių žalių išvesčių. Maskavimas – tik papildomas sluoksnis; transformuotos ir dalinės reikšmės gali jo išvengti. |
-| `env`, argumentai, failai, atmintis | Procesų aplinka, argumentų sąrašai, `/proc`, laikini failai, core dump ar bendri volume atskleidžia reikšmę. | Atskira tapatybė ir izoliacija, be bendro PID namespace ar agentui skaitomų volume. Slaptų argumentų vengti; reikšmes laikyti kuo trumpiau. Aplinkos kintamieji nėra nematomumo garantija. |
-| Browser DOM ir screenshot | `type=password` maskuoja vaizdą, tačiau neapsaugo nuo DOM / JS skaitymo; „rodyti“ mygtukas ar automatinė kopija atskleidžia reikšmę. | Žmogaus saugyklos puslapis ir sesija nepasiekiami LLM naršyklei. Paslapties nesiųsti į DOM iki autorizuoto atskleidimo. Autentifikuotą naršyklės vykdytoją izoliuoti atskirai ir tikrinti tame pačiame pirmajame LLM etape kaip API/CLI. |
-| Trace, HAR, video, log, telemetrija | Užklausų kūnai, Authorization, cookies, tinklo įrašai, session replay ir ekrano video gali išsaugoti prisijungimus. | Paslapčių keliuose išjungti turinio įrašymą ir session replay; loginti tik leidžiamus laukus. Trace ir klaidų eksportavimą tikrinti su fiktyviomis paslaptimis. |
-| Prompt injection | Svetainė, README ar paslapties aprašymas liepia atskleisti reikšmę ar pakeisti paskirtį. | Metaduomenys ir išoriniai atsakymai laikomi nepatikimais duomenimis. Tapatybę, leidimą, parametrus ir paskirtį tikrina serveris nepriklausomai nuo prompt. Agentas negali pats išplėsti politikos. |
-| SSRF ir HTTP nukreipimai | LLM pakeičia URL, nukreipimą, DNS ar proxy ir nusiunčia autentifikaciją svetimam serveriui arba pasiekia metaduomenų tarnybą. | Tik iš anksto registruotos paskirtys, serverio parinkta schema / host / port / kelias. Išjungti nukreipimus, tikrinti TLS, riboti egress tinklo lygiu, užkirsti DNS rebinding; vidinius adresus leisti tik konkrečioms registruotoms paslaugoms. |
-| Autentifikuotas rezultatas | Net ir patikima paskirtis gali atkartoti token arba grąžinti jautrius verslo duomenis. | Nesuteikti universalaus proxy. Kiekvienas veiksmas apibrėžia grąžinamus laukus, dydį ir leidžiamą turinį; tikrinti ir atsakymą, ne tik užklausą. |
-| Sesijos ir deleguoti token | Slaptažodis lieka paslėptas, tačiau cookie, bearer token ar wrapping token suteikia panašias galias. | Juos taip pat laikyti paslaptimis. LLM perduoti tik brokerio operacijos ID, nesuteikiant tiesioginės tikslinės sesijos. |
+| Arbitrary shell / process | The agent selects code that reads a supplied secret, changes its encoding and sends it out. | The action API rejects commands and executables. The executor loads no agent-controlled code, plugins or configuration. |
+| `stdout`, `stderr`, errors | An SDK, HTTP or DB error, diagnostics or the process itself prints the value. | Use a fixed result schema and generic error codes. Exclude raw output. Masking adds a layer of protection but can miss transformed or partial values. |
+| `env`, arguments, files, memory | Process environments, argument lists, `/proc`, temporary files, core dumps or shared volumes expose the value. | Use a separate identity and isolation, with no shared PID namespace or agent-readable volumes. Avoid secret arguments and retain values as briefly as possible. Environment variables can be read. |
+| Browser DOM and screenshots | `type=password` masks the display but allows DOM / JS reads. A “show” button or automatic copy exposes the value. | Keep the human vault page and session inaccessible to the LLM browser. Send secrets to the DOM only after an authorized reveal. Isolate the authenticated browser executor and test it alongside API/CLI in the first LLM phase. |
+| Traces, HAR, video, logs, telemetry | Request bodies, Authorization headers, cookies, network records, session replays and screen recordings can retain credentials. | Disable content recording and session replay on secret-handling paths. Log only approved fields. Test trace and error exports using dummy secrets. |
+| Prompt injection | A website, README or secret description instructs the agent to reveal a value or change the destination. | Treat metadata and external responses as untrusted data. The server checks identity, permission, parameters and destination independently of the prompt. The agent cannot expand its own policy. |
+| SSRF and HTTP redirects | The LLM changes a URL, redirect, DNS or proxy and sends credentials to an unintended server or reaches a metadata service. | Allow only preregistered destinations with a server-selected scheme, host, port and path. Disable redirects, verify TLS, restrict network egress and prevent DNS rebinding. Allow internal addresses only for specific registered services. |
+| Authenticated result | Even a trusted destination can echo a token or return sensitive business data. | Exclude general-purpose proxies. Each action defines response fields, size and allowed content. Validate both request and response. |
+| Sessions and delegated tokens | A cookie, bearer token or wrapping token can confer similar powers while the password stays hidden. | Treat these as secrets too. Give the LLM only the broker operation ID, with no direct target session. |
 
-Jeigu agentas turi brokerio host `root`, Docker socket, debugger / `ptrace`, saugyklos raktus arba gali vykdyti arbitrary process brokerio tapatybe, **absoliučios paslapčių nepasiekiamumo garantijos nėra**. Vien kitas konteineris tame pačiame agento administruojamame host šios ribos nesukuria. Patikimą brokerį ir backend laikyti agento neadministruojamoje VM ar serveryje; vietinis Docker pagrindas gali būti kūrimo aplinka su fiktyviais duomenimis.
+If the agent has broker host `root` access, the Docker socket, a debugger / `ptrace`, vault keys or arbitrary process execution as the broker, **secret isolation cannot be guaranteed**. A separate container on an agent-administered host does not establish this boundary. Run the trusted broker and backend on a VM or server outside agent administration. Local Docker can serve as a development environment with dummy data.
 
-Net neatskleidžiant reikšmės, `execute` teisė leidžia veikti kitos paskyros vardu. Reikia riboti veiksmų apimtį, dažnį ir trukmę, atšaukti prieigą bei audituoti. Destruktyviems ar jautriems gamybiniams veiksmams numatyti atskirą žmogaus patvirtinimo politiką.
+Even with secret values hidden, `execute` permission allows actions on behalf of another account. Limit action scope, frequency and duration, support revocation and audit use. Define a separate human approval policy for destructive or sensitive production actions.
 
-## Siūlomas organizavimo modelis
+## Proposed organization
 
-Pagrindinė hierarchija: `workspace → project → environment → entry`. `type` yra įrašo tipas ir filtras, o pasirenkamas `folder` – grupavimas aplinkos viduje. Žmogaus navigacija gali rodyti `workspace / project / environment / type`, tačiau nereikia dubliuoti įrašo kiekvienam filtrui.
+The hierarchy is `workspace → project → environment → entry`. The `type` field identifies the entry type and serves as a filter. An optional `folder` groups entries within an environment. Human navigation can show `workspace / project / environment / type` without duplicating entries for each filter.
 
-- **Workspace:** organizacijos, kliento ar asmeninės erdvės izoliavimo riba; atskira narystė.
-- **Project:** produktas arba sistema; priklauso vienam workspace.
-- **Environment:** `dev`, `staging`, `prod` arba aiškiai pavadinta `shared`; priklauso projektui. Jokio tylaus perėjimo tarp aplinkų.
-- **Entry:** stabilus UUID, pavadinimas, tipas (`login`, `database`, `api_token`, `ssh_key`, `certificate`), aplinka, folder, savininkas, žymos, rotacijos būsena ir backend nuoroda. Slaptos reikšmės – backende. Vartotojo vardas, URL ir pastabos irgi gali būti jautrūs, todėl jų viešumas nėra numanomas.
-- **Machine identity:** konkretaus agento / integracijos tapatybė; atskiri galiojimai ir atšaukimas.
-- **Action definition / grant:** įrašo ir leistino veiksmo susiejimas su parametrais, paskirtimi, principal, galiojimu ir patvirtinimo taisyklėmis.
-- **Audit event:** kas, kada, kurioje aplinkoje ir kokį veiksmą atliko, politikos versija, rezultato kodas, operacijos ID; be paslapčių ir neapdorotų parametrų.
+- **Workspace:** Isolation boundary for an organization, client or personal space, with separate membership.
+- **Project:** A product or system belonging to one workspace.
+- **Environment:** A project's `dev`, `staging`, `prod` or explicitly named `shared` environment. Never switch environments silently.
+- **Entry:** Stable UUID, name, entry type (`login`, `database`, `api_token`, `ssh_key`, `certificate`), environment, folder, owner, tags, rotation status and backend reference. The backend holds secret values. Usernames, URLs and notes may also be sensitive. Keep their visibility explicit.
+- **Machine identity:** Identity for a specific agent or integration, with independent expiry and revocation.
+- **Action definition / grant:** Associates an entry and permitted action with parameters, destination, principal, validity and approval rules.
+- **Audit event:** Records who did what, when and in which environment, plus policy version, result code and operation ID. Exclude secrets and raw parameters.
 
-MySQL ryšiais ir užklausomis privaloma užtikrinti, kad projektas, aplinka ir įrašas priklauso tam pačiam workspace. UUID žinojimas nesuteikia prieigos. Teisės tikrinamos sąrašuose, vieno įrašo užklausose, veiksmuose ir rezultate. Įrašo perkėlimas į kitą aplinką turi iš naujo įvertinti suteiktas teises.
+MySQL relationships and queries must enforce that the project, environment and entry belong to the same workspace. Knowing a UUID grants no access. Check permissions on lists, individual entry requests, actions and results. Reevaluate grants when moving an entry to another environment.
 
-## Žmogaus WEB navigacija
+## Web navigation for people
 
-Viršuje – workspace parinkimas. Kairėje – projektai, „Visi įrašai“, „Mašininės tapatybės“, „Prieigos“, „Auditas“. Projekto viduje – aiškus aplinkos perjungiklis, aplinkos folder medis ir tipų filtrai. `prod` matoma tekstu ir spalva; aplinka išlieka matoma atveriant įrašą ar vykdant veiksmą.
+Place the workspace selector at the top. Put Projects, “Entries”, “Machine identities”, “Access” and “Activity” on the left. Within a project, show an environment switcher, an environment folder tree and entry type filters. Identify `prod` with both text and color. Keep the environment visible when opening entries or running actions.
 
-Sąraše rodyti pavadinimą, tipą, savininką, atnaujinimą, rotacijos būseną ir leistinus veiksmus. Slapta reikšmė nepatenka į pradinį HTML, JSON ar paieškos indeksą. Įrašo kortelėje: „Apžvalga“, „Prieigos“, „Veiksmai“, „Istorija“. „Kopijuoti nuorodą“ atskirta nuo „Atskleisti / kopijuoti paslaptį“; pastarajam taikoma žmogaus teisė, prireikus pakartotinis tapatybės patvirtinimas ir auditas. Atskleidimo atsakymams nenaudoti cache. Įvedimo srautui taip pat išjungti request body logus.
+List each entry's name, type, owner, update time, rotation status and permitted actions. Exclude secret values from initial HTML, JSON and the search index. The proposed entry card groups overview, access, actions and history. Separate “Copy reference” from revealing or copying a secret. Reveal requires human permission, reauthentication when needed and an audit event. Disable caching for reveal responses and request body logging for secret input.
 
-Pirma versija gali nukreipti žmogų į esamo backend saugią įvedimo ir atskleidimo sąsają. Jei būtinas vientisas mūsų WEB redagavimas, jo slaptų duomenų kelias turi likti atskirtas nuo agento API, o laikinos reikšmės neturi patekti į aplikacijos eilės žinutes, sesijų saugyklą ar telemetriją.
+The first version can direct users to the existing backend's secure input and reveal interface. If integrated web editing is required, keep its secret-handling path separate from the agent API. Keep temporary values out of application queue messages, session storage and telemetry.
 
-## Esamas backend prieš savą kriptografiją
+## Existing backend versus custom cryptography
 
-Rekomenduojama pradėti nuo vieno backend adapterio. Jei tinkamas backend jau eksploatuojamas, naudoti jį; jei viskas kuriama nuo pradžių ir prioritetas yra savarankiškas valdymas bei būsimi dinaminiai DB prisijungimai, pirmiausia vertinti OpenBao. 1Password Connect prasmingas turint 1Password; Bitwarden suteikia aiškų projektų ir machine account modelį; Infisical artimas pageidaujamam aplinkų / folder organizavimui, bet funkcijų licencijas reikia vertinti atskirai.
+Start with one backend adapter. Use a suitable backend already in operation. For a new self-managed deployment that will need dynamic DB credentials, evaluate OpenBao first. 1Password Connect fits existing 1Password deployments. Bitwarden offers a clear project and machine account model. Infisical closely matches the proposed environment and folder structure, though individual features need a licensing review.
 
-PHP 8.5 aplikacija ir MySQL 8.4 saugotų metaduomenis, politikas bei auditą, o backend – tikrąsias reikšmes ir jų versijas. Backend pasirinkimas nebūtinai naudos tą pačią MySQL infrastruktūrą. Įvesti siaurą adapterio sąsają, tačiau pirmame etape nekurti visų tiekėjų palaikymo. Duomenų tarp katalogo ir backend neatitikimams numatyti aiškias būsenas ir pakartojamą suderinimą: išorinės paslapties rašymas ir MySQL transakcija nėra viena atominė operacija.
+The PHP 8.5 application and MySQL 8.4 would store metadata, policies and audit events. The backend would store values and versions and may use different infrastructure from MySQL. Define a narrow adapter interface and support one vendor in the first phase. A write to the external secrets backend and a MySQL transaction are separate operations. Define explicit states and repeatable reconciliation for discrepancies.
 
-Nerekomenduojama pradėti nuo lentelės su užšifruotu `password` ir bendru raktu aplikacijos `.env`. Net naudojant patikimą šifravimo biblioteką lieka raktų saugojimas, rotacija, atsarginės kopijos, vientisumas, versijavimas, autorizacija ir atkūrimas. Backend nepanaikina šių operacinių pareigų: reikia TLS, ribotų brokerio kredencialų, jų pradinio saugaus suteikimo, raktų atkūrimo plano, atnaujinimų ir išbandytų backup. Negalima brokerio paleidimo paslapties laikyti tik tame backende, kuriam atrakinti jos reikia.
+Avoid starting with an encrypted `password` column and a shared key in the application's `.env`. Even a trusted encryption library leaves key storage, rotation, backups, integrity, versioning, authorization and recovery to the operator. A backend still requires TLS, scoped broker credentials, secure initial provisioning, a key recovery plan, updates and tested backups. The broker's bootstrap secret needs a location accessible before the backend it unlocks is available.
 
-## Pirmas įgyvendinimo etapas ir priėmimo kriterijai
+## First implementation phase and acceptance criteria
 
-1. **Docker pagrindas su fiktyviais duomenimis.** PHP 8.5 ir MySQL 8.4, aiškiai apibrėžtos tinklo / failų prieigos. Šis etapas dar neturi teigti, kad apsaugo paslaptis nuo host administruojančio agento.
-2. **Katalogas ir autorizacija.** Workspace, project, environment, entry, type; žmogaus autentifikacija; atskira agento tapatybė. Pagal nutylėjimą viskas uždrausta. API pateikia tik leidžiamus metaduomenis.
-3. **Vienas backend adapteris.** Susieti katalogo įrašą su paslaptimi, išbandyti su sintetine reikšme. Agentui neduoti backend token ar skaitymo endpoint. Žmogaus įvedimas / atskleidimas per backend WEB arba atskirai apsaugotą mūsų srautą.
-4. **Abiejų krypčių brokerio veiksmai.** API/CLI kelyje – vienas API skaitymo veiksmas ir vienas fiksuotas CLI receptas; `database.check_connection` lieka galimo riboto veiksmo pavyzdys. Naršyklės kelyje – prisijungimas prie registruotos svetainės ir vienas leidžiamas skaitymo veiksmas, su izoliuota sesija ir žmogaus MFA perdavimu už LLM konteksto ribų. Tikslinės sistemos dar neparinktos; pradėti nuo kontroliuojamų testinių sistemų. Auditas ir agento API grąžina tik apibrėžtą rezultatą. Universalaus shell, SQL, HTTP proxy, DOM, JS ir naršyklės sesijos eksporto nėra.
-5. **Saugumo priėmimo bandymai.** Svetimo workspace ID, neleistina `prod`, išjungta tapatybė ir netinkami parametrai atmetami. Fiktyvi paslaptis nepatenka į API atsakymus, logus, trace ar pradinį WEB DOM. Bandyti backend klaidas, timeout, paskirties pakeitimą, prompt injection metaduomenyse ir agento bandymą keisti vykdytojo kodą. Patikrinti, kad agentas nepasiekia backend tinklo, kredencialų ir vykdytojo failų. Naršyklėje papildomai tikrinti cookies, token, CSRF reikšmių ir artefaktų neprieinamumą, MFA tęsinį, kontekstų atskyrimą, redirect / iframe / popup politiką, sesijos terminą ir atšaukimą. Abiejų krypčių patikros privalomos. Vien teksto paieška loguose nėra pakankamas saugumo įrodymas.
+1. **Docker foundation with dummy data.** Use PHP 8.5 and MySQL 8.4 with explicit network and file access. At this stage, make no claim of protection from an agent administering the host.
+2. **Catalog and authorization.** Model workspace, project, environment, entry and entry type. Authenticate people and give the agent a separate identity. Deny access by default. Return only authorized metadata from the API.
+3. **One backend adapter.** Link a catalog entry to a secret and test with a synthetic value. Keep backend tokens and read endpoints inaccessible to the agent. Provide human input and reveal through the backend web UI or a separately secured application flow.
+4. **Broker actions for both paths.** Provide one API read and one fixed CLI recipe. `database.check_connection` remains an example of a bounded action. For the browser, log in to a registered site and perform one permitted read using an isolated session and human MFA handoff outside the LLM context. Target systems have yet to be selected. Start with controlled test systems. The audit log and agent API expose only the defined result. Exclude general-purpose shell, SQL, HTTP proxy, DOM and JS access and browser session export.
+5. **Security acceptance tests.** Reject a foreign workspace ID, unauthorized `prod` access, a disabled identity and invalid parameters. Verify that dummy secrets stay out of API responses, logs, traces and the initial web DOM. Test backend errors, timeouts, destination changes, prompt injection in metadata and attempts by the agent to edit executor code. Verify that the agent cannot reach the backend network, credentials or executor files. For browsers, also test that cookies, tokens, CSRF values and artifacts are inaccessible. Check MFA continuation, context isolation, redirect / iframe / popup policy, session expiry and revocation. Both paths must pass. Searching logs for text alone provides insufficient security evidence.
 
-Vėliau pridėti dinaminius DB prisijungimus, lease atšaukimą ir atšaukimo nesėkmių stebėseną, jautrių veiksmų patvirtinimus bei daugiau konkrečių integracijų. Naršyklės prisijungimų grėsmių modelis įtrauktas jau į pirmą LLM etapą: DOM, cookies, screenshot ir trace sudaro papildomus slaptų duomenų kanalus.
+Later phases can add dynamic DB credentials, lease revocation and monitoring of revocation failures, sensitive action approvals and more specific integrations. The first LLM phase already includes the browser login threat model because the DOM, cookies, screenshots and traces add channels for secret data.
 
-**Etapo rezultatas:** žmogus gali rasti tinkamos aplinkos įrašą, autorizuotas agentas – atlikti apibrėžtus API/CLI ir autentifikuotos naršyklės veiksmus, o tikroji reikšmė bei sesijos duomenys nepateikiami agento API. Etapas nebaigtas, kol nepatikrintos abi kryptys. Šį teiginį riboja aprašyta izoliacija ir bandymų apimtis; jis negalioja agentui, valdančiam patikimą host ar vykdytojo procesą.
+**Phase outcome:** A person can find an entry in the correct environment. An authorized agent can perform defined API/CLI and authenticated browser actions. The agent API exposes neither secret values nor session data. Completion requires verification of both paths. This claim assumes the isolation described above and is limited to the scope of testing. It excludes agents that control the trusted host or executor process.

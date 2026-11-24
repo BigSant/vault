@@ -1,57 +1,57 @@
-# Vault architektūra
+# Vault architecture
 
-Įgyvendinta 2026-11-10 pagal [oficialių sistemų tyrimą](../research/secret-management.md). Tikslas – žmogui patogi saugykla ir LLM prieinami konkretūs veiksmai, kurių argumentuose bei rezultatuose nėra prisijungimo reikšmių. API/CLI ir naršyklė turi vienodą prioritetą. Pagrindinis klientas – ai-os.
+Implemented on 2026-11-10 based on the [research on official systems](../research/secret-management.md). The goal is a store that is convenient for a human and specific actions available to an LLM, with no credential values in their arguments or results. API/CLI and the browser have equal priority. The primary client is ai-os.
 
-## Duomenų modelis
+## Data model
 
-**Workspace → projektas → aplinka → įrašas.** Tipas (`login`, `api_key`, `database`, `dynamic_database`, `ssh`, `secure_note`) ir žymos yra atributai bei filtrai. Projektas automatiškai gauna local/test/stage/prod; galima pridėti savo aplinkas. `shared` galima naudoti bendriems įrašams, bet tarp aplinkų nėra jokio fallback ar leidimų paveldėjimo.
+**Workspace → project → environment → entry.** The entry type and tags are used for search and filtering. Each workspace manages its own entry types and their fields. The initial set of types is created the first time types are needed. A new project gets the environments listed in the workspace template (by default local, test, stage and prod). `shared` can be used for common entries, but there is no fallback or grant inheritance between environments.
 
-MySQL laiko tapatybes, slaptažodžių Argon2id hash, struktūrą, įrašo UUID, alias, tipą, versijos nuorodą, būseną, datas, grants, operacijas ir auditą. OpenBao KV v2 laiko tikrą tipizuotą JSON turinį bei savininkų TOTP seed. Įrašai rašomi CAS būdu, saugoma iki 20 versijų. Duomenų bazėje nėra plaintext paslapčių indekso. Alias yra aiškiai agentui patvirtintas tekstas; pavadinimas, naudotojo vardas ir tiksliniai adresai agentui negrąžinami.
+MySQL holds identities, Argon2id password hashes, the structure, the entry UUID, alias, type, version reference, state, dates, grants, operations and the audit. OpenBao KV v2 holds the actual typed JSON content and the owners' TOTP seeds. Entries are written with CAS, and up to 1000 versions are kept. Every change is recorded in `entry_changes`: who, when, which fields (keys only, not values) and which non-sensitive metadata changed. The MySQL `entry_types` table stores only the field definitions. Field values stay in OpenBao. The database has no plaintext secret index. The alias is text explicitly approved for the agent; the name, username and target addresses are not returned to the agent.
 
-Owner valdo narius, tapatybes ir politiką; editor kuria, keičia ir atskleidžia įrašus; viewer mato metaduomenis. Kiekvienas serverio veiksmas iš naujo patikrina darbo sritį. Paskutinio owner pašalinti negalima. Žmogaus ir agento autentifikacija atskira: cookie + slaptažodis + TOTP, arba ribotas bearer token hash.
+The owner manages members, identities and policy; the editor creates, changes and reveals entries; the viewer sees metadata. Every server action re-checks the workspace. The last owner cannot be removed. Human and agent authentication are separate: cookie + password + TOTP, or a restricted bearer token hash.
 
-## Moduliai ir eiga
+## Modules and flow
 
 ```text
-Žmogaus WEB → Identity / Access / Catalog → OpenBao (reikšmės)
-                                      └→ MySQL (struktūra, auditas)
-LLM → ai-os patikimas backend / MCP → Operations → brokeris
-                                    ↑              ├→ HTTPS API
-                           reautorizacija          ├→ fiksuotas CLI receptas
-                                                   ├→ Chromium + žmogaus MFA
-                                                   └→ dinaminė DB lease
+Human web UI → Identity / Access / Catalog → OpenBao (values)
+                                       └→ MySQL (structure, audit)
+LLM → ai-os trusted backend / MCP → Operations → broker
+                                   ↑              ├→ HTTPS API
+                          reauthorization         ├→ fixed CLI recipe
+                                                  ├→ Chromium + human MFA
+                                                  └→ dynamic DB lease
 ```
 
-- `Secrets` slepia OpenBao AppRole, CAS ir versijų skaitymą. WEB sesijos šifruotos aplikacijos raktu.
-- `Catalog` valdo tipizuotą turinį, paiešką, versijų grąžinimą, importą, archyvą ir sunaikinimą. Backend write ir SQL nėra viena paskirstyta transakcija: nesėkmė gali palikti nepasiekiamą backend orphan; nėra plaintext fallback.
-- `Operations` susieja machine, entry, action, versiją, konkretų patvirtinimą ir penkių minučių terminą. `request_id` užtikrina idempotency vienos tapatybės ribose. Dispatch claim įrašomas prieš vykdymą: avarija tame intervale baigiasi saugia nesėkme, o ne pakartotu išoriniu veiksmu.
-- Brokeris dar kartą tikrina leidimą prieš gavęs reikšmę, prieš naršyklės tinklo užklausas ir kas sekundę aktyvaus darbo metu. Nėra pažado atšaukti jau užbaigtą išorinį veiksmą. Atsakymai – tik serverio sugeneruotos būsenos/boolean.
-- Auditas fiksuoja veiksmą, subjektą, aktorių, laiką ir baigtį. Reikšmės, HTTP payload, MFA, exception argumentai ir brokerio stdout/stderr nefiksuojami.
+- `Secrets` hides the OpenBao AppRole, CAS and version reads. Web sessions are encrypted with the application key.
+- `Catalog` manages typed content, search, version restore, import, archive and destruction. The backend write and SQL are not one distributed transaction: a failure can leave an unreachable backend orphan; there is no plaintext fallback.
+- `Operations` binds the machine, entry, action, version, specific approval and a five-minute deadline. `request_id` ensures idempotency within one identity. The dispatch claim is written before execution: a crash in that interval ends in a safe failure, not a repeated external action.
+- The broker re-checks the grant before getting the value, before the browser's network requests and every second during active work. There is no promise to undo an external action that has already completed. Responses are only server-generated states/booleans.
+- The audit records the action, subject, actor, time and outcome. Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.
 
-Būsenos: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Naršyklės MFA teikia žmogus Vault WEB; kodas niekada neperduodamas agentui. Operacijos ID nėra teisė – būseną gauna tik ją sukūrusi machine tapatybė. ai-os papildomai pasirašo handle darbo srities, agento, projekto ir ticket kontekstu.
+States: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Browser MFA is supplied by a human in the Vault web UI; the code is never passed to the agent. An operation ID is not a permission – only the machine identity that created the operation gets its state. ai-os additionally signs the handle with the workspace, agent, project and ticket context.
 
-## Izoliacija
+## Isolation
 
-Brokeris prijungtas tik prie `internal` Docker tinklo. Egress proxy atskirai turi išorinį tinklą; leidžia tik operatoriaus registruotus host/port, tikrina visus DNS adresus ir jungiasi prie patikrinto IP. Privatūs adresai turi turėti aiškų CIDR leidimą. API/CLI neseka redirect; naršyklė leidžia tik tikslius registruotus URL ir metodus registruotuose origins, blokuoja iframe/popup, WebSocket ir service workers. HTTP fixture išimtis egzistuoja tik test Compose aplinkoje. Išoriniams tikslams naudojamas HTTPS.
+The broker is attached only to the `internal` Docker network. The egress proxy separately has the external network; it allows only operator-registered hosts/ports, checks all DNS addresses and connects to the verified IP. Private addresses must have an explicit CIDR allowance. API/CLI do not follow redirects; the browser allows only exact registered URLs and methods on registered origins, and blocks iframes/popups, WebSocket and service workers. The HTTP fixture exception exists only in the test Compose environment. External targets use HTTPS.
 
-Chromium paleidžiamas su user namespace sandbox, cap-drop ALL, no-new-privileges, ribotais procesais ir atmintimi. Kiekvienai operacijai naujas kontekstas, baigiant ar atšaukiant jis uždaromas. Agentas negauna browser valdymo, DOM, cookies, screenshots, HAR, trace ar CDP. Brokerio fiksuotas CLI vykdomas jo paties patikimame procese; modelis negali nurodyti shell, programos, URL, headers ar kodo.
+Chromium runs with the user namespace sandbox, cap-drop ALL, no-new-privileges, and limited processes and memory. Each operation gets a new context, which is closed on completion or revocation. The agent gets no browser control, DOM, cookies, screenshots, HAR, trace or CDP. The broker's fixed CLI runs in its own trusted process; the model cannot specify a shell, program, URL, headers or code.
 
-Tai nėra zero-knowledge sistema. WEB ir patikimas vykdytojas turi mokėti perskaityti reikšmes. Agentas su host/root/Docker ar backend kodo keitimo teisėmis šią ribą gali apeiti. Produkcinę ribą sudaro atskiras operatoriaus host/VM ir agento sandbox, o ne vien katalogo vardas ar maskavimo regex. Vidinis OpenBao HTTP ir MySQL srautas laikomas patikimo host tinklu; kelių host diegimui reikia atskiro TLS ir tinklo projekto.
+This is not a zero-knowledge system. The web UI and the trusted executor must be able to read the values. An agent with host/root/Docker or backend code change rights can bypass this boundary. The production boundary is a separate operator host/VM and an agent sandbox, not just a directory name or a masking regex. Internal OpenBao HTTP and MySQL traffic is treated as the trusted host's network; a multi-host deployment needs a separate TLS and network design.
 
-## WEB
+## Web UI
 
-Lietuviška responsive sąsaja: darbo srities pasirinkimas, paieška, projekto/aplinkos/tipo/būsenos filtrai, puslapiuojamas sąrašas ir atskiras detalės vaizdas. Prod turi tekstinę žymą. Slapti duomenys neatsiunčiami pradiniame detalės puslapyje; atskleidžiami atskira POST užklausa po penkių minučių galiojimo slaptažodžio patvirtinimo ir audito. Po 30 s paslepiami. Clipboard yra žmogaus OS funkcija – jo istorijos išvalymo negarantuojame.
+An English responsive UI: workspace selection, search, project/environment/type/state filters, a paginated list and a separate detail view. Prod has a text label. Secret data is not sent in the initial detail page; it is revealed by a separate POST request after a password confirmation valid for five minutes and an audit record. It is hidden after 30 s. The clipboard is a function of the human's OS – we do not guarantee clearing its history.
 
-Pending ir atrakintos sesijos susietos su slaptažodžio revizija; recovery ir MFA serializuojami vartotojo eilutės užraktu. TOTP apsaugotas nuo to paties laiko kodo pakartojimo. Sesijos idle terminas 20 min, absoliutus – 8 h. Naudojami HttpOnly/Secure/SameSite strict cookies, CSRF, CSP, no-store, rate limits ir bendri klaidų pranešimai. Mašinos tapatybė nesuteikia WEB reveal prieigos. Sunaikinant reikalaujama aiškaus DELETE patvirtinimo, kopijų retencija lieka atskira.
+Pending and unlocked sessions are tied to the password revision; recovery and MFA are serialized with a user row lock. TOTP is protected against reuse of a code from the same time step. The session idle timeout is 20 min, the absolute one 8 h. HttpOnly/Secure/SameSite strict cookies, CSRF, CSP, no-store, rate limits and generic error messages are used. A machine identity does not give web reveal access. Destruction requires an explicit DELETE confirmation; backup retention stays separate.
 
-## Etapai ir patikros
+## Stages and checks
 
-| Etapas | Įgyvendinimas | Įrodymas |
+| Stage | Implementation | Evidence |
 |---|---|---|
-| Docker ir tyrimas | bendras DDE, vietinis HTTPS, oficialių sistemų tyrimas | `health.php`, setup patikros |
-| Savininko saugykla | MFA, versijuotas backend, CRUD, paieška, auditas, kopijos/atkūrimas | PHPUnit, realus HTTPS e2e, isolated ir empty-target restore |
-| Abi LLM kryptys | MCP/API, fiksuotas CLI, naršyklė su MFA, allowlist ir grants | sintetinis echo, redirect, uždrausta paskirtis, MFA cancel |
-| Plėtra | keli savininkai, importas, laikinos teisės, dinaminė DB, valdomų raktų rotacija | application testai, DB lease e2e, operatoriaus komandos |
-| ai-os | patikimo backend integracija, scope config, ticket handle, išjungtas plaintext kelias įjungus external mode | izoliuotas kliento kontrakto testas ir native MCP testai |
+| Docker and research | shared DDE, local HTTPS, research on official systems | `health.php`, setup checks |
+| Owner store | MFA, versioned backend, CRUD, search, audit, backups/restore | PHPUnit, real HTTPS e2e, isolated and empty-target restore |
+| Both LLM directions | MCP/API, fixed CLI, browser with MFA, allowlist and grants | synthetic echo, redirect, forbidden destination, MFA cancel |
+| Expansion | multiple owners, import, temporary permissions, dynamic DB, managed key rotation | application tests, DB lease e2e, operator commands |
+| ai-os | trusted backend integration, scope config, ticket handle, plaintext path disabled when external mode is on | isolated client contract test and native MCP tests |
 
-Nuotolinių tikrų paskyrų konfigūravimas priklauso nuo operatoriaus įvestų adresų ir reikšmių. Tokio prisijungimo nelaikome patikrintu vien todėl, kad veikia fixture. Automatinė bet kokios svetainės slaptažodžio rotacija, CAPTCHA/WebAuthn bei laisvas naršymas nėra pažadėti šios versijos veiksmai. Tolimesni connector papildymai turi išlaikyti tą pačią reikšmių neišleidimo sutartį ir turėti savo neigiamus testus.
+Configuring real remote accounts depends on the addresses and values the operator enters. We do not consider such a login verified just because the fixture works. Automatic password rotation for any site, CAPTCHA/WebAuthn and free browsing are not promised actions of this version. Further connector additions must keep the same contract of not releasing values and have their own negative tests.
