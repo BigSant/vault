@@ -1,5 +1,17 @@
 @extends('layout')
-@section('title','Prisijungti')
-@section('content')<div class="auth-card"><span class="eyebrow">JŪSŲ PRIEIGOS. JŪSŲ TAISYKLĖS.</span><h1>{{ $setup ? 'Pradėkime nuo jūsų' : 'Sveiki sugrįžę' }}</h1><p class="muted">{{ $setup ? 'Sukurkite pirmą savininko paskyrą. Kitame žingsnyje įjungsite dviejų veiksnių autentifikaciją.' : 'Prisijunkite ir patvirtinkite tapatybę autentifikatoriaus kodu.' }}</p><form method="post" action="{{ $setup ? '/setup' : '/login' }}">@csrf
-@if($setup)<label>Vardas<input name="name" required maxlength="100" autocomplete="name"></label><label>Aktyvavimo kodas<input type="password" name="bootstrap_code" required autocomplete="off"></label><p class="hint">Kodą rasite diegimo metu nurodytame privačiame <code>bootstrap.code</code> faile. Nekelkite jo į pokalbį.</p>@endif
-<label>El. paštas<input type="email" name="email" required autocomplete="username"></label><label>Slaptažodis<input type="password" name="password" required minlength="{{ $setup ? 14 : 1 }}" maxlength="200" autocomplete="{{ $setup ? 'new-password' : 'current-password' }}"></label><button class="full">{{ $setup ? 'Sukurti paskyrą' : 'Tęsti' }} →</button></form></div>@endsection
+@section('title', $setup ? 'Set up' : 'Sign in')
+@section('bare', '1')
+@section('content')
+<form class="action" method="post" action="{{ $setup ? '/setup' : '/login' }}">@csrf
+    <h1>{{ $setup ? 'Create the first owner' : 'Sign in' }}</h1>
+    <p class="note">{{ $setup ? 'The next step turns on two-factor authentication.' : 'Then confirm with a code from your authenticator app.' }}</p>
+    @if($setup)
+        <label><span>Name</span><input name="name" required maxlength="100" autocomplete="name"></label>
+        <label><span>Activation code</span><input type="password" name="bootstrap_code" required autocomplete="off"></label>
+        <p class="note">The code is in the private <code>bootstrap.code</code> file created during install. Type it here only, never into a chat.</p>
+    @endif
+    <label><span>Email</span><input type="email" name="email" required autocomplete="username"></label>
+    <label><span>Password</span><input type="password" name="password" required minlength="{{ $setup ? 14 : 1 }}" maxlength="200" autocomplete="{{ $setup ? 'new-password' : 'current-password' }}"></label>
+    <div class="form-foot"><p class="note">{{ $setup ? 'At least 14 characters.' : '' }}</p><button class="go">{{ $setup ? 'Create account' : 'Continue' }}</button></div>
+</form>
+@endsection

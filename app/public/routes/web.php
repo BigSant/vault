@@ -38,6 +38,16 @@ Route::middleware('vault.auth')->group(function () {
     Route::post('/workspaces', [Workspace::class, 'workspace']);
     Route::post('/workspaces/{workspace}/projects', [Workspace::class, 'project']);
     Route::post('/workspaces/{workspace}/environments', [Workspace::class, 'environment']);
+    Route::get('/workspaces/{workspace}/structure', [Workspace::class, 'structurePage'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/template', [Workspace::class, 'template'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/projects/{project}', [Workspace::class, 'renameProject'])->whereUuid(['workspace', 'project']);
+    Route::post('/workspaces/{workspace}/projects/{project}/delete', [Workspace::class, 'deleteProject'])->whereUuid(['workspace', 'project']);
+    Route::post('/workspaces/{workspace}/environments/{environment}', [Workspace::class, 'updateEnvironment'])->whereUuid(['workspace', 'environment']);
+    Route::post('/workspaces/{workspace}/environments/{environment}/delete', [Workspace::class, 'deleteEnvironment'])->whereUuid(['workspace', 'environment']);
+    Route::get('/workspaces/{workspace}/types', [Workspace::class, 'typesPage'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/types', [Workspace::class, 'saveType'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/types/{key}', [Workspace::class, 'saveType'])->whereUuid('workspace')->where('key', '[a-z][a-z0-9_]{0,39}');
+    Route::post('/workspaces/{workspace}/types/{key}/delete', [Workspace::class, 'deleteType'])->whereUuid('workspace')->where('key', '[a-z][a-z0-9_]{0,39}');
     Route::get('/entries/new', [Workspace::class, 'entryForm']);
     Route::post('/entries', [Workspace::class, 'create']);
     Route::get('/entries/{id}', [Workspace::class, 'detail'])->whereUuid('id');

@@ -29,6 +29,9 @@ final class VaultTest extends TestCase
 
     private string $sentinel = 'synthetic-secret-never-in-agent-output';
 
+    /** Runs once before the next backend secret read, to simulate a concurrent writer. */
+    private ?\Closure $beforeRead = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -58,6 +61,10 @@ final class VaultTest extends TestCase
                     $this->backend[$path][$current + 1] = $request['data'];
 
                     return Http::response(['data' => ['version' => $current + 1]]);
+                }
+                if ($hook = $this->beforeRead) {
+                    $this->beforeRead = null;
+                    $hook();
                 }
                 parse_str(parse_url($request->url(), PHP_URL_QUERY) ?? '', $query);
                 $version = (int) ($query['version'] ?? count($this->backend[$path] ?? []));
@@ -297,6 +304,298 @@ final class VaultTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/catalog?query=missing')->assertExactJson(['entries' => [], 'next_page' => null]);
         $this->withToken($token)->getJson('/api/v1/catalog?environment_id='.(string) Str::uuid())->assertExactJson(['entries' => [], 'next_page' => null]);
         $this->withToken($token)->postJson('/api/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'vault_search', 'arguments' => ['per_page' => 101]]])->assertJsonPath('error.code', -32602);
+    }
+
+    public function test_custom_type_defines_fields_and_cannot_be_deleted_while_used(): void
+    {
+        $types = '/workspaces/'.$this->workspace.'/types';
+        $this->post($types, ['name' => 'FTP server', 'field_key' => ['', '', ''], 'field_label' => ['Server address', 'Contraseña', ''],
+            'field_kind' => ['text', 'secret', 'text'], 'field_required' => ['1', '1', '0']])->assertRedirect();
+        $type = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'FTP server')->first();
+        $this->assertSame('ftp_server', $type->key);
+        $this->assertSame(['server_address', 'contrasena'], array_column(json_decode($type->fields, true), 'key'));
+        $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('Server address')->assertSee('secret_fields[contrasena]', false);
+
+        $entry = ['environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];
+        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertUnprocessable()->assertSee('Contraseña');
+        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test', 'contrasena' => $this->sentinel]])->assertRedirect();
+        $this->assertSame(1, DB::table('entries')->where('type', 'ftp_server')->count());
+        $this->post('/entries', [...$entry, 'type' => 'missing_type', 'secret_fields' => ['x' => 'y']])->assertUnprocessable();
+
+        $this->post($types.'/ftp_server/delete')->assertUnprocessable();
+        $this->post($types, ['name' => 'Unused', 'field_label' => ['Field'], 'field_key' => [''], 'field_kind' => ['text'], 'field_required' => ['0']]);
+        $this->post($types.'/unused/delete')->assertRedirect();
+        $this->assertFalse(DB::table('entry_types')->where('key', 'unused')->exists());
+        $this->assertTrue(DB::table('entry_types')->where('key', 'secure_note')->exists(), 'built-in types are seeded per workspace');
+    }
+
+    public function test_built_in_types_are_editable_and_removed_fields_stay_readable(): void
+    {
+        $id = $this->entry();
+        $types = '/workspaces/'.$this->workspace.'/types/api_key';
+        $this->post($types, ['name' => 'Access key', 'field_key' => ['token', ''], 'field_label' => ['Access token', 'Endpoint'],
+            'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']])->assertRedirect();
+        $this->get('/entries/'.$id)->assertOk()->assertSee('Access key');
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+            'secret_fields' => ['endpoint' => 'https://api.example.test']])->assertRedirect();
+        $this->assertSame(['token' => $this->sentinel, 'endpoint' => 'https://api.example.test'], app(Catalog::class)->reveal($id));
+        $this->post($types, ['name' => 'Access key', 'field_key' => ['token', 'endpoint'], 'field_label' => ['Access token', 'Endpoint'],
+            'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0'], 'field_remove' => ['endpoint']])->assertRedirect();
+        $this->post('/entries/'.$id.'/reveal')->assertOk()->assertSee('https://api.example.test')->assertSee('no longer in type');
+    }
+
+    public function test_grant_requires_fields_the_action_reads(): void
+    {
+        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
+        $machine = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $this->entry(), 'action' => 'test.http', 'days' => 1])->assertRedirect();
+    }
+
+    public function test_environment_template_rename_production_and_safe_delete(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $this->post($base.'/template', ['env_name' => ['dev', 'qa', 'live', ''], 'env_production' => ['0', '0', '1', '0']])->assertRedirect();
+        $this->post($base.'/projects', ['name' => 'Shop'])->assertRedirect();
+        $project = DB::table('projects')->where('name', 'Shop')->value('id');
+        $envs = DB::table('environments')->where('project_id', $project)->orderBy('name')->get();
+        $this->assertSame(['dev', 'live', 'qa'], $envs->pluck('name')->all());
+        $this->assertTrue((bool) $envs->firstWhere('name', 'live')->production);
+        $this->post($base.'/projects', ['name' => 'Shop'])->assertUnprocessable();
+
+        $dev = $envs->firstWhere('name', 'dev')->id;
+        $this->post($base.'/environments/'.$dev, ['name' => 'development', 'production' => '0'])->assertRedirect();
+        $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertUnprocessable();
+        $this->post($base.'/environments', ['project_id' => $project, 'name' => 'preprod', 'production' => '1'])->assertRedirect();
+        $this->assertTrue((bool) DB::table('environments')->where('project_id', $project)->where('name', 'preprod')->value('production'));
+        $this->get($base.'/structure')->assertOk()->assertSee('development')->assertSee('preprod');
+
+        $this->post($base.'/environments/'.$this->environment.'/delete')->assertRedirect();
+        $this->assertFalse(DB::table('environments')->where('id', $this->environment)->exists());
+        $this->post($base.'/environments/'.$dev.'/delete')->assertRedirect();
+        app(Catalog::class)->create(['environment_id' => $envs->firstWhere('name', 'qa')->id, 'name' => 'n', 'alias' => 'a', 'type' => 'api_key', 'secret' => '{"token":"t"}']);
+        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertUnprocessable();
+        $this->post($base.'/projects/'.$project.'/delete')->assertUnprocessable();
+        $this->post($base.'/projects/'.$project, ['name' => 'Shop 2'])->assertRedirect();
+        $this->assertSame('Shop 2', DB::table('projects')->where('id', $project)->value('name'));
+
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Foreign']);
+        $this->post('/workspaces/'.$other.'/environments/'.$dev.'/delete')->assertNotFound();
+        DB::table('members')->where('user_id', $this->owner->id)->update(['role' => 'viewer']);
+        $this->get($base.'/structure')->assertNotFound();
+        $this->get($base.'/types')->assertNotFound();
+    }
+
+    public function test_every_change_is_logged_without_values_and_old_versions_can_be_compared(): void
+    {
+        $id = $this->entry();
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Renamed', 'alias' => 'safe-alias', 'type' => 'api_key', 'tags' => 'billing',
+            'secret_fields' => ['token' => 'synthetic-rotated']])->assertRedirect();
+        $changes = DB::table('entry_changes')->where('entry_id', $id)->orderBy('version')->get();
+        $this->assertSame(['create', 'update'], $changes->pluck('event')->all());
+        $update = json_decode($changes[1]->changes, true);
+        $this->assertSame(['token'], $update['fields']['changed']);
+        $this->assertSame(['Private name', 'Renamed'], $update['meta']['name']);
+        $this->assertSame((string) $this->owner->id, $changes[1]->user_id);
+        $this->assertStringNotContainsString($this->sentinel, json_encode(DB::table('entry_changes')->get()));
+        $this->assertStringNotContainsString('synthetic-rotated', json_encode(DB::table('entry_changes')->get()));
+
+        $this->get('/entries/'.$id)->assertOk()->assertSee('Versions')->assertSee('API key')->assertSee('“Private name” → “Renamed”', false)->assertDontSee($this->sentinel);
+        $this->post('/entries/'.$id.'/reveal', ['version' => 1])->assertOk()->assertSee($this->sentinel)->assertSee('older version 1', false)->assertSee('differs')->assertDontSee('synthetic-rotated');
+
+        $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();
+        $restore = DB::table('entry_changes')->where('entry_id', $id)->where('version', 3)->first();
+        $this->assertSame('restore', $restore->event);
+        $this->assertSame(1, json_decode($restore->changes, true)['restored_from']);
+        $this->get('/entries/'.$id)->assertSee('from version 1');
+    }
+
+    private function typeForm(array $overrides = []): array
+    {
+        return [...['name' => 'API key', 'field_key' => ['token'], 'field_label' => ['API key'], 'field_kind' => ['secret'], 'field_required' => ['1']], ...$overrides];
+    }
+
+    public function test_type_key_is_canonical_and_usage_ignores_case_and_destroyed_entries(): void
+    {
+        $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'API_KEY', 'secret' => '{"token":"synthetic-import"}'];
+        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertUnprocessable();
+        $this->post('/entries', $row)->assertUnprocessable();
+        $this->assertSame(0, DB::table('entries')->count());
+
+        // A legacy row whose type differs only by case still counts as usage.
+        $id = $this->entry();
+        DB::table('entries')->where('id', $id)->update(['type' => 'API_KEY']);
+        $types = '/workspaces/'.$this->workspace.'/types';
+        $this->post($types.'/api_key/delete')->assertUnprocessable();
+        $this->assertSame(1, $this->get($types)->assertOk()->viewData('usage')['api_key']);
+        $this->assertTrue(DB::table('entry_types')->where('key', 'api_key')->exists());
+
+        // Destroyed entries keep their row but no longer pin the type.
+        DB::table('entries')->where('id', $id)->update(['state' => 'destroyed']);
+        $this->assertArrayNotHasKey('api_key', $this->get($types)->viewData('usage'));
+        $this->assertSame(0, (int) ($this->get('/workspaces/'.$this->workspace.'/structure')->assertOk()->viewData('counts')[$this->environment] ?? 0));
+        $this->post($types.'/api_key/delete')->assertRedirect();
+        $this->assertFalse(DB::table('entry_types')->where('key', 'api_key')->exists());
+    }
+
+    public function test_history_names_only_declared_fields_and_counts_the_rest(): void
+    {
+        $catalog = app(Catalog::class);
+        $base = ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key'];
+        $id = $catalog->create([...$base, 'secret' => json_encode(['token' => 't1', 'customer_acme_prod_pw' => 'x', 'internal_host' => 'y'])]);
+        $catalog->update($id, [...$base, 'secret' => json_encode(['token' => 't2', 'customer_acme_prod_pw' => 'changed', 'another_undeclared' => 'z'])]);
+        $stored = json_encode(DB::table('entry_changes')->where('entry_id', $id)->get());
+        foreach (['customer_acme_prod_pw', 'internal_host', 'another_undeclared'] as $key) {
+            $this->assertStringNotContainsString($key, $stored);
+        }
+        $changes = DB::table('entry_changes')->where('entry_id', $id)->orderBy('version')->pluck('changes')->map(fn ($c) => json_decode($c, true)['fields'])->all();
+        $this->assertSame(['token'], $changes[0]['added']);
+        $this->assertSame(2, $changes[0]['other_added']);
+        $this->assertSame(['token'], $changes[1]['changed']);
+        $this->assertSame([1, 1, 1], [$changes[1]['other_added'], $changes[1]['other_changed'], $changes[1]['other_removed']]);
+
+        // Rows written before this rule are filtered when read, so a viewer never sees undeclared names.
+        DB::table('entry_changes')->where('entry_id', $id)->where('version', 1)->update(['changes' => json_encode(['fields' => ['added' => ['token', 'legacy_leaky_name'], 'changed' => [], 'removed' => []], 'meta' => []])]);
+        DB::table('members')->where('user_id', $this->owner->id)->update(['role' => 'viewer']);
+        $response = $this->get('/entries/'.$id)->assertOk()->assertDontSee('legacy_leaky_name')->assertDontSee('customer_acme_prod_pw');
+        $first = collect($response->viewData('history'))->firstWhere('version', 1)['changes']['fields'];
+        $this->assertSame(['token'], $first['added']);
+        $this->assertSame(1, $first['other_added']);
+    }
+
+    public function test_reveal_reports_the_version_it_actually_read(): void
+    {
+        $id = $this->entry();
+        $this->assertSame(['version' => 1, 'payload' => ['token' => $this->sentinel]], app(Catalog::class)->revealVersion($id));
+        $this->beforeRead = function () use ($id) {
+            $this->backend['/v1/secret/data/entries/'.$id][2] = ['token' => 'synthetic-concurrent'];
+            DB::table('entries')->where('id', $id)->update(['version' => 2]);
+        };
+        $response = $this->post('/entries/'.$id.'/reveal')->assertOk()->assertSee($this->sentinel)->assertDontSee('synthetic-concurrent');
+        $this->assertSame(1, $response->viewData('shownVersion'));
+        $this->assertSame(['token'], $response->viewData('differs'));
+    }
+
+    public function test_grant_requires_current_payload_to_hold_the_action_fields(): void
+    {
+        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
+        // The type later gains the required field, but this entry's current version does not hold it.
+        $this->post('/workspaces/'.$this->workspace.'/types/secure_note', ['name' => 'Note', 'field_key' => ['note', ''], 'field_label' => ['Note', 'Token'],
+            'field_kind' => ['multiline', 'secret'], 'field_required' => ['1', '1']])->assertRedirect();
+        $machine = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
+        $grant = ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1];
+        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertUnprocessable()->assertDontSee('synthetic');
+        $this->assertSame(0, DB::table('grants')->count());
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret_fields' => ['token' => 'synthetic-token']])->assertRedirect();
+        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertRedirect();
+        $this->assertSame(1, DB::table('grants')->count());
+    }
+
+    public function test_restore_carries_over_required_fields_added_to_the_type_later(): void
+    {
+        $id = $this->entry();
+        $this->post('/workspaces/'.$this->workspace.'/types/api_key', $this->typeForm(['field_key' => ['token', ''], 'field_label' => ['API key', 'Endpoint'],
+            'field_kind' => ['secret', 'text'], 'field_required' => ['1', '1']]))->assertRedirect();
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+            'secret_fields' => ['token' => 'synthetic-rotated', 'endpoint' => 'https://api.example.test']])->assertRedirect();
+        $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();
+        $this->assertSame(['token' => $this->sentinel, 'endpoint' => 'https://api.example.test'], app(Catalog::class)->reveal($id));
+        $restore = json_decode(DB::table('entry_changes')->where('entry_id', $id)->where('version', 3)->value('changes'), true);
+        $this->assertSame(1, $restore['restored_from']);
+        $this->assertSame(['endpoint'], $restore['carried']);
+        $this->assertSame(['token'], $restore['fields']['changed']);
+        $this->assertSame([], $restore['fields']['removed']);
+    }
+
+    public function test_entry_create_checks_the_type_inside_the_locked_transaction(): void
+    {
+        $this->entry();
+        $levels = [];
+        DB::listen(function ($query) use (&$levels) {
+            foreach (['workspaces', 'entry_types', 'entries'] as $table) {
+                if (preg_match('/^(select|insert).*(from|into) "'.$table.'"/', $query->sql)) {
+                    $levels[] = [$table, DB::transactionLevel() > 0];
+                }
+            }
+        });
+        $this->entry();
+        $insert = array_search(['entries', true], $levels, true);
+        $this->assertNotFalse($insert, 'entry is inserted inside a transaction');
+        $before = array_slice($levels, 0, $insert);
+        $typeCheck = array_search(['entry_types', true], $before, true);
+        $lock = array_search(['workspaces', true], $before, true);
+        $this->assertNotFalse($typeCheck, 'type existence is checked inside the transaction');
+        $this->assertNotFalse($lock, 'the workspace row shared with type deletion is locked inside the transaction');
+        $this->assertLessThan($typeCheck, $lock);
+    }
+
+    public function test_type_edit_rejects_stale_revision_foreign_keys_and_duplicates(): void
+    {
+        $url = '/workspaces/'.$this->workspace.'/types/api_key';
+        $revision = $this->get('/workspaces/'.$this->workspace.'/types')->viewData('types')->firstWhere('key', 'api_key')->revision;
+        $this->assertNotEmpty($revision);
+        $this->post($url, $this->typeForm(['revision' => $revision, 'field_key' => ['token', ''], 'field_label' => ['API key', 'Endpoint'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertRedirect();
+        // A second editor still holding the first form must not silently drop the new field.
+        $this->post($url, $this->typeForm(['revision' => $revision]))->assertConflict();
+        $fields = fn () => array_column(json_decode(DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'api_key')->value('fields'), true), 'key');
+        $this->assertSame(['token', 'endpoint'], $fields());
+
+        // Keys are immutable and server-assigned.
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'password'], 'field_label' => ['API key', 'Sneaky'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'token'], 'field_label' => ['API key', 'Again'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/types', ['name' => 'Fresh', 'field_key' => ['chosen_by_client'], 'field_label' => ['Label'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertUnprocessable();
+        $this->assertSame(['token', 'endpoint'], $fields());
+
+        // A new row whose label slugs to an existing key gets a fresh key; the existing key keeps its place and meaning.
+        $this->post($url, $this->typeForm(['field_key' => ['', 'token', 'endpoint'], 'field_label' => ['Token', 'API key', 'Endpoint'], 'field_kind' => ['text', 'secret', 'text'], 'field_required' => ['0', '1', '0']]))->assertRedirect();
+        $this->assertSame(['token_2', 'token', 'endpoint'], $fields());
+    }
+
+    public function test_type_changes_are_audited_with_the_type_row_as_subject(): void
+    {
+        $types = '/workspaces/'.$this->workspace.'/types';
+        $this->post($types, ['name' => 'Audited', 'field_key' => [''], 'field_label' => ['Field'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertRedirect();
+        $row = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'audited')->first();
+        $this->assertSame(1, DB::table('audit')->where('event', 'type.save')->where('subject', $row->id)->count());
+        $this->post($types.'/audited/delete')->assertRedirect();
+        $this->assertSame(1, DB::table('audit')->where('event', 'type.delete')->where('subject', $row->id)->count());
+        // A rejected save leaves no "ok" audit row behind.
+        $this->post($types, ['name' => 'Rejected', 'field_label' => []])->assertUnprocessable();
+        $this->assertSame(1, DB::table('audit')->where('event', 'type.save')->count());
+    }
+
+    public function test_history_returns_only_the_newest_versions(): void
+    {
+        $id = $this->entry();
+        $catalog = app(Catalog::class);
+        foreach ([2, 3, 4] as $n) {
+            $catalog->update($id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic-'.$n])]);
+        }
+        $entry = app(\App\Vault\Access::class)->entry($id);
+        $history = $catalog->history($entry, 3, $older);
+        $this->assertSame([4, 3, 2], array_column($history, 'version'));
+        $this->assertTrue($older);
+        $this->assertSame('update', $history[2]['event']);
+        $this->assertCount(4, $catalog->history($entry, 50, $older));
+        $this->assertFalse($older);
+        $this->assertFalse($this->get('/entries/'.$id)->assertOk()->viewData('historyOlder'));
+    }
+
+    public function test_array_shaped_inputs_are_validation_errors_not_server_errors(): void
+    {
+        $id = $this->entry();
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+            'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertUnprocessable();
+        $types = '/workspaces/'.$this->workspace.'/types';
+        $this->post($types, $this->typeForm(['name' => ['x']]))->assertUnprocessable();
+        foreach (['field_label', 'field_key', 'field_kind', 'field_required', 'field_remove'] as $column) {
+            $this->post($types, $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
+            $this->post($types.'/api_key', $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
+        }
+        $this->post($types.'/api_key', $this->typeForm(['revision' => ['x']]))->assertUnprocessable();
     }
 
     public function test_mfa_replay_is_rejected(): void

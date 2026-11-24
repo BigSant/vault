@@ -1,2 +1,15 @@
 @extends('layout')
-@section('content')<span class="eyebrow">{{ $space->name }}</span><h1>Veiklos istorija</h1><p class="muted">Kas, kada ir ką atliko. Be slaptažodžių, kodų ir išorinių atsakymų turinio.</p><div class="panel table-scroll"><table><thead><tr><th>Laikas (UTC)</th><th>Veiksmas</th><th>Tapatybė</th><th>Rezultatas</th></tr></thead><tbody>@forelse($events as $event)<tr><td>{{ $event->created_at }}</td><td>{{ $event->event }}<small>{{ $event->subject }}</small></td><td>{{ $event->actor }}</td><td>{{ $event->outcome }}</td></tr>@empty<tr><td colspan="4">Veiklos įrašų kol kas nėra.</td></tr>@endforelse</tbody></table><div class="pagination">@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Ankstesni</a>@endif @if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Kiti →</a>@endif</div></div>@endsection
+@section('title', 'Activity')
+@section('content')
+<h1>Activity</h1>
+<p class="note">Who did what and when. Never passwords, codes or the content of external responses.</p>
+@if($events->isEmpty())
+    <div class="empty">No activity yet.</div>
+@else
+<div class="scroll"><table class="list">
+    <thead><tr><th scope="col">When (UTC)</th><th scope="col">Event · subject</th><th scope="col">Actor</th><th scope="col">Outcome</th></tr></thead>
+    <tbody>@foreach($events as $event)<tr><td class="nobreak">{{ $event->created_at }}</td><td><code>{{ $event->event }}</code>@if($event->subject)<small>{{ $event->subject }}</small>@endif</td><td>{{ $event->actor }}</td><td>@include('outcome', ['outcome' => $event->outcome])</td></tr>@endforeach</tbody>
+</table></div>
+<div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>
+@endif
+@endsection

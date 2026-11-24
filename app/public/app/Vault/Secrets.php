@@ -57,6 +57,18 @@ final class Secrets
         return $this->call('GET', 'secret/data/'.$this->path($path).($version ? '?version='.$version : ''))['data']['data'];
     }
 
+    /** Version metadata (created/deleted/destroyed), no values. Null when the backend cannot say. */
+    public function versions(string $path): ?array
+    {
+        try {
+            $versions = $this->call('GET', 'secret/metadata/'.$this->path($path))['data']['versions'] ?? null;
+        } catch (HttpException) {
+            return null;
+        }
+
+        return is_array($versions) ? array_combine(array_map('intval', array_keys($versions)), array_values($versions)) : null;
+    }
+
     public function resetMfa(string $userId, #[\SensitiveParameter] string $seed): void
     {
         $path = $this->path('auth/'.$userId);

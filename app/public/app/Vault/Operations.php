@@ -35,7 +35,7 @@ final class Operations
     {
         $filters = Validator::make($filters, [
             'query' => 'sometimes|string|max:100', 'project_id' => 'sometimes|uuid', 'environment_id' => 'sometimes|uuid',
-            'type' => 'sometimes|in:login,api_key,database,dynamic_database,ssh,secure_note',
+            'type' => 'sometimes|string|max:40',
             'page' => 'sometimes|integer|min:1|max:10000', 'per_page' => 'sometimes|integer|min:1|max:100',
         ])->validate();
         $query = $this->grantQuery()->where('machines.id', $machine->id)->whereIn('grants.action', array_keys($this->definitions()));
