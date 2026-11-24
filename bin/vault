@@ -75,7 +75,7 @@ def initialize():
     mounts = json.loads(bao(['secrets', 'list', '-format=json'], token=token))
     if 'secret/' not in mounts:
         bao(['secrets', 'enable', '-path=secret', 'kv-v2'], token=token)
-    bao(['write', 'secret/config', '-'], {'cas_required': True, 'max_versions': 20}, token)
+    bao(['write', 'secret/config', '-'], {'cas_required': True, 'max_versions': 1000}, token)
     auth = json.loads(bao(['auth', 'list', '-format=json'], token=token))
     if 'approle/' not in auth:
         bao(['auth', 'enable', 'approle'], token=token)

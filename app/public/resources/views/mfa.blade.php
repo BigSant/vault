@@ -1,3 +1,20 @@
 @extends('layout')
-@section('title','Patvirtinti tapatybę')
-@section('content')<div class="auth-card"><span class="eyebrow">ANTRAS ŽINGSNIS</span><h1>Patvirtinkite tapatybę</h1>@if($seed)<p>Autentifikatoriaus programėlėje pridėkite paskyrą „Vault“ naudodami šį raktą. Laikykite atkūrimo kopiją saugioje vietoje.</p><pre data-secret>{{ $seed }}</pre><p class="hint">Laiku pagrįstas kodas (TOTP), 6 skaitmenys, 30 sekundžių.</p>@else<p class="muted">Įveskite dabartinį kodą iš autentifikatoriaus programėlės.</p>@endif<form method="post" action="/mfa">@csrf<label>6 skaitmenų kodas<input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required maxlength="6"></label><button class="full">Atrakinti saugyklą →</button></form></div>@endsection
+@section('title', 'Confirm identity')
+@section('bare', '1')
+@section('content')
+<form class="action" method="post" action="/mfa">@csrf
+    <h1>Confirm identity</h1>
+    @if($seed)
+        <p>{{ $qr ? 'Scan the code' : 'Add the key below' }} with an authenticator app (Aegis, 2FAS, Google Authenticator or similar), then enter the 6-digit code it shows.</p>
+        @if($qr)<img class="totp-qr" src="{{ $qr }}" width="240" height="240" alt="Authenticator setup QR code">@endif
+        <div class="block-label">{{ $qr ? 'Cannot scan? Enter this key by hand' : 'Enter this key in your authenticator app' }}</div>
+        <pre data-secret class="secret" data-keep id="totp-seed">{{ $seed }}</pre>
+        <div class="controls"><button type="button" data-copy="totp-seed">Copy key</button></div>
+        <p class="note">Time-based code (TOTP), 6 digits, 30 seconds.</p>
+    @else
+        <p class="note">Enter the current code from your authenticator app.</p>
+    @endif
+    <label><span>6-digit code</span><input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required maxlength="6"></label>
+    <div class="form-foot"><p class="note"></p><button class="go">Unlock</button></div>
+</form>
+@endsection

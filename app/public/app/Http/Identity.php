@@ -5,6 +5,10 @@ namespace App\Http;
 use App\Models\User;
 use App\Vault\Access;
 use App\Vault\Secrets;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -77,8 +81,27 @@ final class Identity
             $user = $this->pending($r);
             $seed = $user->mfa_enabled ? null : $this->secrets->read('auth/'.$user->id)['totp'];
 
-            return view('mfa', ['seed' => $seed]);
+            return view('mfa', ['seed' => $seed, 'qr' => $seed === null ? null : $this->enrollmentQr($user, $seed)]);
         });
+    }
+
+    /** Rendered locally so the enrollment key never leaves this server. */
+    private function enrollmentQr(User $user, #[\SensitiveParameter] string $seed): ?string
+    {
+        // An issuer-qualified OTP label cannot contain a literal or URL-encoded colon.
+        if (str_contains(rawurldecode($user->email), ':')) {
+            return null;
+        }
+
+        try {
+            $totp = TOTP::createFromSecret($seed)->withLabel($user->email)->withIssuer('Vault');
+            $svg = (new Writer(new ImageRenderer(new RendererStyle(240, 2), new SvgImageBackEnd)))->writeString($totp->getProvisioningUri());
+
+            return 'data:image/svg+xml;base64,'.base64_encode($svg);
+        } catch (\Throwable) {
+            // Manual enrollment still works. QR errors can contain the provisioning URI.
+            return null;
+        }
     }
 
     private function verify(User $user, #[\SensitiveParameter] string $code): void

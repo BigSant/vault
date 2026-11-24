@@ -2,13 +2,18 @@
 
 namespace App\Vault;
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final class Catalog
 {
-    public function __construct(private Secrets $secrets, private Access $access) {}
+    /** Non-secret entry metadata tracked in the change log. */
+    private const META = ['name', 'alias', 'tags', 'rotate_at'];
+
+    public function __construct(private Secrets $secrets, private Access $access, private EntryTypes $types) {}
 
     public function validate(array $input): array
     {
@@ -17,7 +22,8 @@ final class Catalog
         }
         $data = Validator::make($input, [
             'environment_id' => 'required|uuid', 'name' => 'required|string|max:160', 'alias' => 'required|string|max:100|regex:/^[a-zA-Z0-9_. -]+$/',
-            'type' => 'required|in:login,api_key,database,dynamic_database,ssh,secure_note', 'tags' => 'nullable|string|max:200',
+            // Type keys are lowercase only: a case-insensitive collation must never match a differently-cased key.
+            'type' => ['required', 'string', 'regex:'.EntryTypes::KEY], 'tags' => 'nullable|string|max:200',
             'secret' => 'required|string|max:65536', 'rotate_at' => 'nullable|date_format:Y-m-d',
         ])->validate();
         try {
@@ -25,18 +31,29 @@ final class Catalog
         } catch (\Throwable) {
             abort(422);
         }
-        abort_unless(is_array($payload) && ! array_is_list($payload) && count($payload) <= 20, 422);
+        abort_unless(is_array($payload) && ! array_is_list($payload) && count($payload) <= 40, 422);
         foreach ($payload as $key => $value) {
-            abort_unless(is_string($key) && preg_match('/^[a-z_]{1,40}$/D', $key) && is_string($value) && strlen($value) <= 16000, 422);
-        }
-        $required = ['login' => ['username', 'password'], 'api_key' => ['token'], 'database' => ['username', 'password'], 'dynamic_database' => ['role'], 'ssh' => ['private_key'], 'secure_note' => ['note']];
-        foreach ($required[$data['type']] as $field) {
-            abort_unless(isset($payload[$field]) && $payload[$field] !== '', 422);
+            abort_unless(is_string($key) && preg_match('/^[a-z_][a-z0-9_]{0,39}$/D', $key) && is_string($value) && strlen($value) <= 16000, 422);
         }
         $data['payload'] = $payload;
         unset($data['secret']);
 
         return $data;
+    }
+
+    /** The type must exist in the entry's workspace and every required field must have a value. */
+    private function checkType(string $workspace, #[\SensitiveParameter] array $data): object
+    {
+        $type = $this->types->find($workspace, $data['type']);
+        if (! $type) {
+            throw ValidationException::withMessages(['type' => 'This entry type does not exist in this workspace.']);
+        }
+        $missing = array_filter($type->fields, fn ($f) => $f['required'] && ($data['payload'][$f['key']] ?? '') === '');
+        if ($missing) {
+            throw ValidationException::withMessages(['secret' => 'Fill in the required fields: '.implode(', ', array_column($missing, 'label')).'.']);
+        }
+
+        return $type;
     }
 
     public function create(array $input): string
@@ -45,10 +62,15 @@ final class Catalog
         $scope = $this->access->environment($data['environment_id']);
 
         return DB::transaction(function () use ($data, $scope) {
+            // Checked under the lock type deletion also takes, so the type cannot vanish before the insert commits.
+            $this->types->lock($scope->workspace_id);
+            $type = $this->checkType($scope->workspace_id, $data);
+            $data['type'] = $type->key;
             $id = (string) Str::uuid();
             // Write audit intent first. A failed DB transaction can leave only an unreachable backend orphan.
             $this->access->audit($scope->workspace_id, 'entry.create', $id);
             $version = $this->secrets->write('entries/'.$id, $data['payload'], 0);
+            $this->record($id, $version, 'create', ['fields' => $this->named(['added' => array_keys($data['payload'])], $type), 'meta' => []]);
             unset($data['payload']);
             DB::table('entries')->insert([...$data, 'tags' => $data['tags'] ?? '', 'rotate_at' => $data['rotate_at'] ?? null,
                 'id' => $id, 'version' => $version, 'state' => 'active', 'created_at' => now(), 'updated_at' => now()]);
@@ -57,21 +79,28 @@ final class Catalog
         });
     }
 
-    public function update(string $id, array $input): void
+    public function update(string $id, array $input, ?int $restoredFrom = null): void
     {
         $entry = $this->access->entry($id, ['owner', 'editor']);
-        DB::transaction(function () use ($entry, $id, $input) {
+        DB::transaction(function () use ($entry, $id, $input, $restoredFrom) {
             $current = DB::table('entries')->where('id', $id)->lockForUpdate()->first();
+            $previous = $this->secrets->read('entries/'.$id, $current->version);
+            $type = $this->types->find($entry->workspace_id, $current->type);
+            $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
             if (! isset($input['secret'])) {
                 $fields = $input['secret_fields'] ?? [];
                 abort_unless(is_array($fields), 422);
                 foreach ($fields as $value) {
                     abort_unless(is_string($value) || $value === null, 422);
                 }
-                $payload = $this->secrets->read('entries/'.$id, $current->version);
-                $payload = array_replace($payload, array_filter($fields, fn ($value) => is_string($value) && $value !== ''));
+                $payload = array_replace($previous, array_filter($fields, fn ($value) => is_string($value) && $value !== ''));
                 $clear = $input['clear_fields'] ?? [];
-                abort_unless(is_array($clear) && ! array_diff($clear, ['passphrase']), 422);
+                abort_unless(is_array($clear), 422);
+                foreach ($clear as $field) {
+                    abort_unless(is_string($field), 422);
+                }
+                // Required fields of the current type cannot be cleared; anything else (including legacy fields) can.
+                abort_unless(! array_intersect($clear, $required), 422);
                 foreach ($clear as $field) {
                     unset($payload[$field]);
                 }
@@ -80,22 +109,162 @@ final class Catalog
             $data = $this->validate($input);
             // No moving, type changes or archive resurrection through a stale edit form.
             abort_unless($data['environment_id'] === $current->environment_id && $data['type'] === $current->type && $current->state === 'active', 422);
+            $carried = [];
+            if ($restoredFrom !== null) {
+                // The restored version may predate a field the type now requires: keep that field's current value
+                // instead of refusing the restore. The change record names which fields were kept.
+                foreach ($required as $key) {
+                    if (($data['payload'][$key] ?? '') === '' && ($previous[$key] ?? '') !== '') {
+                        $data['payload'][$key] = $previous[$key];
+                        $carried[] = $key;
+                    }
+                }
+            }
+            $type = $this->checkType($entry->workspace_id, $data);
+            $changes = $this->diff($previous, $data['payload'], $current, $data, $type);
+            if ($restoredFrom !== null) {
+                $changes['restored_from'] = $restoredFrom;
+                if ($carried) {
+                    $changes['carried'] = $carried;
+                }
+            }
             $this->access->audit($entry->workspace_id, 'entry.rotate', $id);
             $version = $this->secrets->write('entries/'.$id, $data['payload'], $current->version);
+            $this->record($id, $version, $restoredFrom !== null ? 'restore' : 'update', $changes);
             unset($data['payload']);
             DB::table('entries')->where('id', $id)->update([...$data, 'tags' => $data['tags'] ?? '', 'rotate_at' => $data['rotate_at'] ?? null, 'version' => $version, 'updated_at' => now()]);
             DB::table('operations')->where('entry_id', $id)->whereIn('state', ['pending', 'approved'])->update(['state' => 'revoked', 'updated_at' => now()]);
         });
     }
 
+    /** Field names (never values) and non-secret metadata that differ between two versions. */
+    private function diff(#[\SensitiveParameter] array $old, #[\SensitiveParameter] array $new, object $current, #[\SensitiveParameter] array $data, object $type): array
+    {
+        $fields = ['added' => array_keys(array_diff_key($new, $old)), 'removed' => array_keys(array_diff_key($old, $new)), 'changed' => []];
+        foreach (array_intersect_key($new, $old) as $key => $value) {
+            if (! hash_equals($old[$key], $value)) {
+                $fields['changed'][] = $key;
+            }
+        }
+        $meta = [];
+        foreach (self::META as $key) {
+            $before = $key === 'rotate_at' ? ($current->rotate_at ? substr((string) $current->rotate_at, 0, 10) : null) : ($current->{$key} ?? '');
+            $after = $key === 'rotate_at' ? ($data['rotate_at'] ?? null) : ($data[$key] ?? '');
+            if ((string) $before !== (string) $after) {
+                $meta[$key] = [$before, $after];
+            }
+        }
+
+        return ['fields' => $this->named($fields, $type), 'meta' => $meta];
+    }
+
+    /**
+     * Viewers read the change log without a reveal, and payload keys the type does not declare are free text
+     * chosen by whoever imported the entry. Only declared keys are named; the rest are reduced to counts.
+     */
+    private function named(array $fields, ?object $type): array
+    {
+        $declared = $type ? array_column($type->fields, 'key') : [];
+        $named = [];
+        foreach (['added', 'changed', 'removed'] as $group) {
+            $keys = array_values(array_filter((array) ($fields[$group] ?? []), 'is_string'));
+            $named[$group] = array_values(array_intersect($keys, $declared));
+            $named['other_'.$group] = count($keys) - count($named[$group]) + (int) ($fields['other_'.$group] ?? 0);
+        }
+
+        return $named;
+    }
+
+    private function record(string $id, int $version, string $event, array $changes): void
+    {
+        DB::table('entry_changes')->insert(['entry_id' => $id, 'version' => $version, 'event' => $event, 'user_id' => Auth::id(),
+            'changes' => json_encode($changes, JSON_THROW_ON_ERROR), 'created_at' => now()]);
+    }
+
+    /**
+     * The newest $limit versions, newest first, with who changed what; $older reports whether earlier versions exist.
+     * Versions from before the change log have no details. Field names are filtered against the type's current
+     * fields on every read, so rows written before that rule (or naming a since-removed field) only add to the counts.
+     */
+    public function history(object $entry, int $limit = 50, ?bool &$older = null): array
+    {
+        $latest = (int) $entry->version;
+        $oldest = max(1, $latest - max(1, $limit) + 1);
+        $older = $oldest > 1;
+        $changes = DB::table('entry_changes')->leftJoin('users', 'users.id', '=', 'entry_changes.user_id')->where('entry_id', $entry->id)
+            ->where('entry_changes.version', '>=', $oldest)->select('entry_changes.*', 'users.name as user')->get()->keyBy('version');
+        $type = $this->types->find($entry->workspace_id ?? $this->access->entry($entry->id)->workspace_id, $entry->type);
+        $stored = $this->secrets->versions('entries/'.$entry->id);
+        $history = [];
+        for ($v = $latest; $v >= $oldest; $v--) {
+            $row = $changes[$v] ?? null;
+            $meta = $stored[$v] ?? null;
+            $details = $row ? json_decode($row->changes, true, flags: JSON_THROW_ON_ERROR) : null;
+            if ($details !== null) {
+                $details['fields'] = $this->named((array) ($details['fields'] ?? []), $type);
+                if (isset($details['carried'])) {
+                    $details['carried'] = array_values(array_intersect((array) $details['carried'], $type ? array_column($type->fields, 'key') : []));
+                }
+            }
+            $history[] = [
+                'version' => $v,
+                'at' => $row?->created_at ?? ($meta['created_time'] ?? null),
+                'user' => $row?->user,
+                'event' => $row?->event,
+                'changes' => $details,
+                // Unknown backend state (null) is shown as available; a reveal still fails closed.
+                'available' => $stored === null || ($meta !== null && empty($meta['destroyed']) && empty($meta['deletion_time'])),
+            ];
+        }
+
+        return $history;
+    }
+
     public function reveal(string $id, int $version = 0): array
+    {
+        return $this->revealVersion($id, $version)['payload'];
+    }
+
+    /**
+     * The payload together with the exact version that was read, so callers never label it from a later SQL read.
+     *
+     * @return array{version: int, payload: array<string, string>}
+     */
+    public function revealVersion(string $id, int $version = 0): array
     {
         $entry = $this->access->entry($id, ['owner', 'editor']);
         abort_unless($entry->state === 'active', 409);
         $this->access->audit($entry->workspace_id, 'entry.reveal', $id);
         abort_if($version < 0 || $version > $entry->version, 422);
+        $version = $version ?: (int) $entry->version;
 
-        return $this->secrets->read('entries/'.$id, $version ?: $entry->version);
+        return ['version' => $version, 'payload' => $this->secrets->read('entries/'.$id, $version)];
+    }
+
+    /**
+     * Keys whose value in $payload differs from the current version; values are compared server-side only.
+     * When $version (the version $payload was read from) is still the current one, nothing differs.
+     */
+    public function differsFromCurrent(string $id, #[\SensitiveParameter] array $payload, ?int $version = null): array
+    {
+        $entry = $this->access->entry($id, ['owner', 'editor']);
+        if ($version !== null && $version === (int) $entry->version) {
+            return [];
+        }
+        $current = $this->secrets->read('entries/'.$id, $entry->version);
+        $keys = array_unique([...array_keys($payload), ...array_keys($current)]);
+
+        return array_values(array_filter($keys, fn ($k) => ! isset($payload[$k], $current[$k]) || ! hash_equals($payload[$k], $current[$k])));
+    }
+
+    /** Which of $keys the current version lacks or holds empty. Only key names leave this method, never values. */
+    public function missingFields(string $id, array $keys): array
+    {
+        $entry = $this->access->entry($id, ['owner', 'editor']);
+        abort_if($entry->state === 'destroyed', 409);
+        $payload = $this->secrets->read('entries/'.$id, (int) $entry->version);
+
+        return array_values(array_filter($keys, fn ($key) => ($payload[$key] ?? '') === ''));
     }
 
     public function archive(string $id): void
@@ -114,7 +283,8 @@ final class Catalog
         $entry = $this->access->entry($id, ['owner', 'editor']);
         $payload = $this->reveal($id, $version);
         $this->update($id, ['environment_id' => $entry->environment_id, 'name' => $entry->name, 'alias' => $entry->alias,
-            'type' => $entry->type, 'tags' => $entry->tags, 'secret' => json_encode($payload, JSON_THROW_ON_ERROR)]);
+            'type' => $entry->type, 'tags' => $entry->tags, 'rotate_at' => $entry->rotate_at ? substr((string) $entry->rotate_at, 0, 10) : null,
+            'secret' => json_encode($payload, JSON_THROW_ON_ERROR)], $version);
     }
 
     public function unarchive(string $id): void
@@ -151,9 +321,12 @@ final class Catalog
             abort_unless(is_array($row), 422);
             $data = $this->validate($row);
             abort_unless($this->access->environment($data['environment_id'])->workspace_id === $workspace, 404);
+            $this->checkType($workspace, $data);
         }
 
-        return DB::transaction(function () use ($rows) {
+        return DB::transaction(function () use ($rows, $workspace) {
+            // Taken once for the whole batch, before any row is re-checked and written.
+            $this->types->lock($workspace);
             foreach ($rows as $row) {
                 $this->create($row);
             }

@@ -1,34 +1,34 @@
-# Vault priėmimo patikra
+# Vault acceptance review
 
-2026-11-10. Tikrintas Vault `2992078` ir ai-os `9523ca6a`.
+2026-11-10. Tested Vault `2992078` and ai-os `9523ca6a`.
 
-## Nepriklausomos Codex analizės
+## Independent Codex reviews
 
-| Ašis | Pradinis vertinimas | Pakartotinis | Galutinis |
+| Area | Initial | Reassessment | Final |
 |---|---:|---:|---:|
-| Saugumas | 6,8 | 8,2 | **8,7/10** |
-| Funkcijų atitikimas | 8,2 | 8,7 | **9,0/10** |
-| Kodo kokybė | 7,3 | 8,6 | **8,7/10** |
+| Security | 6.8 | 8.2 | **8.7/10** |
+| Functional fit | 8.2 | 8.7 | **9.0/10** |
+| Code quality | 7.3 | 8.6 | **8.7/10** |
 
-Galutinį pakeitimų patikrinimą atliko trys atskiri agentai su nauju kontekstu. Saugumo ir kokybės paskutinio etapo patikra apėmė `3cb568a...2992078` ir susijusį kodą, remiantis ankstesne viso sprendimo analize. Visos trys ašys atitinka naudotojo 8,5 slenkstį; naujų P1/P2 blokatorių nerasta.
+Three independent agents reviewed the final changes with fresh context. The final security and quality reviews covered `3cb568a...2992078` and related code, building on the earlier review of the whole system. All three areas met the requested 8.5 threshold. Reviewers found no new P1/P2 blockers.
 
-Ištaisyta: recovery ir MFA sesijų lenktynė, senų leidimų atgaivinimas po regrant, vėlyvas terminalinių būsenų perrašymas, brokerio lygiagretumo ribos, kiekvieno browser redirect žingsnio politika, backup dalinio rašymo / pilno disko / flush / fsync klaidos, netinkliniai download / srcdoc / popup bandymai. Įrašo lange pridėti leidimai, istorija, operacijų patvirtinimai ir MFA.
+Fixes covered a race between recovery and MFA sessions, old grants reactivating after a new grant, late overwrites of terminal states, broker concurrency limits, policy checks at every browser redirect, backup failures on short writes, full disks, flush and fsync, and non-network download, srcdoc and popup attempts. The entry page gained grants, history, operation approvals and MFA.
 
-## Vykdymo įrodymai
+## Test evidence
 
-- PHPUnit: **18 testų, 132 patikros**; Python brokerio, egress ir CLI: **10 testų**.
-- Šifruotų kopijų roundtrip, klaidingo rakto, pakeisto ir nukirsto failo, dalinio rašymo, flush ir fsync gedimų testai PASS.
-- Tikras HTTPS / CSRF / TOTP / OpenBao / brokeris: API, CLI, browser su MFA, dinaminė DB; visos saugaus rezultato patikros PASS.
-- Browser neigiami scenarijai: išorinis origin, neleidžiamas same-origin POST, redirect grandinė, iframe, popup, HTTP attachment, blob download, srcdoc ir about:blank. Draudžiami tinklo keliai nepasiekia tikslinio serverio; pažeidimas neskelbiamas sėkme.
-- Tikras ai-os PHP klientas → HTTPS MCP → brokeris PASS. Atskirai tikra AgentQueue / AgentTools / journal patikra izoliuotoje MySQL aplinkoje PASS; **26 native transport testai** PASS.
-- Owner recovery atšaukia pending MFA ir senas autentifikuotas sesijas; naujas slaptažodis leidžia naują MFA registraciją.
-- Šifruota kopija, izoliuotas verify ir pilnas atkūrimas į tuščią aplinką PASS: atkurtos 36 įrašų versijos bei MFA; atkurtos machine prieigos atšauktos; užpildytos aplinkos perrašymas atmestas.
-- Vietinės aplinkos konteineriai healthy; `https://vault.local/health.php` grąžina HTTP 200 ir `ready`.
+- PHPUnit passed **18 tests with 132 assertions**. Python broker, egress and CLI suites passed **10 tests**.
+- Encrypted backup tests passed for round trips, wrong keys, modified and truncated files, short writes, and flush and fsync failures.
+- Tests using HTTPS, CSRF, TOTP, OpenBao and the broker exercised API, CLI, browser with MFA, and dynamic DB actions. All safe-result checks passed.
+- Negative browser cases covered external origins, disallowed same-origin POST, redirect chains, iframes, popups, HTTP attachments, blob downloads, srcdoc and about:blank. Blocked network paths never reached the target server. Violations never reported success.
+- The ai-os PHP client → HTTPS MCP → broker test passed. A separate AgentQueue / AgentTools / journal test passed in an isolated MySQL environment. All **26 native transport tests** passed.
+- Owner recovery revoked pending MFA and existing authenticated sessions. The new password allowed fresh MFA enrollment.
+- Encrypted backup, isolated verification and full restore into an empty environment passed. Restore recovered 36 entry versions and MFA, revoked restored machine access and refused to overwrite a populated environment.
+- Local containers were healthy. `https://vault.local/health.php` returned HTTP 200 and `ready`.
 
-Komandos ir atkūrimo eiga pateiktos README ir `docs/operations.md`. Vietiniai vykdymo žurnalai: `/tmp/vault-phpunit-final.log`, `/tmp/vault-python-final.log`, `/tmp/vault-aios-integration.log`, `/tmp/vault-crypto-final.log`, `/tmp/vault-recovery-final.log`, `/tmp/aios-native.log`, `/tmp/aios-guarded-integration.log`. Šie laikini žurnalai nėra repozitorijos artefaktai; pakartojami testai yra repozitorijose.
+The README and `docs/operations.md` give the commands and restore procedure. Local run logs were `/tmp/vault-phpunit-final.log`, `/tmp/vault-python-final.log`, `/tmp/vault-aios-integration.log`, `/tmp/vault-crypto-final.log`, `/tmp/vault-recovery-final.log`, `/tmp/aios-native.log` and `/tmp/aios-guarded-integration.log`. The repositories contain the repeatable tests. The temporary logs are kept outside the repositories.
 
-## Sąžiningos ribos ir neblokuojančios pastabos
+## Limitations and non-blocking observations
 
-API/CLI pateikia fiksuotus Bearer GET/status receptus, DB – trumpalaikį SELECT 1, browser – registruotą login/MFA/status receptą. Naujos sistemos ir operacijos reikalauja operatoriaus connector. Bendro naršymo, CAPTCHA/WebAuthn, savavališko shell ir trečiųjų šalių slaptažodžių automatinio keitimo nėra. Realios paskyros nesukonfigūruotos; ai-os integracija opt-in, pilnas produkcinis native agento procesas e2e netikrintas.
+API/CLI offer fixed Bearer GET/status recipes, the DB action runs a short-lived SELECT 1, and the browser runs a registered login/MFA/status recipe. New systems and operations require an operator-configured connector. General browsing, CAPTCHA/WebAuthn, arbitrary shell and automatic third-party password changes are unsupported. No real accounts were configured. The ai-os integration is opt-in. The full production native agent workflow was not tested end to end.
 
-Saugumo riba – patikimas backend/host ir atskiras agento sandbox. Host/root/Docker administratorius gali pasiekti paslaptis. WEB būsenas sinchronizuoja agento status užklausos. Operacijų lentelėje tapatybė matoma per operacijos UUID, tačiau atskiras prašančio agento vardo stulpelis būtų naudingas. Blade formatas ir brokerio operacijos žodynas turi priežiūros tobulinimo vietų. Pakartotinio cancel vykstant Chromium teardown deterministinis testas liko papildomas regresijos kandidatas; patvirtinto pažeidžiamumo nerasta.
+The security boundary assumes a trusted backend and host with a separate agent sandbox. A host, root or Docker administrator can access secrets. Agent status requests synchronize state in the web app. The operations table identifies requests by operation UUID. A separate column for the requesting agent's name would help. Blade formatting and broker operation terminology could be easier to maintain. A deterministic test for repeated cancellation during Chromium teardown remains a regression test candidate. The review found no confirmed vulnerability there.

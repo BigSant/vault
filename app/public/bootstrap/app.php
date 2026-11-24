@@ -34,6 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json(['error' => $codes[$status]], $status);
             }
 
-            return response()->view('error', ['status' => $status], $status);
+            // Validation texts name fields and rules, never submitted values.
+            $messages = $error instanceof ValidationException ? array_slice(array_merge(...array_values($error->errors()) ?: [[]]), 0, 5) : [];
+
+            return response()->view('error', ['status' => $status, 'messages' => $messages], $status);
         });
     })->create();

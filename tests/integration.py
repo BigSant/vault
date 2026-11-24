@@ -82,7 +82,8 @@ def run():
     else:
         state = {'email': 'integration@example.test', 'password': secrets.token_urlsafe(24)}
         human.request('/setup', {'name': 'Integration Owner', **state, 'bootstrap_code': (DATA/'security/app/bootstrap.code').read_text()})
-        state['seed'] = re.search(r'<pre data-secret>([^<]+)</pre>', human.last)[1]
+        assert 'class="totp-qr" src="data:image/svg+xml;base64,' in human.last, 'MFA enrollment QR missing'
+        state['seed'] = re.search(r'<pre data-secret[^>]*>([^<]+)</pre>', human.last)[1]
         statefile.write_text(json.dumps(state)); statefile.chmod(0o600)
     human.request('/mfa', {'code': otp(state['seed'])})
     print('PASS: real HTTPS, CSRF cookie session, password and TOTP login')
@@ -165,7 +166,8 @@ def run():
     human.request('/')
     assert human.url.endswith('/login'),'Old authenticated session survived recovery'
     human.request('/login',{'email':state['email'],'password':state['password']})
-    state['seed']=re.search(r'<pre data-secret>([^<]+)</pre>',human.last)[1]
+    assert 'class="totp-qr" src="data:image/svg+xml;base64,' in human.last, 'MFA enrollment QR missing'
+    state['seed']=re.search(r'<pre data-secret[^>]*>([^<]+)</pre>',human.last)[1]
     statefile.write_text(json.dumps(state))
     human.request('/mfa',{'code':otp(state['seed'])})
     print('PASS: real owner recovery revokes pending MFA and authenticated sessions; new credentials enroll MFA')

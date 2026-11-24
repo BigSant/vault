@@ -1,28 +1,28 @@
 # Vault
 
-Prisijungimų saugykla su lietuviška WEB sąsaja ir veiksmų įrankiais LLM klientams, pirmiausia **ai-os**. Žmogus peržiūri reikšmes po autentifikacijos; agentas gauna tik jam leistinus alias, veiksmų pavadinimus ir būsenas. Slaptažodį panaudoja atskiras vykdytojas.
+A credential store with an English web UI and action tools for LLM clients, primarily **ai-os**. A human views values after authentication; an agent gets only the aliases, action names and states it is allowed. The password is used by a separate executor.
 
-Veikia workspace → projektas → aplinka struktūra, tipai ir žymos, paieška, versijos, importas, archyvas, sunaikinimas, keli savininkai, MFA, atskleidimo auditas, laikinos agentų teisės, žmogaus patvirtinimai, API, fiksuotas CLI receptas ir izoliuotos naršyklės prisijungimas su MFA. OpenBao saugo šifruotas reikšmes; MySQL – metaduomenis. Kopijos šifruojamos ir atkuriamos atskiroje aplinkoje.
+It provides a workspace → project → environment structure, entry types and tags, search, versions, import, archive, destruction, multiple owners, MFA, reveal audit, temporary agent permissions, human approvals, an API, a fixed CLI recipe and isolated browser login with MFA. OpenBao stores the encrypted values; MySQL stores the metadata. Backups are encrypted and restored in a separate environment.
 
-## Paleidimas
+## Getting started
 
-Reikia Docker, Python 3.12+ ir bendro [setup](https://github.com/BigSant/DockerDevelopmentEnvironment), paruošto kaip kituose `~/Projects` projektuose. PHP 8.5, MySQL 8.4, Apache ir nginx-proxy parenka setup; papildomi servisai yra OpenBao, brokeris ir paskirčių proxy.
+Requires Docker, Python 3.12+ and the shared Docker development setup (DockerDevelopmentEnvironment), prepared as in the other `~/Projects` projects. The setup selects PHP 8.5, MySQL 8.4, Apache and nginx-proxy; the additional services are OpenBao, the broker and the destination proxy.
 
 ```bash
 cd ~/Projects/vault
 bin/vault install
 ```
 
-`install` paruošia privačius failus, Docker, Composer priklausomybes, OpenBao tapatybes ir Laravel migracijas. Pakartotinis paleidimas nekeičia esamų paslapčių. `SETUP_DIRECTORY` galima nurodyti kitam setup katalogui. `install` skirtas local/test; serverio eiga – [runbook](docs/operations.md).
+`install` prepares the private files, Docker, Composer dependencies, OpenBao identities and Laravel migrations. Running it again does not change existing secrets. `SETUP_DIRECTORY` can point to a different setup directory. `install` is meant for local/test; the server procedure is in the [runbook](docs/operations.md).
 
-Atidarykite **https://vault.local/**. Pirmam savininkui reikia aktyvacijos kodo iš privataus `data/security/app/bootstrap.code` failo. Jo turinį įveskite tiesiai WEB, ne pokalbyje. Susikurkite slaptažodį ir užregistruokite TOTP autentifikatorių. Parengties adresas: `https://vault.local/health.php` (200 tik kai pasiekiama DB ir OpenBao atrakintas).
+Open **https://vault.local/**. The first owner needs the activation code from the private `data/security/app/bootstrap.code` file. Enter its contents directly in the web UI, not in a chat. Create a password and register a TOTP authenticator. Readiness address: `https://vault.local/health.php` (200 only when the DB is reachable and OpenBao is unsealed).
 
-1. Sukurkite projektą: automatiškai atsiras local, test, stage ir prod aplinkos.
-2. Pridėkite įrašą ir pasirinkite tipą. Alias yra agentui matomas vardas; jame nelaikykite jautrių duomenų.
-3. „Prieigos ir veiksmai“ sukurkite agento tapatybę bei leidimus konkretiems įrašams ir veiksmams. Numatytoji connector konfigūracija tuščia – agentas neturi jokių veiksmų.
-4. Prijunkite [ai-os arba MCP/CLI](docs/integrations.md). Konkrečius išorinius adresus ir saugius receptus operatorius aprašo privačioje konfigūracijoje.
+1. Create a project: the local, test, stage and prod environments appear automatically.
+2. Add an entry and choose its entry type. The alias is the name visible to the agent; do not keep sensitive data in it.
+3. In "Access", create an agent identity and grants for specific entries and actions. The default connector configuration is empty – the agent has no actions.
+4. Connect [ai-os or MCP/CLI](docs/integrations.md). The operator describes the specific external addresses and safe recipes in the private configuration.
 
-## Patikros
+## Checks
 
 ```bash
 docker exec -w /var/www/html vault-local-php-fpm php vendor/bin/phpunit
@@ -31,21 +31,21 @@ VAULT_ENV=test bin/vault install
 VAULT_ENV=test bin/vault database
 python3 tests/integration.py
 VAULT_ENV=test bin/vault backup
-VAULT_ENV=test bin/vault restore-verify backups/<test-kopija>.vault
-python3 tests/restore_empty.py backups/<test-kopija>.vault
+VAULT_ENV=test bin/vault restore-verify backups/<test-backup>.vault
+python3 tests/restore_empty.py backups/<test-backup>.vault
 ```
 
-Unit testų Docker komandoje UID/GID pritaikykite savo vartotojui. Integraciniai testai naudoja tik `vault.test.local`, sintetinius prisijungimus ir izoliuotą fixture. Jie tikrina realų HTTPS, CSRF, TOTP, OpenBao, API/CLI, trumpalaikę DB prieigą, naršyklės MFA, neleistiną paskirtį, slaptažodžio atkartojimą ir atšaukimą. Atskiros patikros tikrina šifruotos kopijos sugadinimą, DNS adresų tikrinimą, teises ir klientų atsakymus. Po kodo pakeitimo test aplinką atnaujina `make -C app test-init refresh=1`, tada `make -C app up ENV=test`; brokerio pakeitimams dar reikia `make -C app build`.
+In the unit test Docker command, adjust the UID/GID to your user. The integration tests use only `vault.test.local`, synthetic credentials and an isolated fixture. They check real HTTPS, CSRF, TOTP, OpenBao, API/CLI, short-lived DB access, browser MFA, a disallowed destination, password echo and revocation. Separate checks cover corruption of the encrypted backup, DNS address checking, permissions and client responses. After a code change, refresh the test environment with `make -C app test-init refresh=1`, then `make -C app up ENV=test`; broker changes also need `make -C app build`.
 
-## Pasitikėjimo ribos
+## Trust boundaries
 
-**LLM, turintis host/root, Docker socket ar galintis keisti vykdytojo kodą, gali pasiekti paslaptis.** Produkcijoje Vault ir patikimas ai-os backend turi veikti agento neadministruojamame host/VM; agento sandbox neturi gauti šių diskų, konfigūracijos ar owner WEB sesijos. Vietinis Docker yra kūrimo aplinka, ne šios ribos įrodymas.
+**An LLM that has host/root, the Docker socket or the ability to change the executor code can reach the secrets.** In production, Vault and the trusted ai-os backend must run on a host/VM the agent does not administer; the agent sandbox must not get these disks, the configuration or the owner web session. Local Docker is a development environment, not proof of this boundary.
 
-Nėra `get_secret`, savavališko shell, HTTP proxy, DOM, cookies, CDP ar ekrano nuotraukų agentui. API ir CLI receptas tikrina registruoto HTTPS adreso 200 būseną; naršyklė prisijungia ir patikrina operatoriaus nustatytą paskyros būseną. Tai konkretūs naudingi veiksmai, ne universalus naršymas. Naujam veiksmui reikia operatoriaus aprašo ir jo rezultatų patikros. CAPTCHA, WebAuthn/SSO specialūs srautai, SSH vykdymas ir savavališkų išorinių paskyrų automatinis slaptažodžio keitimas nepalaikomi. SSH raktus ir slaptus užrašus galima saugoti bei peržiūrėti.
+There is no `get_secret`, arbitrary shell, HTTP proxy, DOM, cookies, CDP or screenshots for the agent. The API and CLI recipe check for a 200 status from a registered HTTPS address; the browser logs in and checks the account state defined by the operator. These are specific useful actions, not general browsing. A new action needs an operator definition and a check of its results. CAPTCHA, special WebAuthn/SSO flows, SSH execution and automatic password change for arbitrary external accounts are not supported. SSH keys and secret notes can be stored and viewed.
 
-Automatinė rotacija taikoma valdomiems AppRole ir OpenBao šifravimo raktams per operatoriaus maintenance laikmatį; dinaminės DB prieigos galioja iki 60 s. Kitų sistemų reikšmes žmogus pakeičia toje sistemoje ir tada Vault. `rotate_at` yra priminimas, ne išorinio slaptažodžio pakeitimo garantija.
+Automatic rotation applies to the managed AppRole and OpenBao encryption keys through the operator's maintenance timer; dynamic DB access is valid for up to 60 s. Values of other systems are changed by a human in that system and then in Vault. `rotate_at` is a reminder, not a guarantee that the external password was changed.
 
-- [Architektūra ir priėmimo sutartis](docs/architecture.md)
-- [Diegimas, kopijos, atkūrimas, rotacija](docs/operations.md)
-- [ai-os, MCP/CLI ir connector sutartis](docs/integrations.md)
-- [Oficialių 1Password, Bitwarden, Infisical ir OpenBao sistemų tyrimas](research/secret-management.md)
+- [Architecture and acceptance contract](docs/architecture.md)
+- [Deployment, backups, restore, rotation](docs/operations.md)
+- [ai-os, MCP/CLI and connector contract](docs/integrations.md)
+- [Research on the official 1Password, Bitwarden, Infisical and OpenBao systems](research/secret-management.md)

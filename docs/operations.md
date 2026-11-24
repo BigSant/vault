@@ -1,40 +1,42 @@
-# Vault eksploatavimas
+# Vault operations
 
-## Aplinkos ir duomenys
+## Environments and data
 
-`VAULT_ENV=local|test|stage|prod` parenka tapatybes ir konteinerius. Local duomenys yra `data/`, test – `app/.generated/test/data/`, stage/prod operatoriaus komandos numato `data/<env>/`. Serverio DDE `PROJECT_DATA_DIRECTORY` turi sutapti su šiuo keliu. `bin/vault install` automatiškai paruošia tik local/test. Stage/prod: paruoškite privatų DDE env pagal serverio setup, vykdykite `VAULT_ENV=prod bin/vault prepare`, `make -C app build ENV=prod`, `make -C app up ENV=prod`, Composer install konteineryje, `VAULT_ENV=prod bin/vault initialize` ir `php artisan migrate --force` PHP konteineryje. Docroot yra `/var/www/html/public`, ne Laravel projekto šaknis.
+`VAULT_ENV=local|test|stage|prod` selects identities and containers. Local data lives in `data/`, test data in `app/.generated/test/data/`. Stage/prod operator commands expect `data/<env>/`. The server's DDE `PROJECT_DATA_DIRECTORY` must match this path. `bin/vault install` sets up local/test automatically. For stage/prod, prepare a private DDE environment for the server, then run `VAULT_ENV=prod bin/vault prepare`, `make -C app build ENV=prod`, `make -C app up ENV=prod`, Composer install in the container, `VAULT_ENV=prod bin/vault initialize` and `php artisan migrate --force` in the PHP container. Set the document root to `/var/www/html/public`, below the Laravel project root.
 
-Privatūs aplinkų failai, runtime duomenys, atkūrimo raktai ir kopijos neversijuojami. `prepare` sukuria Laravel rašomus katalogus. Konteineriai naudoja host UID/GID; konteinerio paleidimo vartotojas turi galėti perskaityti 0600 failus. Išoriniams adresams privalomas galiojantis HTTPS sertifikatas; tarp servisų naudojamas privatus Docker tinklas. OpenBao ir brokeris neturi publikuotų portų. OpenBao po restarto gali būti užrakintas: `bin/vault initialize` atrakina originaliomis dalimis, jų nespausdindamas.
+Keep private environment files, runtime data, recovery keys and backups out of version control. `prepare` creates writable Laravel directories. Containers use the host UID/GID. The user running the container must be able to read files with mode 0600. External endpoints require a valid HTTPS certificate. Services communicate over a private Docker network. OpenBao and the broker have no published ports. OpenBao may be sealed after a restart. `bin/vault initialize` unseals it with the original shares without printing them.
 
-OpenBao AppRole token TTL – 5 min; WEB rašo/skaityto įrašus bei TOTP, brokeris tik skaito įrašus ir valdomas DB roles. Root token ir unseal dalys laikomi `~/.config/vault/<env>/openbao.json`, **ne konteinerių mount'uose**. Produkcijoje šią medžiagą laikykite saugiame operatoriaus kanale / offline kopijoje; turintis ją gali perimti Vault. Automatiniam maintenance operatoriaus host reikia jos prieigos. Visišką agento host administravimo teisę suteikti kitame host, ne čia.
+OpenBao AppRole tokens have a 5-minute TTL. The web app reads and writes entries and TOTP data. The broker can only read entries and managed DB roles. The root token and unseal shares are stored in `~/.config/vault/<env>/openbao.json`, **outside container mounts**. In production, keep this material in a secure operator channel or offline backup. Anyone who holds it can take control of Vault. Automated maintenance requires access from the operator host. Give the agent full administrative rights only on a separate host.
 
-## Kopija ir tikras atkūrimas
+On existing installations, the OpenBao KV v2 limit `max_versions=1000` takes effect after updating `secret/config`. For local/test, rerun `bin/vault install` with the selected `VAULT_ENV`. For stage/prod, run `bin/vault initialize` with the appropriate `VAULT_ENV`. OpenBao backups grow as entry versions accumulate.
+
+## Backup and full restore
 
 ```bash
 VAULT_ENV=local bin/vault backup
-VAULT_ENV=local bin/vault restore-verify backups/<kopija>.vault
+VAULT_ENV=local bin/vault restore-verify backups/<backup>.vault
 ```
 
-Kopija atsisako pradėti esant aktyvioms operacijoms, įjungia maintenance ir sustabdo PHP/brokerį, tada surenka SQL, OpenBao raft snapshot, aplikacijos raktą, AppRole ir connector konfigūraciją. Operacijos dar kartą patikrinamos po sustabdymo. Sodium secretstream autentifikuoja visą srautą, įskaitant pabaigą. Tikrinamas kiekvienas rašymas, flush ir fsync; galutinis kopijos vardas atominiu žingsniu paskelbiamas tik po sėkmės. Pilno disko, trumpo rašymo ir flush gedimai turi regresinius testus. Pasibaigus bandymui PHP/brokeris paleidžiami. Tai trumpa planinė WEB pertrauka; nepavykus komandai patikrinkite servisų būseną ir `artisan up`.
+Backup refuses to start while operations are active. It enables maintenance mode, stops PHP and the broker, rechecks for active operations, then collects SQL, an OpenBao Raft snapshot, the application key, AppRole and connector configuration. Sodium secretstream authenticates the entire stream, including its end. Backup checks every write, flush and fsync, and publishes the final filename atomically only on success. Regression tests cover full disks, short writes and flush failures. PHP and the broker restart after the attempt. This causes a short planned web outage. If the command fails, check service status and `artisan up`.
 
-Atskirai nuo `.vault` kopijos būtina išsaugoti **abu**:
+Store **both** files separately from the `.vault` backup:
 
-- `~/.config/vault/<env>/backup.key` – kopijos šifravimo raktas;
-- `~/.config/vault/<env>/openbao.json` – originalios OpenBao atkūrimo dalys.
+- `~/.config/vault/<env>/backup.key` — backup encryption key
+- `~/.config/vault/<env>/openbao.json` — original OpenBao recovery shares
 
-Be jų kopija neatkuriama. `restore-verify` naudoja atskirą OpenBao be tinklo ir laikiną SQL DB, patikrina įrašų versijas, MFA ir atkurtų agentų prieigos atšaukimą, po to išvalo fixture. Gyvi duomenys nekeičiami.
+Restore requires both files. `restore-verify` uses a separate OpenBao instance without network access and a temporary SQL database. It checks entry versions, MFA and revocation of restored agent access, then removes the fixture. Live data stays intact.
 
-Tikram atkūrimui paruoškite **tuščios DB ir dar neinicijuoto OpenBao** konteinerius su tos pačios aplinkos vardu, tuo pačiu kodu ir Composer priklausomybėmis. Vykdykite `prepare` bei DDE build/up, tačiau **nevykdykite `initialize`, `install` ar migracijų**. Į originalią privataus operatoriaus vietą atskirai perkelkite abu atkūrimo failus, tada:
+For a full restore, prepare containers with **an empty database and an uninitialized OpenBao instance**, using the same environment name, code and Composer dependencies. Run `prepare` and DDE build/up, but **skip `initialize`, `install` and migrations**. Transfer both recovery files separately to their original private operator location, then run:
 
 ```bash
-VAULT_ENV=local bin/vault restore /privatus/kelias/kopija.vault
+VAULT_ENV=local bin/vault restore /private/path/backup.vault
 ```
 
-Komanda atsisako perrašyti bet kokią esamą DB schemą arba inicijuotą OpenBao. Atkuria SQL, snapshot ir konfigūraciją, išvalo sesijas/cache, atšaukia visus machine token’us ir grants. Savininkų slaptažodžiai ir TOTP išlieka; agentams išduokite naujas tapatybes ir leidimus. Nesėkmės metu tikslas lieka sustabdytas, kad dalinis atkūrimas nebūtų naudojamas. Taisykite tuščią tikslą arba pradėkite naujame; nėra `--force` esamam Vault perrašyti. `tests/restore_empty.py` realiai patikrina šią eigą disposable konteineriuose ir laikinoje DB.
+The command refuses to overwrite an existing DB schema or initialized OpenBao instance. It restores SQL, the snapshot and configuration, clears sessions and cache, and revokes all machine tokens and grants. Owner passwords and TOTP survive. Issue new identities and grants to agents. On failure, the target stays stopped to prevent use of a partial restore. Repair the empty target or start with a fresh one. There is no `--force` option to overwrite an existing Vault. `tests/restore_empty.py` exercises this procedure in disposable containers and a temporary DB.
 
-DDE lentelių registre visos lentelės `empty skip`: bendri dataset ir SQL eksportai sąmoningai neperkelia tapatybių, katalogo ar audito. **Vault atkūrimui naudokite tik pilną šifruotą Vault kopiją**, o ne atskirą SQL dump. Schemos snapshot versijuojamas `app/database/schema/`; schemą keičia Laravel migracijos (`DATABASE_MIGRATIONS=off` yra DDE migracijų, ne Laravel išjungimas).
+Every table in the DDE table registry uses `empty skip`. General dataset and SQL exports intentionally omit identities, the catalog and audit data. **Use only a full encrypted Vault backup to restore Vault.** A standalone SQL dump is insufficient. The schema snapshot is versioned in `app/database/schema/`. Laravel migrations change the schema. `DATABASE_MIGRATIONS=off` disables DDE migrations only.
 
-## Rotacija, prieigos ir priežiūra
+## Rotation, access and maintenance
 
 ```bash
 bin/vault rotate-service-credentials
@@ -42,16 +44,16 @@ bin/vault rotate-encryption-key
 bin/vault maintenance
 ```
 
-Pirma komanda išduoda naujus AppRole SecretID ir atšaukia senus; jau išduoti token’ai baigs galioti per 5 min. Antra rotuoja OpenBao šifravimo raktą, išlaikydama senų įrašų skaitomumą. `maintenance` pašalina pasibaigusių sesijų/cache būsenas, pažymi pasibaigusias operacijas ir kas 30 dienų vykdo abi rotacijas. Pavyzdinis systemd laikmatis yra `ops/`: kopijuojant nurodykite absoliutų checkout kelią ir `VAULT_ENV`; įjunkite operatoriaus user systemd. Timer neįjungiamas vien klonuojant repozitoriją.
+The first command issues new AppRole SecretIDs and revokes the old ones. Existing tokens expire within 5 minutes. The second rotates the OpenBao encryption key while keeping old entries readable. `maintenance` removes expired session and cache state, marks expired operations and runs both rotations every 30 days. To use the example systemd timer in `ops/`, set the absolute checkout path and `VAULT_ENV` in the copy and enable it in the operator's user systemd instance. Cloning the repository leaves the timer disabled.
 
-`VAULT_ENV=test bin/vault database` provisionina sintetinį MySQL `vault-probe` dinaminį prisijungimą (tik SELECT `vault_probe`, max 60 s). Tai nėra teisė skaityti Vault katalogo DB. Brokeris po veiksmo atšaukia lease token’ą; avarijos atveju lieka OpenBao TTL. Išoriniam DB reikia atskirai operatoriaus sukonfigūruoto OpenBao connection/role ir tinklo politikos; neplėskite `vault_lease_admin` teisių į katalogą.
+`VAULT_ENV=test bin/vault database` provisions synthetic dynamic MySQL credentials for `vault-probe` (SELECT only on `vault_probe`, maximum 60 s). These credentials have no read access to the Vault catalog DB. The broker revokes the lease token after the action. If it crashes, the OpenBao TTL applies. An external DB requires an operator-configured OpenBao connection, role and network policy. Keep `vault_lease_admin` privileges off the catalog.
 
-Praradus savininko prieigą, patikimas operatorius gali vykdyti `bin/vault recover-user owner@example.com`. Naujas atsitiktinis slaptažodis įrašomas tik į `~/.config/vault/<env>/recovered-user.json`; senos WEB ir dar MFA laukiančios sesijos atšaukiamos per autentifikacijos reviziją, kitą kartą būtinas naujas MFA užregistravimas. Žmogus perskaito failą tiesiai, prisijungia, WEB pasikeičia slaptažodį ir pašalina laikino atkūrimo failą. Nesiųskite jo LLM. Tai operatoriaus galia, ne naudotojui prieinamas MFA apėjimas.
+If an owner loses access, a trusted operator can run `bin/vault recover-user owner@example.com`. The command writes a new random password only to `~/.config/vault/<env>/recovered-user.json`. An authentication revision invalidates existing web sessions, including those awaiting MFA. The next login requires fresh MFA enrollment. The user reads the file directly, signs in, changes the password in the web app and removes the temporary recovery file. Never send it to an LLM. Only the operator can perform this recovery. Users cannot bypass MFA.
 
-WEB archyvavimas atšaukia grants. Grąžinimas iš archyvo jų neatnaujina. Sunaikinimas leidžiamas tik owner, tik archyvuotam įrašui ir įrašius DELETE; jis pašalina visas veikiančio backend versijas, tačiau anksčiau padarytoms kopijoms taikoma atskira jų saugojimo politika. Metaduomenų ir audito istorija lieka. WEB redagavimo formos tušti slapti laukai palieka esamas reikšmes; nepateikti importuoti laukai išsaugomi. SSH passphrase galima įvesti arba aiškiai pažymėti jo pašalinimą. Istorinė versija grąžinama kaip nauja CAS versija. Išorinio API rakto ar svetainės slaptažodžio tai automatiškai nekeičia.
+Archiving an entry in the web app revokes its grants. Restoring it from the archive leaves those grants revoked. Only an owner can permanently destroy an archived entry, after typing DELETE. Destruction removes all versions from the live backend. Existing backups follow their own retention policy. Metadata and audit history remain. Blank secret fields in the web edit form retain their current values, as do imported fields omitted from the form. Users can enter an SSH passphrase or explicitly select its removal. Restoring a historical version creates a new CAS version. External API keys and website passwords do not change automatically.
 
-## Atnaujinimas ir incidentas
+## Updates and incident response
 
-Prieš atnaujinimą sukurkite ir patikrinkite kopiją. Įdiekite užrakintas Composer priklausomybes, perkurkite brokerio image, pritaikykite Laravel migracijas, paleiskite sveikatos ir testines patikras. Seccomp failo turinio pakeitimas reikalauja perkurti brokerio konteinerį; vien Compose path nepasikeičia. `broker/seccomp.json` remiasi Moby profiles default, commit `6fe7deb1b9fb7c0397a4593480d7d22b9ee8caef`, pridėta clone/setns/unshare/chroot Chromium user namespace sandbox; sandbox išjungti negalima.
+Before updating, create and verify a backup. Install the locked Composer dependencies, rebuild the broker image, apply Laravel migrations and run health checks and tests. Recreate the broker container after changing the seccomp file contents. The Compose path alone stays the same. `broker/seccomp.json` uses the default Moby profile at commit `6fe7deb1b9fb7c0397a4593480d7d22b9ee8caef`, with clone/setns/unshare/chroot added for Chromium's user namespace sandbox. Keep the sandbox enabled.
 
-Įtarus nuotėkį: WEB atšaukite machine/grants, sustabdykite brokerį, pakeiskite tikslinių sistemų reikšmes bei AppRole, patikrinkite auditą ir host prieigas. Auditą saugo SQL; jis nepriklausomas nuo slaptų reikšmių, tačiau nėra apsaugotas nuo paties host/DB administratoriaus pakeitimų. Serverio sesijos išorinėje svetainėje gali išlikti iki jos TTL net uždarius vietinį Chromium kontekstą.
+If you suspect a leak, revoke machine access and grants in the web app, stop the broker, rotate credentials on target systems and the AppRole, and review the audit log and host access. SQL stores the audit log independently of secret values. A host or DB administrator can modify it. Server-side sessions on external sites may last until their TTL expires, even after the local Chromium context closes.

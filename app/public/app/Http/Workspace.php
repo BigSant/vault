@@ -5,17 +5,21 @@ namespace App\Http;
 use App\Models\User;
 use App\Vault\Access;
 use App\Vault\Catalog;
+use App\Vault\EntryTypes;
 use App\Vault\Operations;
 use App\Vault\Secrets;
+use App\Vault\Structure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use OTPHP\TOTP;
 
 final class Workspace
 {
-    public function __construct(private Access $access, private Catalog $catalog, private Operations $ops, private Secrets $secrets) {}
+    public function __construct(private Access $access, private Catalog $catalog, private Operations $ops, private Secrets $secrets,
+        private EntryTypes $types, private Structure $structure) {}
 
     public function index(Request $r)
     {
@@ -39,7 +43,10 @@ final class Workspace
             }
         }
 
-        return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
+        $query->addSelect('environments.production');
+
+        return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
+            'typeNames' => $space ? $this->types->names($space->id) : [], 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
     }
 
     public function workspace(Request $r)
@@ -58,41 +65,120 @@ final class Workspace
 
     public function project(Request $r, string $workspace)
     {
-        $this->access->workspace($workspace, ['owner', 'editor']);
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $this->access->recent($r);
-        $d = $r->validate(['name' => 'required|string|max:100']);
-        DB::transaction(function () use ($workspace, $d) {
-            $id = (string) Str::uuid();
-            DB::table('projects')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name']]);
-            foreach (['local', 'test', 'stage', 'prod'] as $name) {
-                DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $id, 'name' => $name]);
-            }$this->access->audit($workspace, 'project.create', $id);
-        });
+        $this->structure->createProject($space, (string) $r->input('name'));
 
-        return redirect('/?workspace='.$workspace);
+        return redirect($r->input('back') === 'structure' ? '/workspaces/'.$workspace.'/structure' : '/?workspace='.$workspace);
     }
 
     public function environment(Request $r, string $workspace)
     {
         $this->access->workspace($workspace, ['owner', 'editor']);
         $this->access->recent($r);
-        $d = $r->validate(['project_id' => 'required|uuid', 'name' => 'required|string|max:60']);
-        abort_unless(DB::table('projects')->where('id', $d['project_id'])->where('workspace_id', $workspace)->exists(), 404);
-        DB::table('environments')->insert(['id' => (string) Str::uuid(), ...$d]);
-        $this->access->audit($workspace, 'environment.create', $d['project_id']);
+        $d = $r->validate(['project_id' => 'required|uuid']);
+        $this->structure->addEnvironment($workspace, $d['project_id'], (string) $r->input('name'), $r->input('production') === '1');
 
-        return redirect('/?workspace='.$workspace);
+        return redirect($r->input('back') === 'structure' ? '/workspaces/'.$workspace.'/structure' : '/?workspace='.$workspace);
+    }
+
+    public function structurePage(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
+        $projects = DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->get();
+        $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->orderBy('name')->get()->groupBy('project_id');
+        $counts = DB::table('entries')->whereIn('environment_id', $environments->flatten()->pluck('id'))->where('state', '!=', 'destroyed')->groupBy('environment_id')
+            ->selectRaw('environment_id, COUNT(*) as total')->pluck('total', 'environment_id');
+        $template = $this->structure->template($space);
+
+        return view('structure', compact('space', 'projects', 'environments', 'counts', 'template'));
+    }
+
+    public function template(Request $r, string $workspace)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->structure->saveTemplate($workspace, (array) $r->input('env_name', []), (array) $r->input('env_production', []));
+
+        return redirect('/workspaces/'.$workspace.'/structure');
+    }
+
+    public function renameProject(Request $r, string $workspace, string $project)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->structure->renameProject($workspace, $project, (string) $r->input('name'));
+
+        return redirect('/workspaces/'.$workspace.'/structure');
+    }
+
+    public function deleteProject(Request $r, string $workspace, string $project)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->structure->deleteProject($workspace, $project);
+
+        return redirect('/workspaces/'.$workspace.'/structure');
+    }
+
+    public function updateEnvironment(Request $r, string $workspace, string $environment)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->structure->updateEnvironment($workspace, $environment, (string) $r->input('name'), $r->input('production') === '1');
+
+        return redirect('/workspaces/'.$workspace.'/structure');
+    }
+
+    public function deleteEnvironment(Request $r, string $workspace, string $environment)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->structure->deleteEnvironment($workspace, $environment);
+
+        return redirect('/workspaces/'.$workspace.'/structure');
+    }
+
+    public function typesPage(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
+        $types = $this->types->all($workspace);
+        $usage = $this->types->usage($workspace);
+        $kinds = EntryTypes::KINDS;
+
+        return view('types', compact('space', 'types', 'usage', 'kinds'));
+    }
+
+    public function saveType(Request $r, string $workspace, ?string $key = null)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $key = $this->types->save($workspace, $key, $r->all());
+
+        return redirect('/workspaces/'.$workspace.'/types#type-'.$key);
+    }
+
+    public function deleteType(Request $r, string $workspace, string $key)
+    {
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $this->access->recent($r);
+        $this->types->delete($workspace, $key);
+
+        return redirect('/workspaces/'.$workspace.'/types');
     }
 
     public function entryForm(Request $r)
     {
         $workspace = (string) $r->query('workspace');
-        $this->access->workspace($workspace, ['owner', 'editor']);
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $entry = $r->query('entry') ? $this->access->entry($r->query('entry'), ['owner', 'editor']) : null;
         abort_if($entry && $entry->workspace_id !== $workspace, 404);
-        $environments = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)->select('environments.*', 'projects.name as project')->get();
+        $environments = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderBy('environments.name')->get();
+        $types = $this->types->all($workspace)->when($entry, fn ($all) => $all->where('key', $entry->type))->values();
+        abort_if($types->isEmpty() && $entry, 409);
 
-        return view('entry-form', compact('entry', 'environments', 'workspace'));
+        return view('entry-form', compact('entry', 'environments', 'workspace', 'types', 'space'));
     }
 
     public function create(Request $r)
@@ -116,10 +202,17 @@ final class Workspace
         return $this->entryView($id);
     }
 
-    private function entryView(string $id, ?array $secret = null)
+    private function entryView(string $id, ?array $secret = null, ?int $shownVersion = null, array $differs = [])
     {
         $entry = $this->access->entry($id);
-        $role = $this->access->workspace($entry->workspace_id)->role;
+        $space = $this->access->workspace($entry->workspace_id);
+        $role = $space->role;
+        $type = $this->types->find($entry->workspace_id, $entry->type);
+        $labels = $type ? array_column($type->fields, 'label', 'key') : [];
+        $environment = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('environments.id', $entry->environment_id)
+            ->select('environments.name', 'environments.production', 'projects.name as project')->first();
+        $historyOlder = false;
+        $history = $entry->state === 'destroyed' ? [] : $this->catalog->history($entry, older: $historyOlder);
         $grants = collect();
         $events = collect();
         $operations = collect();
@@ -133,15 +226,18 @@ final class Workspace
             })->orderByDesc('id')->limit(30)->get();
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations'));
+        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)
     {
         $this->access->recent($r);
         $d = $r->validate(['version' => 'nullable|integer|min:1']);
+        // The version label and comparison use the version the backend read actually returned, not a later SQL read.
+        $shown = $this->catalog->revealVersion($id, (int) ($d['version'] ?? 0));
+        $differs = $this->catalog->differsFromCurrent($id, $shown['payload'], $shown['version']);
 
-        return $this->entryView($id, $this->catalog->reveal($id, (int) ($d['version'] ?? 0)));
+        return $this->entryView($id, $shown['payload'], $shown['version'], $differs);
     }
 
     public function archive(Request $r, string $id)
@@ -256,10 +352,16 @@ final class Workspace
         abort_unless(DB::table('machines')->where('id', $d['machine_id'])->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->exists(), 404);
         $definition = $this->ops->definitions()[$d['action']] ?? null;
         abort_unless($definition, 422);
-        $type = match ($definition['kind']) {
-            'browser' => 'login','database' => 'dynamic_database',default => 'api_key'
-        };
-        abort_unless($entry->type === $type, 422);
+        // The action reads these fields from the secret, so the entry's type must require them.
+        $type = $this->types->find($workspace, $entry->type);
+        $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
+        if (array_diff(EntryTypes::actionFields($definition['kind']), $required)) {
+            throw ValidationException::withMessages(['action' => 'This action needs the entry type to have these required fields: '.implode(', ', EntryTypes::actionFields($definition['kind'])).'.']);
+        }
+        // The type only describes new versions; the version the action would read must actually hold the fields.
+        if ($missing = $this->catalog->missingFields($entry->id, EntryTypes::actionFields($definition['kind']))) {
+            throw ValidationException::withMessages(['action' => 'The current version of this entry has no value for: '.implode(', ', $missing).'. Update the entry first.']);
+        }
         DB::transaction(function () use ($workspace, $d) {
             DB::table('machines')->where('id', $d['machine_id'])->lockForUpdate()->first();
             $existing = DB::table('grants')->where('machine_id', $d['machine_id'])->where('entry_id', $d['entry_id'])->where('action', $d['action'])->first();
