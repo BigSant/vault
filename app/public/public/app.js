@@ -26,7 +26,9 @@ if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => {
   hideSecrets('[data-secret]:not([data-keep])');
   document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
   // With the values gone, revealing them again is the page's main action: its button turns solid.
-  document.querySelectorAll('[data-go-when-hidden]').forEach(button => button.classList.add('go'));
+  // (Not while an action is held: the held button is then the one solid button, and the release restores this one.)
+  const holding = document.querySelector('.confirm-inline [data-held-row]:not([hidden])');
+  document.querySelectorAll('[data-go-when-hidden]').forEach(button => { if (holding) button.dataset.heldGo = '1'; else button.classList.add('go'); });
   say(version ? 'Version ' + version + ' values hidden again. Copy is off until you reveal version ' + version + ' again.' : 'Secret values hidden again. Copy is off until you reveal them again.');
 }, 30000);
 // The enrollment QR encodes the same key, so it goes too.
@@ -272,7 +274,13 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // A page states its confirmation once. A shared block that names an earlier one (data-primary: Reveal on the entry
 // page names the waiting requests' block) is deferred while that one is on screen: it shows nothing while the
 // confirmation is valid and, once it has expired, a line pointing to the one password field, which then serves this
-// block's forms too.
+// block's forms too. A block marked data-quiet-valid (Members, above the rows) shows nothing while the confirmation
+// is valid, because a form on the same page states it.
+// The held button's wording: the pressed button's data-held-name, plus the chosen option of the form field named by
+// data-held-field ("Change Dana's role to " + "Editor"; a change of that field while held changes the wording).
+// Data in it keeps its case: what follows ": ", or the data-held-data text after data-held-lead ("Change " + "Dana").
+// While an action is held, the held button is the page's one solid button: the solid buttons of the forms that use
+// a shared block ("Reveal current") are plain until the hold ends.
 const confirmBoxes = new Map();
 document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box => {
   const input = box.querySelector('input[type=password]');
@@ -285,6 +293,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   // With script the shared field works, so the line asks for the password instead of pointing at the confirm page.
   box.querySelectorAll('[data-script-text]').forEach(el => { el.textContent = el.dataset.scriptText; });
   const primary = shared && box.dataset.primary ? document.getElementById(box.dataset.primary) : null;
+  const quietValid = box.hasAttribute('data-quiet-valid');
   let shown = null;
   let wasExpired = null;
   const check = () => {
@@ -297,7 +306,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     input.required = expired && !deferred;
     box.classList.toggle('is-needed', expired && !deferred);
     box.classList.toggle('is-deferred', deferred);
-    box.classList.toggle('is-quiet', deferred && !expired);
+    box.classList.toggle('is-quiet', !expired && (deferred || quietValid));
     box.querySelectorAll('[data-when]').forEach(el => {
       const when = el.dataset.when;
       el.hidden = when === 'deferred' ? !(deferred && expired) : deferred || (when === 'expired') !== expired;
@@ -353,32 +362,55 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     const source = form?.parentElement?.querySelector(':scope > template[data-held-summary]');
     heldWhat.replaceChildren(...(source ? [document.importNode(source.content, true)] : []));
     heldWhat.hidden = !source;
+    // The summary is the held button's description only while it says something.
+    if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');
+  };
+  const solid = on => {
+    if (on) document.querySelectorAll('form[data-confirm-from] button.go').forEach(button => { button.classList.remove('go'); button.dataset.heldGo = '1'; });
+    else document.querySelectorAll('button[data-held-go]').forEach(button => { button.classList.add('go'); delete button.dataset.heldGo; });
   };
   const line = text => { if (hint) { hint.textContent = text; hint.hidden = !text; } };
-  const showHeld = name => {
+  const showHeld = (name, button) => {
     if (!heldRow || !heldButton) return;
     heldRow.hidden = !name;
     if (!name) { heldButton.replaceChildren(); showWhat(null); return; }
-    // "Allow once: " stays a button word; what follows is data and keeps its case.
-    const cut = name.indexOf(': ');
+    // "Allow once: " stays a button word; what follows is data and keeps its case. So does a name inside the
+    // wording: the data-held-data text right after data-held-lead ("Change " + "Dana" + "'s role to Editor").
     const text = document.createElement('span');
-    const data = document.createElement('span');
-    data.className = 'name';
-    data.textContent = cut < 0 ? '' : name.slice(cut + 2);
-    text.append(cut < 0 ? name : name.slice(0, cut + 2), ...(cut < 0 ? [] : [data]));
+    const data = value => { const el = document.createElement('span'); el.className = 'name'; el.textContent = value; return el; };
+    const lead = button?.dataset.heldLead || '';
+    const marked = button?.dataset.heldData || '';
+    const cut = name.indexOf(': ');
+    if (marked && name.startsWith(lead + marked)) text.append(lead, data(marked), name.slice(lead.length + marked.length));
+    else if (cut >= 0) text.append(name.slice(0, cut + 2), data(name.slice(cut + 2)));
+    else text.append(name);
     heldButton.replaceChildren(text);
   };
-  state.hold = (form, button) => {
-    const name = button?.dataset.heldName || button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action';
+  const heldName = (form, button) => {
+    const field = button?.dataset.heldField ? form.elements[button.dataset.heldField] : null;
+    const chosen = field?.selectedOptions ? field.selectedOptions[0]?.textContent.trim() : field?.value;
+    return (button?.dataset.heldName || button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action') + (chosen || '');
+  };
+  // why: what is said instead of "…has expired" (a password that was not right holds the action again).
+  state.hold = (form, button, why = 'Your password confirmation has expired. Enter your current password') => {
+    const name = heldName(form, button);
     state.held = { form, button, name, action: form.getAttribute('action'), value: button?.value || '', version: form.elements.version?.value };
     line('');
-    showHeld(name);
+    showHeld(name, button);
     showWhat(form);
+    solid(true);
     box.scrollIntoView({ block: 'center' });
     input.focus({ preventScroll: true });
-    say('Your password confirmation has expired. Enter your current password, then press: ' + name + '.');
+    say(why + ', then press: ' + name + '.');
   };
-  state.release = () => { state.held = null; showHeld(''); line(''); };
+  state.release = () => { state.held = null; showHeld(''); line(''); solid(false); };
+  // The field that is part of the wording was changed while its action is held: the button says the new choice.
+  document.addEventListener('change', event => {
+    const held = state.held;
+    if (!held?.button?.dataset.heldField || !held.form.contains(event.target)) return;
+    held.name = heldName(held.form, held.button);
+    showHeld(held.name, held.button);
+  });
   const send = () => {
     const held = heldForm();
     const form = held?.form || document.querySelector('form[data-confirm-from="' + box.id + '"][data-confirm-default]');
@@ -391,7 +423,11 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     }
     const button = held?.button || form.querySelector('button:not([type=button])');
     if (button?.disabled) { state.release(); line('That action is no longer available. Choose an action below.'); say('That action is no longer available. Choose an action below.'); return; }
+    // The held button names the action and was pressed on purpose: a form that asks first (data-confirm: Remove)
+    // does not ask again.
+    form.dataset.heldSend = '1';
     form.requestSubmit(button || undefined);
+    delete form.dataset.heldSend;
   };
   input.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || !input.value) return;
@@ -503,7 +539,7 @@ document.querySelectorAll(':is(table.board, table.list) td:has(form[data-confirm
 document.querySelectorAll('form[data-confirm]').forEach(form => {
   const step = twoStep(form.dataset.confirm);
   form.addEventListener('submit', event => {
-    if (event.defaultPrevented) return;
+    if (event.defaultPrevented || form.dataset.heldSend) return;
     if (step.armed()) {
       if (step.tooSoon()) event.preventDefault();
       return;
@@ -666,10 +702,21 @@ if (refreshUrl) {
   const heading = () => {
     const title = document.querySelector('[data-refresh="waiting-title"]');
     const board = document.querySelector('[data-refresh="waiting"]');
-    if (!title || !board || !/^(\d+ requests?|Requests) waiting for you$/.test(title.textContent.trim())) return;
+    if (!title || !board || title.firstChild?.textContent.trim() !== 'Requests waiting for you') return;
     const n = waitingIn(board).size;
-    const text = n === 0 ? 'Requests waiting for you' : n === 1 ? '1 request waiting for you' : n + ' requests waiting for you';
-    if (title.textContent !== text) title.textContent = text;
+    let chip = title.querySelector('[data-waiting-count]');
+    if (!n) { if (chip) { chip.previousSibling?.nodeType === 3 && chip.previousSibling !== title.firstChild && chip.previousSibling.remove(); chip.remove(); } return; }
+    if (!chip) {
+      chip = document.createElement('span');
+      chip.className = 'chip warn';
+      chip.setAttribute('data-waiting-count', '');
+      const spoken = document.createElement('span');
+      spoken.className = 'sr-only';
+      spoken.textContent = ' waiting';
+      chip.append('', spoken);
+      title.append(' ', chip);
+    }
+    if (chip.firstChild.textContent !== String(n)) chip.firstChild.textContent = String(n);
   };
   const plain = el => el.textContent.replace(/\s+/g, ' ').trim();
   // The waiting heading row and its jump link (the entry page) show only while their region holds something. A row
@@ -835,6 +882,8 @@ const openTarget = () => {
   if (opened) target.scrollIntoView();
 };
 addEventListener('hashchange', openTarget);
+// A second press on the same link changes no hash: a target that was closed by hand in between is opened again.
+document.addEventListener('click', event => { const link = event.target.closest?.('a[href^="#"]'); if (link && link.getAttribute('href') === location.hash) openTarget(); });
 openTarget();
 // Error summary of a form that failed validation. The server prints it under the page head; here it moves to the
 // form that was sent, each message links to its field and is repeated under it, and the summary takes focus so it
@@ -867,21 +916,36 @@ if (summary) {
     return null;
   };
   const items = [...summary.querySelectorAll('li[data-field]')];
-  // The failing form is the sent form holding the most of the named fields; the first one wins a tie.
+  // A password that was not right (confirm_password). A form that names a shared block (data-confirm-from: a
+  // decision, Reveal, a Members row) has its password field there, or in the block that one defers to while that
+  // is on screen; the message belongs to that field.
+  const sharedBlock = candidate => {
+    let state = candidate?.dataset.confirmFrom ? confirmBoxes.get(candidate.dataset.confirmFrom) : null;
+    const first = state?.primary && confirmBoxes.get(state.primary);
+    if (first && !first.box.hidden) state = first;
+    return state && !state.input.disabled && !state.input.closest('[hidden]') ? state : null;
+  };
+  const fieldOf = (candidate, key) => findIn(candidate, key) || (key === 'confirm_password' ? sharedBlock(candidate)?.input || null : null);
+  // The failing form is the sent form holding the most of the named fields; the first one wins a tie. Among forms
+  // that differ only in a hidden version (Reveal), the one with the version that was sent comes first.
+  const exact = candidate => (candidate.elements.version?.value ?? null) === (values.version ?? null);
   let form = null;
   let best = 0;
-  sent.forEach(candidate => {
-    const score = new Set(items.map(item => item.dataset.field).filter(key => findIn(candidate, key))).size;
+  [...sent.filter(exact), ...sent.filter(candidate => !exact(candidate))].forEach(candidate => {
+    const score = new Set(items.map(item => item.dataset.field).filter(key => fieldOf(candidate, key))).size;
     if (score > best) { best = score; form = candidate; }
   });
+  const wrongPassword = form && items.some(item => item.dataset.field === 'confirm_password') && !findIn(form, 'confirm_password') ? sharedBlock(form) : null;
   // No named field found (a message about the form as a whole): the one form left, or the one the hidden values picked.
   form ??= sent.length === 1 || (matching.length && matching.length < posted.length) ? sent[0] : null;
   if (form) {
     // A form inside a collapsed editor is opened, so the summary and the field can be seen.
     for (let el = form.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS' && !el.classList.contains('menu')) el.open = true;
     const table = form.closest('table');
+    // The password of a shared block was not right: the summary stands right above that block.
+    if (wrongPassword) wrongPassword.box.before(summary);
     // Members: the summary stays in the row, right before the form that failed.
-    if (table?.matches('.members')) form.before(summary);
+    else if (table?.matches('.members')) form.before(summary);
     else if (table) (table.closest('.scroll') || table).before(summary);
     else if (form.matches('form.action') || form.parentElement.matches('.inner')) {
       // Inside the card, under its heading.
@@ -891,7 +955,7 @@ if (summary) {
   }
   const seen = new Set();
   items.forEach((item, index) => {
-    const field = (form && findIn(form, item.dataset.field)) || (form ? null : findIn(document, item.dataset.field));
+    const field = (form && fieldOf(form, item.dataset.field)) || (form ? null : findIn(document, item.dataset.field));
     if (!field) return;
     if (!field.id) field.id = 'field-error-' + index;
     field.setAttribute('aria-invalid', 'true');
@@ -924,6 +988,18 @@ if (summary) {
     });
     item.replaceChildren(link);
   });
-  summary.focus({ preventScroll: true });
-  summary.scrollIntoView({ block: 'center' });
+  if (wrongPassword) {
+    // The password is typed again right away: the focus goes to the field (the message is its description), and
+    // the action that failed is held again under its name, so the new password and Enter send it. Not when the
+    // form needs something else that was not refilled (a site MFA code): then the row is filled in first.
+    const buttons = [...form.querySelectorAll('button:not([type=button])')];
+    const button = buttons.find(candidate => candidate.name && values[candidate.name] === candidate.value) || (buttons.length === 1 ? buttons[0] : null);
+    const message = items.find(item => item.dataset.field === 'confirm_password')?.textContent.trim().replace(/\.$/, '') || 'Current password is not right';
+    if (button && !button.disabled && form.checkValidity()) wrongPassword.hold(form, button, message + '. Enter your current password again');
+    else { say(message + '.'); wrongPassword.input.focus({ preventScroll: true }); }
+    summary.scrollIntoView({ block: 'center' });
+  } else {
+    summary.focus({ preventScroll: true });
+    summary.scrollIntoView({ block: 'center' });
+  }
 }

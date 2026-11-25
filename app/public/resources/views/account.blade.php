@@ -36,7 +36,7 @@
 
 <h2>Workspaces</h2>
 @if($navSpaces->isEmpty())
-    <div class="empty">You are in no workspace yet. <a class="more-link" href="/workspaces/new">Add a workspace</a></div>
+    <div class="empty capped">You are in no workspace yet. <a class="more-link" href="/workspaces/new">Add a workspace</a></div>
 @else
 <div class="scroll capped"><table class="list">
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>

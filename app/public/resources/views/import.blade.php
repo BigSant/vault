@@ -7,9 +7,13 @@
 @endphp
 <a class="back" href="/?workspace={{ $space->id }}">← Entries</a>
 <h1>Import entries</h1>
-<p class="note">Paste a JSON array of entries for <b>{{ $space->name }}</b>. Validation is all-or-nothing: every row is checked before any secret is written to the encrypted store.</p>
+<p class="note">Paste a JSON array of entries for <b>{{ $space->name }}</b>. Validation is all-or-nothing: every row is checked before any secret is written to the encrypted store. <a class="more-link format-jump" href="#format">Format ↓</a></p>
 
-<h2>Paste entries</h2>
+{{-- Two columns where both fit --wide (the form, and the Format reference beside it); one column below that, where
+     "Format ↓" in the intro jumps to the reference. --}}
+<div class="deck import-deck">
+<section aria-labelledby="paste">
+<h2 id="paste">Paste entries</h2>
 @if($environments->isEmpty() || $types->isEmpty())
 <div class="empty capped">
     @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
@@ -58,8 +62,10 @@
     </div>
 </form>
 @endif
+</section>
 
-<h2>Format</h2>
+<section aria-labelledby="format">
+<h2 id="format">Format</h2>
 <p class="note">Choose a type defined in this workspace. Include its required fields in <code>secret_fields</code>.</p>
 
 <div class="scroll capped"><table class="list import-format">
@@ -81,4 +87,6 @@
     <pre class="cmd capped" id="import-example-json">{{ $example }}</pre>
 </div>
 @endif
+</section>
+</div>
 @endsection

@@ -12,10 +12,13 @@
                   never the page: <div data-refresh="waiting|history" data-refresh-url="…">, and the waiting heading
                   is a region of its own ("waiting-title"). Beside that heading, outside every region so that it
                   keeps the focus through a refresh, sit "Refresh requests" (a plain link without script) and
-                  "Queue checked HH:MM UTC".
+                  "Queue checked HH:MM UTC". The waiting heading is always "Requests waiting for you"; the number of waiting
+                  rows is a chip beside it (.chip.warn, as in the header nav), which app.js keeps equal to the rows shown.
      $quietEmpty  the waiting section shows nothing while nothing waits (the entry page): its heading row is hidden
                   and its region is empty, so new requests have a place to appear. data-shown-with="waiting" lets
                   app.js show the row again when the region fills.
+     $confirmAsk  the sentence of the shared password block when it serves more than the decisions (the entry page:
+                  "…then choose a request action or reveal values below.")
      $back        sent with the decision and MFA forms as a hidden `back`, so the controller returns to that page
                   (the entry page sends its own path, /entries/{id}); without it the controller returns to Requests
      State shown: "denied" (the owner said no), "expired" (the deadline passed) or "cancelled" (stored as revoked
@@ -45,7 +48,7 @@
     $waitingRows = $operations->filter($isWaiting)->values();
     $historyRows = $operations->reject($isWaiting)->values();
     $n = $waitingRows->count();
-    $waitingHeading = $n === 0 ? 'Requests waiting for you' : ($n === 1 ? '1 request waiting for you' : $n.' requests waiting for you');
+    $waitingHeading = 'Requests waiting for you';
     $single = $mode !== 'both';
     $sections = [];
     if ($mode !== 'history') {
@@ -67,10 +70,10 @@
 <h2 id="{{ $id }}">{{ $title }}</h2>
 @else
 <div class="section-head"@if($quietEmpty) data-shown-with="waiting"@if($rows->isEmpty()) hidden @endif @endif>
-    <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}</h2>
+    <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}@if($n > 0 && $title === $waitingHeading) <span class="chip warn" data-waiting-count>{{ $n }}<span class="sr-only"> waiting</span></span>@endif</h2>
     @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Queue checked {{ gmdate('H:i') }} UTC</span></p>@endif
 </div>
-@include('confirm-inline', ['verb' => 'decide', 'ask' => 'Enter your current password, then choose a request action below.', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
+@include('confirm-inline', ['verb' => 'decide', 'ask' => $confirmAsk ?? 'Enter your current password, then choose a request action below.', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
 @if($reload)<div data-refresh="waiting" data-refresh-url="{{ $reload }}">@endif
 @endif
 @if($rows->isEmpty())

@@ -80,7 +80,7 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Stats (decided, final):** desktop shows all four as stats (active entries, rotation due →, production, used by
   agents in 7 days). On phone only the two actionable numbers stay stats (active entries, rotation due →); production
   and agent use follow as one small summary line ("3 production · 2 used by agents in 7 days"). Reviewers disagreed
-  both ways; do not reopen it.
+  both ways; do not reopen it. While the rotation-due filter is on, its stat is underlined and says "Clear ×".
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table), secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
@@ -90,7 +90,10 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script) fetches the
   form again and swaps only the Type options and the type field rows; typed values stay in the fields that still
   exist.
-- `/workspaces/{w}/import` — paste a JSON import (editor+).
+- `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
+  reference (field table, example) stand side by side; below that they stack and "Format ↓" in the intro jumps
+  to the reference. The form's Environment IDs and Type keys folds open from the links in the Format table, also
+  on a second press after one was closed by hand.
 
 ### Agents (owner)
 
@@ -102,8 +105,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   (also while nothing waits; a hidden tab pauses), app.js re-fetches it every 30 s and swaps only the
   `[data-refresh]` regions (the request sections, the waiting heading and the header nav count). A request board is
   merged row by row (rows match by `data-request`): only the row that holds the focus or a started input is left
-  as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading counts
-  the rows shown. "Refresh requests" and "Queue checked HH:MM UTC" sit beside the waiting heading; when a round
+  as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading
+  is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). "Refresh requests" and "Queue checked HH:MM UTC" sit beside the waiting heading; when a round
   fails, or a row in use no longer matches the server, the status reads "Last updated HH:MM UTC · refresh delayed"
   and the time does not advance,
   here and on an owner's entry page; the button works without script. A request that expires while it holds the
@@ -120,7 +123,11 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 ### Members (owner)
 
 - `/workspaces/{w}/members` — people in the workspace with a role select and Remove on each row, the "Add a
-  member" form, and a short role explanation.
+  member" form, and a short role explanation. Save role and Remove use the held-action pattern (house rule 4):
+  one shared password block (`confirm-members`) above the board, shown only once the confirmation has expired
+  (while it is valid the "Add a member" form states it). A row action pressed then is held under a button that
+  names it, "Change Dana's role to Editor" (the role chosen in the row, which stays chosen and can still be
+  changed) or "Remove Dana"; Remove still asks its two-step question first, and the held button does not ask again.
 
 ### Setup (owner, editor)
 
@@ -162,7 +169,9 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 
 1. **Two widths.** Forms, standalone cards, facts tables and short lists are capped at `--card` (760 px); boards
    are capped at `--wide` (1100 px) on every page — a zero-specificity cap on every direct child of `main`, so heads,
-   stats, filter bars and boards share one right edge. Only a multi-column `.deck` differs. No page adds its own width.
+   stats, filter bars and boards share one right edge. Only a multi-column `.deck` differs: its columns are at
+   least 520 px, so two cards fit `--wide` side by side (2 × 520 + 12), and where they do not fit the cards stack
+   at `--card`. No page adds its own width.
 2. **Headings.** h1 is the page or area, h2 a section. A form card has its own h3 only when its h2 names something
    broader. No h2 that repeats the active tab (the list a tab is named after follows the tabs without a heading),
    no h1→h3 skips, no h2 inside a card.
@@ -172,17 +181,24 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    `session('form_errors')`, not `$errors` (sessions are JSON, so the error bag does not survive).
 4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
    While the confirmation is valid the block is the line "Password confirmed until HH:MM UTC."; the password field appears
-   only when it is required. **Time-critical actions** never go to the confirm page while script runs: Reveal
-   (current and per version) and the waiting requests' Allow once / Deny / Continue sign-in use one shared block
-   each (`'shared' => 'confirm-reveal'` in the Secret values card, `'confirm-decide'` above the waiting board);
+   only when it is required. **Row and time-critical actions** never go to the confirm page while script runs: Reveal
+   (current and per version), the waiting requests' Allow once / Deny / Continue sign-in and the Members rows'
+   Save role / Remove use one shared block each (`'shared' => 'confirm-reveal'` in the Secret values card,
+   `'confirm-decide'` above the waiting board, `'confirm-members'` above the members board);
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
    submit without the password is held and stays visible: the focus moves to the field and a button under it names
    the held action ("Allow once: shop.admin-login, request 1a2b3c4d"); that button, or Enter in the field, sends
    it. A held decision keeps its context: beside the button the block repeats the request ("<agent> requests
    <action> · <entry> · <project> / <environment> · Request <id>", from the row's `<template data-held-summary>`),
-   and that summary is the button's description (`aria-describedby`). A held Reveal names the entry in its own
-   case ("Reveal current: Shop admin panel"). A password entered first gets the visible line "Now choose an action below." The waiting requests' block
-   asks "Enter your current password, then choose a request action below." Without script
+   and that summary is the button's description (`aria-describedby`, set only while the summary holds something).
+   A held Reveal names the entry in its own case ("Reveal current: Shop admin panel"). While an action is held,
+   the held button is the page's only solid button. A password entered first gets the visible line "Now choose an
+   action below." The waiting requests' block asks "Enter your current password, then choose a request action
+   below."; on the entry page, where it also serves Reveal, "…then choose a request action or reveal values
+   below." A password that is not right is a validation error on `confirm_password` (303 back to the page, never
+   the confirm page): for a form with `data-confirm-from` the summary stands above the shared block (the primary
+   one while a block is deferred), its message links to and is repeated under that block's field, the focus goes
+   to the field and the action that failed is held again under its name. Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
    requests, the block above them carries "Password confirmed until …" and, once expired, the page's one password field;
    the Reveal block (`'primary' => 'confirm-decide'`) then shows nothing while valid and a pointer to that field

@@ -18,7 +18,8 @@
     <fieldset>
         <legend>Details</legend>
         <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
-        <label><span>Agent alias <small>Agents refer to this entry by its alias</small></span><input name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin"></label>
+        {{-- The hint is the field's description (aria-describedby), not part of its name. --}}
+        <div class="field"><div class="field-name"><label for="entry-alias"><span>Agent alias</span></label><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin" aria-describedby="entry-alias-hint"></div>
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);

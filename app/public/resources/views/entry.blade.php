@@ -61,7 +61,8 @@
      While nothing waits the heading row is hidden and the region is empty; a refresh in place fills both. --}}
 @if($isOwner)
 <div class="waiting-first">
-@include('operations', ['mode' => 'waiting', 'quietEmpty' => true, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id, 'refreshUrl' => '/entries/'.$entry->id])
+@include('operations', ['mode' => 'waiting', 'quietEmpty' => true, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id, 'refreshUrl' => '/entries/'.$entry->id,
+    'confirmAsk' => $canEdit ? 'Enter your current password, then choose a request action or reveal values below.' : null])
 </div>
 @endif
 
@@ -90,7 +91,7 @@
         @endif
         @foreach($secret as $field => $value)
             <div class="secret-row">
-                <div class="block-label">@if(isset($labels[$field])){{ $labels[$field] }}@else<code class="name">{{ $field }}</code>@endif
+                <div class="block-label">@if(isset($labels[$field]))<span class="name">{{ $labels[$field] }}</span>@else<code class="name">{{ $field }}</code>@endif
                     @if(!isset($labels[$field]))<span class="chip muted">no longer in type</span>@endif
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
                 </div>

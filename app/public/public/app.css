@@ -225,7 +225,10 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 .box{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:12px 16px}
 
 /* Forms */
-.deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:12px;align-items:start}
+/* Two cards fit --wide side by side: 2 x 520 + 12 = 1052. A deck that does not have that room stacks its cards, and
+   a stacked card is no wider than a standalone one (--card); in two columns each is narrower than that anyway. */
+.deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:12px;align-items:start}
+.deck>*{min-width:0;max-width:var(--card)}
 .deck.wide{grid-template-columns:minmax(0,1fr)}
 form.action,.card{margin:0;background:var(--panel);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;padding:14px 16px}
 form.action.danger,.card.danger{border-top:7px solid transparent;
@@ -423,6 +426,8 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .board.requests form.mfa{align-items:flex-end;gap:8px}
 .board.requests form.mfa label{flex:1 1 11em;min-width:11em;font-size:12px;color:var(--dim);white-space:nowrap}
 .board.requests form.mfa button{flex:none;white-space:nowrap}
+/* The field is as wide as its label, never wider: on a narrow card it must not reach under the button. */
+.board.requests form.mfa label input{min-width:0}
 .board.requests .state{white-space:nowrap}
 .board.requests td.when .line{white-space:nowrap}
 .board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
@@ -505,7 +510,8 @@ label span small{display:block;margin-top:2px;font-weight:400;letter-spacing:0;t
 /* Card header: the thing's own name form on the left, its removal on the right. Buttons stay plain. */
 .card-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 12px}
 .card-head .inline{flex:1;min-width:min(100%,18em)}
-.card>.note{margin:0}
+/* The last note of a card ends the card; notes before it keep the paragraph rhythm. */
+.card>.note:last-child{margin-bottom:0}
 @media (max-width:900px){.card-head{flex-direction:column;align-items:stretch}.card-head .inline{flex:none}.card-head>.controls{align-self:flex-end}}
 /* Fold: a collapsed editor, one per thing */
 details.fold{scroll-margin-top:16px}
@@ -571,6 +577,7 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .confirm-inline.shared label{margin-bottom:0}
 .card>.confirm-inline.shared.is-needed{margin-top:14px}
 :not(.card)>.confirm-inline.shared{max-width:var(--card);margin-bottom:10px}
+.head+.confirm-inline.shared.is-needed{margin-top:10px}
 :not(.card)>.confirm-inline.shared.is-needed{padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px}
 /* Error page inside the signed-in shell. The status code is a chip on a line of its own under the h1. */
 .error-page{max-width:var(--card)}
@@ -688,8 +695,12 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .stat-link:hover span,.stat-link.is-on span{color:var(--amber)}
 .stat-link:hover span{text-decoration:underline}
 /* The filter that is on: an underline as wide as the label, at every width. */
-.stat-link.is-on>span{display:inline-block;padding-bottom:3px;box-shadow:inset 0 -2px 0 var(--amber)}
+.stat-link.is-on>span:first-of-type{display:inline-block;padding-bottom:3px;box-shadow:inset 0 -2px 0 var(--amber)}
 .stat-link.has-due b{color:var(--amber)}
+/* The filter that is on says how to leave it: "Clear ×" beside the label, in the link colour. */
+.stat-link.is-on>span:first-of-type{margin-right:8px}
+.stat .stat-clear{color:var(--amber);white-space:nowrap}
+.stat-link:hover .stat-clear{text-decoration:underline}
 /* Add an entry: the detour to Setup is one line under the Type field, starting where the inputs start (the label
    column is 14em of the label's 13px, plus the gap): the note, then "Reload types". What a reload did is the line
    after it. On phones it starts at the left edge and wraps. */
@@ -698,7 +709,8 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .type-detour .note{margin:0}
 .type-detour .reload-status{flex:1 1 100%}
 .type-detour .reload-status:empty{display:none}
-@media (max-width:900px){.type-detour{margin-left:0}}
+/* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of "Reload types". */
+@media (max-width:900px){.type-detour{margin-left:0;gap:12px}}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label,.field-name>label{display:block;margin:0}
 /* A field's hint under its name: its description (aria-describedby), outside the label. */
@@ -713,6 +725,14 @@ details.import-ref>.inner .scroll{margin:0}
 form.action label+details.import-ref{margin-top:12px}
 form.action details.import-ref{background:var(--panel-2)}
 .import-example{max-width:var(--card);margin:0 0 14px}
+/* Import: the form and the Format reference are two columns of a deck where both fit; each starts with its h2.
+   "Format ↓" in the intro is for the stacked page only: two columns need 1052 px, plus the page padding. */
+.import-deck>section>:last-child{margin-bottom:0}
+@media (min-width:1108px){
+.format-jump{display:none!important}
+/* The form keeps the room its reference tables need (an environment ID on one line beside Copy ID). */
+.import-deck{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+}
 @media (max-width:900px){
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
@@ -777,7 +797,15 @@ form.action details.import-ref{background:var(--panel-2)}
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
 @media (max-width:900px){
-.board.identities td.name{flex:1 1 45%}
+/* Identities card: the name with its state at the right; the expiry on a line of its own; then the grants link at
+   the left and Revoke at the right, side by side, so the link's 40 px tap box never reaches the button. */
+.board.identities tr{align-items:center}
+.board.identities td.name{order:0;flex:1 1 0}
+.board.identities td.state{order:1;flex:none;margin-left:auto}
+.board.identities td.when{order:2;flex-basis:100%}
+.board.identities td.grants{order:3;flex:1 1 0}
+.board.identities td:last-child{order:3;flex:none;margin-left:auto}
+.board.identities td:last-child .controls{margin-top:0}
 .board.members td:nth-child(1){flex:0 1 auto}
 .board.members td:nth-child(2){flex:1 1 55%}
 .board.members td:nth-child(3){flex:1 1 52%}
@@ -824,6 +852,8 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.requests td.action small.rid{order:3;margin:0 auto 0 0;white-space:nowrap}
 .board.requests td.state{order:3;margin-left:auto}
 .board.requests td.when{order:4;flex-basis:100%}
+/* On a card the deadline and the time left may take two lines (a 360 px phone); each part stays whole. */
+.board.requests td.when .line{white-space:normal}
 .board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
@@ -854,7 +884,7 @@ form.action details.import-ref{background:var(--panel-2)}
 .card details.fold .form-foot .controls{flex:0 1 auto;max-width:100%}
 .card details.fold .error-summary,.card details.env-add .error-summary{max-width:none}
 .card details.fold.env:last-of-type{margin-bottom:0}
-.card>.note{margin:0 0 4px}
+.project-card>.note{margin:0 0 4px}
 .card details.env-add{background:transparent;border:none;border-radius:0;margin:8px 0 0}
 /* The closed link starts where the environment names above it start (a fold's border plus its padding). */
 .card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0 4px 15px;font:600 13px/1.4 var(--mono);color:var(--amber)}
@@ -910,6 +940,8 @@ details.type-fold .list.edit td.remove{margin-left:auto}
 main.login .mark{padding:3px 0}
 .error-summary li a{display:inline-flex;align-items:center;min-height:40px}
 .board.entries td.name>a{display:inline;padding:0;margin:0}
+/* A plain list whose rows are links (Account: Workspaces): the rows are tall enough that two tap boxes never overlap. */
+.list:not(.edit) td:has(>a:only-child){padding-top:11px;padding-bottom:11px}
 label.check{min-height:40px;align-items:center}
 details>summary{min-height:40px}
 details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add)>summary{padding-top:11px;padding-bottom:11px}

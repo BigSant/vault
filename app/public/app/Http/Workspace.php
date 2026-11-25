@@ -479,7 +479,8 @@ final class Workspace
         $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
         $d = $r->validate(['email' => 'required|email|max:200', 'name' => 'required|string|max:100', 'password' => 'nullable|string|min:14|max:200', 'role' => 'required|in:owner,editor,viewer,remove']);
-        DB::transaction(function () use ($workspace, $d) {
+        $adding = $r->input('form') === 'add';
+        DB::transaction(function () use ($workspace, $d, $adding) {
             DB::table('workspaces')->where('id', $workspace)->lockForUpdate()->first();
             $user = User::where('email', strtolower($d['email']))->first();
             if (! $user) {
@@ -494,6 +495,9 @@ final class Workspace
                 $user = User::create(['id' => $id, 'name' => $d['name'], 'email' => strtolower($d['email']), 'password' => Hash::make($d['password'])]);
             }
             $member = DB::table('members')->where('workspace_id', $workspace)->where('user_id', $user->id)->first();
+            if ($adding && $member) {
+                throw ValidationException::withMessages(['email' => 'This person is already a member. Change their role in the list above.']);
+            }
             if ($member?->role === 'owner' && $d['role'] !== 'owner') {
                 abort_if(DB::table('members')->where('workspace_id', $workspace)->where('role', 'owner')->count() <= 1, 409);
             }

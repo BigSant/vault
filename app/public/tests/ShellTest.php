@@ -227,7 +227,10 @@ final class ShellTest extends TestCase
         // asks for the password in the words of this page.
         $page->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then choose a request action below."', false)
             ->assertSee('data-held-name="Allow once: test.http, request '.$rid.'">Allow once</button>', false)->assertSee('data-held-name="Deny: test.http, request '.$rid.'">Deny</button>', false)
-            ->assertSee('<p class="held" data-held-row hidden><span class="held-what" id="confirm-decide-held-what" data-held-what hidden></span><button type="button" class="go" data-held aria-describedby="confirm-decide-held-what"></button></p>', false)->assertSee('<small class="k">requests</small>', false)
+            ->assertSee('<p class="held" data-held-row hidden><span class="held-what" id="confirm-decide-held-what" data-held-what hidden></span><button type="button" class="go" data-held></button></p>', false)->assertSee('<small class="k">requests</small>', false)
+            // The visible guidance line is readable by everyone, and the heading carries the count as a chip.
+            ->assertSee('<span class="pending" data-pending hidden></span>', false)->assertDontSee('aria-hidden="true" hidden', false)
+            ->assertSee('data-refresh="waiting-title">Requests waiting for you <span class="chip warn" data-waiting-count>2<span class="sr-only"> waiting</span></span></h2>', false)
             // The held decision keeps its context: the request's summary travels with its decision cell.
             ->assertSeeInOrder(['<td class="decision" data-label="Decision">', '<template data-held-summary><b class="name">', '</b> requests <code>test.http</code>', 'Request '.$rid.'</span></template>', 'data-confirm-from="confirm-decide"'], false);
         $this->assertStringContainsString("querySelector(':scope > template[data-held-summary]')", (string) file_get_contents(public_path('app.js')));
@@ -235,6 +238,8 @@ final class ShellTest extends TestCase
             ->assertSee('<small class="k">requested</small>', false)->assertDontSee('<small class="k">requests</small>', false);
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("button?.dataset.heldName || button?.getAttribute('aria-label')", $script);
+        // The summary is the held button's description only while it holds something.
+        $this->assertStringContainsString("if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');", $script);
         $this->assertStringContainsString("'Now choose an action below.'", $script);
         // An expired confirmation with the password in the same POST decides at once: no confirm page.
         $this->post($this->base.'/operations/'.$id.'/decision', ['decision' => 'deny', 'confirm_password' => self::PASSWORD])->assertRedirect();
@@ -242,11 +247,16 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('confirm_password', json_encode(session()->all()));
     }
 
-    public function test_wrong_confirm_password_answers_403_with_the_confirm_form_and_is_never_flashed(): void
+    public function test_wrong_confirm_password_returns_to_the_form_with_an_error_and_is_never_flashed(): void
     {
         $this->signIn('owner', $stale = time() - 301);
-        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure', 'confirm_password' => 'wrong-password'])->assertForbidden()
-            ->assertSee('action="/confirm"', false)->assertSee('That password is not right')->assertDontSee('wrong-password');
+        $this->get($this->base.'/structure')->assertOk();
+        // A validation error on the field, back on the page that was sent: never the confirm page.
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure', 'confirm_password' => 'wrong-password'])->assertStatus(303)
+            ->assertRedirect($this->base.'/structure')->assertSessionHas('form_errors.confirm_password', ['Current password is not right.'])
+            ->assertSessionHas('error_form', $this->base.'/projects');
+        $this->assertStringNotContainsString('wrong-password', json_encode(session()->all()));
+        $this->get($this->base.'/structure')->assertOk()->assertSee('<li data-field="confirm_password">Current password is not right.</li>', false)->assertDontSee('wrong-password');
         $this->assertSame(0, DB::table('projects')->count());
         $this->assertSame($stale, session('confirmed_at'));
         // A query string is no place for a password, even a correct one.
@@ -257,11 +267,44 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('confirm_password', json_encode(session()->all()));
     }
 
+    public function test_members_row_actions_are_held_by_a_shared_password_block_and_never_sent_to_the_confirm_page(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $dana = User::create(['id' => (string) Str::uuid(), 'name' => 'Dana', 'email' => 'dana@example.test', 'password' => Hash::make(self::PASSWORD), 'mfa_enabled' => true]);
+        DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $dana->id, 'role' => 'viewer']);
+        $page = $this->get($this->base.'/members')->assertOk();
+        // One shared block above the board; both row forms name it, and each button carries the held wording
+        // ("Change Dana's role to " + the chosen role, "Remove Dana") with the name marked as data.
+        $page->assertSeeInOrder(['id="confirm-members"', 'data-quiet-valid', 'class="board compact-board members"', 'data-confirm-from="confirm-members"'], false)
+            ->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then save a role or remove a member below."', false)
+            ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana">Save role</button>', false)
+            ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
+            ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
+            ->assertSee('<small>Add another owner before changing your role.</small>', false)
+            ->assertSee('id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small>', false);
+        $this->assertSame(1, substr_count($page->getContent(), 'id="confirm-members"'));
+        $this->assertSame(2, substr_count($page->getContent(), 'data-confirm-from="confirm-members"'));
+        // While the confirmation is valid the shared block shows nothing: the Add a member form states it once.
+        $this->withSession(['confirmed_at' => time()])->get($this->base.'/members')->assertOk()
+            ->assertSee('<div class="confirm-inline shared is-quiet" id="confirm-members"', false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        // The chosen role is part of the held wording and stays chosen; the held button does not ask "Remove?" again.
+        $this->assertStringContainsString('button?.dataset.heldField ? form.elements[button.dataset.heldField] : null', $script);
+        $this->assertStringContainsString("form.dataset.heldSend = '1';", $script);
+        // A password that was not right is shown at the shared block's field, with the action held again.
+        $this->assertStringContainsString("key === 'confirm_password' ? sharedBlock(candidate)?.input || null : null", $script);
+        $this->assertStringContainsString('if (wrongPassword) wrongPassword.box.before(summary);', $script);
+        // With the password in the same POST the row action goes through at once.
+        $this->withSession(['confirmed_at' => time() - 301])->post($this->base.'/members', ['form' => 'row:'.$dana->id, 'name' => 'Dana', 'email' => 'dana@example.test', 'role' => 'editor', 'confirm_password' => self::PASSWORD])
+            ->assertRedirect($this->base.'/members');
+        $this->assertSame('editor', DB::table('members')->where('user_id', $dana->id)->value('role'));
+    }
+
     public function test_confirm_password_attempts_are_rate_limited(): void
     {
         $this->signIn('owner', time() - 301);
         for ($i = 0; $i < 10; $i++) {
-            $this->post($this->base.'/projects', ['name' => 'shop', 'confirm_password' => 'wrong-password'])->assertForbidden();
+            $this->post($this->base.'/projects', ['name' => 'shop', 'confirm_password' => 'wrong-password'])->assertStatus(303)->assertSessionHas('form_errors.confirm_password');
         }
         $this->post($this->base.'/projects', ['name' => 'shop', 'confirm_password' => self::PASSWORD])->assertTooManyRequests();
         $this->assertSame(0, DB::table('projects')->count());
@@ -641,7 +684,9 @@ final class ShellTest extends TestCase
         $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types (new tab)</a>', false)
             ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Edit entry types (new tab)</a>', '<button type="button" data-reload-types title=', ' hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
-            ->assertSee('Agents refer to this entry by its alias')
+            // The alias hint is the field's description, not part of its name.
+            ->assertSee('<label for="entry-alias"><span>Agent alias</span></label><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small>', false)
+            ->assertSee('placeholder="shop-stage-admin" aria-describedby="entry-alias-hint">', false)
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
             ->assertDontSee('inputmode="numeric" pattern="\d{4}', false);

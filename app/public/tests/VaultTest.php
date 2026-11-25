@@ -207,7 +207,7 @@ final class VaultTest extends TestCase
         $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
             ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']])
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
-            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'test.http', 'Private name', 'stage', 'Allow once', 'needs MFA code', 'Continue sign-in', 'Recent requests'])
+            ->assertSeeInOrder(['Requests waiting for you', 'data-waiting-count>2', 'ai-os', 'test.http', 'Private name', 'stage', 'Allow once', 'needs MFA code', 'Continue sign-in', 'Recent requests'])
             ->assertDontSee($rows[2]['id']);
         $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
             ->assertViewHas('operations', fn ($ops) => $ops->take(2)->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']]);
@@ -511,11 +511,14 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
-            ->assertSee('<label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account</small>', false)
+            ->assertSee('<label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small>', false)
             ->assertSee('aria-describedby="first-password-hint"', false)
             ->assertSee('aria-label="Generate initial password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
-        $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);
+        $this->post($url, $identity + ['form' => 'add', 'role' => 'owner'])->assertRedirect($url);
+        $this->post($url, $identity + ['form' => 'add', 'role' => 'viewer'])->assertStatus(303)
+            ->assertSessionHas('form_errors.email', ['This person is already a member. Change their role in the list above.']);
+        $this->assertDatabaseHas('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'owner']);
         $this->get($url)->assertSee('aria-label="Role for Owner"', false)->assertDontSeeText('Add another owner');
         $this->post($url, $identity + ['role' => 'viewer'])->assertRedirect($url);
         $this->get($url)->assertOk()->assertSee('aria-label="Role for Member"', false)->assertSee('Remove Member from this workspace?');
@@ -524,6 +527,30 @@ final class VaultTest extends TestCase
         $this->post($url, $identity + ['role' => 'remove'])->assertRedirect($url);
         $this->assertDatabaseMissing('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id]);
         $this->post($url, ['name' => 'Owner', 'email' => $this->owner->email, 'role' => 'viewer'])->assertConflict();
+    }
+
+    public function test_wrong_inline_password_returns_to_the_entry_form_with_only_non_secret_input(): void
+    {
+        $page = '/entries/new?workspace='.$this->workspace;
+        $this->get($page)->assertOk();
+        $this->withSession(['confirmed_at' => time() - 301])->post('/entries', [
+            'name' => 'Draft entry', 'environment_id' => $this->environment,
+            'confirm_password' => 'wrong-password', 'secret_fields' => ['token' => $this->sentinel],
+        ])->assertStatus(303)->assertRedirect($page)
+            ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.'])
+            ->assertSessionHas('_old_input', ['name' => 'Draft entry', 'environment_id' => $this->environment]);
+        $this->assertDatabaseCount('entries', 0);
+    }
+
+    public function test_wrong_inline_password_returns_to_the_requests_page(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $path = $base.'/operations/'.Str::uuid().'/decision';
+        $this->get($base.'/requests')->assertOk();
+        $this->withSession(['confirmed_at' => time() - 301])->post($path, [
+            'decision' => 'deny', 'confirm_password' => 'wrong-password',
+        ])->assertStatus(303)->assertRedirect($base.'/requests')->assertSessionHas('error_form', $path)
+            ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.']);
     }
 
     public function test_member_and_import_errors_return_to_their_forms(): void

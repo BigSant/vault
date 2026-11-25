@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 final class Access
 {
@@ -55,15 +56,15 @@ final class Access
             return;
         }
         // Body only: a password must never travel in a query string.
-        $password = $r->isMethod('POST') ? $r->request->get('confirm_password') : null;
-        if (! is_string($password) || $password === '') {
+        if (! $r->isMethod('POST') || ! $r->request->has('confirm_password')) {
             throw new ConfirmationRequired;
         }
+        $password = $r->request->all()['confirm_password'];
         $key = 'confirm-password:'.$r->user()->id;
         abort_if(RateLimiter::tooManyAttempts($key, self::CONFIRM_ATTEMPTS), 429);
         RateLimiter::hit($key, 60);
-        if (strlen($password) > 200 || ! Hash::check($password, $r->user()->password)) {
-            throw new ConfirmationRequired(failed: true);
+        if (! is_string($password) || $password === '' || strlen($password) > 200 || ! Hash::check($password, $r->user()->password)) {
+            throw ValidationException::withMessages(['confirm_password' => 'Current password is not right.']);
         }
         $r->session()->put('confirmed_at', time());
     }
