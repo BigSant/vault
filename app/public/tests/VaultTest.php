@@ -340,7 +340,7 @@ final class VaultTest extends TestCase
             $this->get('/?'.http_build_query($current))->assertOk()
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
-        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1 entries')
+        $this->get('/?state=due')->assertSeeText('State: Rotation due')->assertSeeText('Showing 1 of 1 entries')
             ->assertSeeInOrder(['data-label="Entry"', 'rotation due since 2020-11-01', 'data-label="Project"'], false);
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
@@ -348,7 +348,7 @@ final class VaultTest extends TestCase
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entries')
-            ->assertSeeText('State: archived')->assertSee('<span class="chip muted">archived</span>', false)->assertSeeText('used by agents');
+            ->assertSeeText('State: Archived')->assertSee('<span class="chip muted">archived</span>', false)->assertSeeText('used by agents');
         $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entries');
     }
 

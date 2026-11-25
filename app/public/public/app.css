@@ -616,7 +616,7 @@ a.stat:hover span{text-decoration:underline}
 a.stat.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
 a.stat.has-due b{color:var(--amber)}
 @media (max-width:600px){
-.stats .stat.secondary{display:none}
+
 }
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
@@ -642,7 +642,7 @@ details.import-ref>.inner .scroll{margin:0}
 .board.entries td.env[data-label]::before{content:"/ ";display:inline;color:var(--dim)}
 .board.entries td.env{order:2;align-self:center}
 .board.entries td.updated{order:5;color:var(--dim)}
-.board.entries td:is(.updated,.used){font-size:11px}
+.board.entries td:is(.updated,.used){font-size:12px}
 .board.entries td.when small.k{font-size:inherit}
 .board.entries tr:not(:has(.entry-tags))::after{content:"";order:4;flex-basis:100%;height:0;margin-bottom:-4px}
 .board.entries td.updated small:not(.k){margin-top:2px}
@@ -697,6 +697,7 @@ details.import-ref>.inner .scroll{margin:0}
 .setup-first{margin-top:20px}
 .project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;max-width:var(--card)}
 .project-card[id]{scroll-margin-top:16px}
+.card.project-card{border-top-color:var(--rule)}
 .card details.fold.project-edit{background:transparent;border:1px solid transparent;border-bottom-color:var(--rule);border-radius:0;margin:-4px 0 10px}
 .card details.fold.project-edit[open]{border-top:1px solid transparent}
 .card details.fold.project-edit>summary{padding-top:6px;padding-bottom:10px}

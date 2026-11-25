@@ -65,8 +65,8 @@
     @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
     @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
     @if($activeType)<span class="chip filter">Type: {{ $activeType }}</span>@endif
-    @if($dueOnly)<span class="chip filter">State: rotation due</span>@endif
-    @if($archived)<span class="chip filter">State: archived</span>@endif
+    @if($dueOnly)<span class="chip filter">State: Rotation due</span>@endif
+    @if($archived)<span class="chip filter">State: Archived</span>@endif
     <a href="/?workspace={{ $space->id }}">Clear filters</a>
 </div>
 @endif
@@ -92,7 +92,7 @@
     </div>
 @else
 <div class="scroll"><table class="board compact-board entries">
-    <thead><tr><th scope="col">Entry · tags</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">Last used</th></tr></thead>
+    <thead><tr><th scope="col">Entry</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">Last used</th></tr></thead>
     <tbody>
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
@@ -102,7 +102,7 @@
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
             <td class="when updated" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
-            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">· Last used</small> {{ substr($e->last_used_at, 0, 16) }} UTC@else—@endif</td>
+            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">· Last used</small> {{ substr($e->last_used_at, 0, 16) }} UTC @else — @endif</td>
         </tr>
     @endforeach
     </tbody>
