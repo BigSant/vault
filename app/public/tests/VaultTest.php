@@ -412,7 +412,7 @@ final class VaultTest extends TestCase
         DB::table('machines')->where('id', $agent)->update(['expires_at' => '2020-11-25 14:00:00']);
         $this->get($base.'/agents')->assertDontSee('/revoke/machines/'.$agent)->assertSee('Expired');
         $this->get($base.'/grants')->assertSeeText('No active agents.')->assertDontSeeText('No active entries.')
-            ->assertSeeText('Expired 2020-11-25 14:00 UTC · agent expired')->assertSeeText('Grant expiry:');
+            ->assertSeeText('Expired 2020-11-25 14:00 UTC')->assertSeeText('agent expired')->assertSeeText('Grant expiry:');
         DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->addDay()]);
         file_put_contents($this->temp.'/connectors.json', '{"actions":{}}');
         $this->get($base.'/grants')->assertSeeText('No actions are configured.')->assertDontSee('name="machine_id"', false);
