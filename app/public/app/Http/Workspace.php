@@ -194,10 +194,13 @@ final class Workspace
         $entry = $r->query('entry') ? $this->access->entry($r->query('entry'), ['owner', 'editor']) : null;
         abort_if($entry && $entry->workspace_id !== $workspace, 404);
         $environments = $this->workspaceEnvironments($workspace);
+        $firstProjectId = $environments->isEmpty()
+            ? DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->value('id')
+            : null;
         $types = $this->types->all($workspace)->when($entry, fn ($all) => $all->where('key', $entry->type))->values();
         abort_if($types->isEmpty() && $entry, 409);
 
-        return view('entry-form', compact('entry', 'environments', 'workspace', 'types', 'space'));
+        return view('entry-form', compact('firstProjectId', 'entry', 'environments', 'workspace', 'types', 'space'));
     }
 
     public function create(Request $r)
@@ -311,9 +314,12 @@ final class Workspace
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
 
         $environments = $this->workspaceEnvironments($workspace);
+        $firstProjectId = $environments->isEmpty()
+            ? DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->value('id')
+            : null;
         $types = $this->types->all($workspace);
 
-        return view('import', compact('space', 'environments', 'types'));
+        return view('import', compact('firstProjectId', 'space', 'environments', 'types'));
     }
 
     public function import(Request $r, string $workspace)

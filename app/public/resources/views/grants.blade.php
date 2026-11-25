@@ -3,6 +3,7 @@
 @section('content')
 <h1>Agents</h1>
 @include('tabs', ['area' => 'agents', 'current' => 'grants', 'space' => $space])
+<a class="btn" href="#add-grant">+ Add a grant</a>
 
 @php $filterCount = (int) (bool) $agent + (int) (bool) $entry; @endphp
 <details class="filters" data-wide-open>

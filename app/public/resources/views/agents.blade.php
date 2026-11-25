@@ -3,6 +3,7 @@
 @section('content')
 <h1>Agents</h1>
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
+<a class="btn" href="#add-agent">+ Add an agent</a>
 
 @if($machines->isEmpty())
     <div class="empty">No agent identities yet. Add one below.</div>
@@ -30,7 +31,7 @@
 </table></div>
 @endif
 
-<h2>Add an agent</h2>
+<h2 id="add-agent">Add an agent</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/machines">@csrf
         <p class="note">Creates a bearer token, shown once.</p>
         <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="e.g. deploy-bot" required maxlength="100"></label>

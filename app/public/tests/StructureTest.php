@@ -39,6 +39,28 @@ final class StructureTest extends TestCase
         return $id;
     }
 
+    public function test_entry_and_import_link_to_the_first_missing_setup_step(): void
+    {
+        $pages = ['/entries/new?workspace='.$this->workspace, $this->base.'/import'];
+        foreach ($pages as $page) {
+            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#add-project">Add a project in Setup, then an environment</a>', false);
+        }
+        [$project, $environment] = $this->project($this->workspace);
+        DB::table('environments')->where('id', $environment)->delete();
+        foreach ($pages as $page) {
+            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#p-'.$project.'">Add an environment to a project in Setup</a>', false);
+        }
+    }
+
+    public function test_management_pages_link_to_their_add_section(): void
+    {
+        foreach (['agents' => 'agent', 'grants' => 'grant', 'members' => 'member'] as $page => $item) {
+            $this->get($this->base.'/'.$page)->assertOk()->assertSeeInOrder([
+                'class="btn" href="#add-'.$item.'"', '<h2 id="add-'.$item.'">',
+            ], false);
+        }
+    }
+
     public function test_foreign_filters_are_ignored_and_never_expose_foreign_grants(): void
     {
         $other = $this->workspace();

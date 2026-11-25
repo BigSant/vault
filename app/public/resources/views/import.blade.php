@@ -12,7 +12,7 @@
 <h2>JSON input</h2>
 @if($environments->isEmpty() || $types->isEmpty())
 <div class="empty capped">
-    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>@endif
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $space->id }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
@@ -33,7 +33,7 @@
     <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
     <div class="inner">
         @if($environments->isEmpty())
-            <p class="note">No environments in this workspace yet. Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.</p>
+            <p class="note">No environment IDs available yet.</p>
         @else
             <div class="scroll"><table class="list import-ids">
                 <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
@@ -41,7 +41,7 @@
                 @foreach($environments as $env)
                     <tr>
                         <td class="env-name">{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</td>
-                        <td class="env-id"><code>{{ $env->id }}</code></td>
+                        <td class="env-id"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></td>
                     </tr>
                 @endforeach
                 </tbody>

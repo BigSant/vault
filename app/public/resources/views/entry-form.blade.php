@@ -10,7 +10,7 @@
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
 @if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
 <div class="empty capped">
-    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $workspace }}/structure">Add a project in Setup</a> first.</p>@endif
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else

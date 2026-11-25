@@ -50,8 +50,8 @@
 @endif
 
 <h2>Sign out</h2>
-{{-- One button, nothing to fill in: a plain row at the card width, not a card. --}}
-<form class="form-foot plain-row" method="post" action="/logout">@csrf
-    <p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button class="plain" aria-label="Sign out of this session">Sign out</button>
+{{-- A card like the other sections: the note on the left, the plain button in the form foot. --}}
+<form class="action" method="post" action="/logout">@csrf
+    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button class="plain" aria-label="Sign out of this session">Sign out</button></div>
 </form>
 @endsection

@@ -1,12 +1,11 @@
 @extends('layout')
 @section('title', 'Members')
 @section('content')
-<h1>Members</h1>
+<div class="head"><h1>Members</h1><a class="btn" href="#add-member">+ Add a member</a></div>
 @php
     $soleOwner = $members->where('role', 'owner')->count() === 1;
     $roles = ['viewer', 'editor', 'owner'];
 @endphp
-<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 <div class="scroll"><table class="board compact-board members">
     <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>@foreach($members as $m)<tr class="is-idle"><td data-label="Name"><b>{{ $m->name }}</b> @if($m->id == auth()->id())<span class="chip muted">you</span>@endif</td><td data-label="Email">{{ $m->email }}</td>
@@ -21,7 +20,7 @@
             <button class="stop" aria-label="Remove {{ $m->name }}" name="role" value="remove">Remove</button>
         </form>@endif</td></tr>@endforeach</tbody>
 </table></div>
-<h2>Add a member</h2>
+<h2 id="add-member">Add a member</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
         <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>
         <label><span>Email</span><input name="email" type="email" value="{{ old('email') }}" required></label>
@@ -30,4 +29,5 @@
         @include('confirm-inline', ['verb' => 'add this member'])
         <div class="form-foot"><p class="note">Hand the password over privately. MFA is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>
     </form>
+<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 @endsection
