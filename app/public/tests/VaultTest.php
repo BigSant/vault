@@ -165,12 +165,27 @@ final class VaultTest extends TestCase
         $this->post($base.'/import')->assertNotFound();
     }
 
+    public function test_import_example_uses_the_workspace_environment_and_type_definition(): void
+    {
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $this->get($url)->assertOk();
+        DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'ssh')
+            ->update(['name' => 'A custom certificate', 'key' => 'custom_certificate']);
+
+        $page = $this->get($url)->assertOk()->assertSeeTextInOrder(['Paste entries', 'Environment IDs', 'Type and field keys'])
+            ->assertSee('<code>passphrase</code> optional', false)->assertSee('<code>private_key</code> required', false);
+        $row = json_decode($page->viewData('example'), true, flags: JSON_THROW_ON_ERROR)[0];
+        $this->assertSame($this->environment, $row['environment_id']);
+        $this->assertSame('custom_certificate', $row['type']);
+        $this->assertSame(['private_key' => 'replace-me'], $row['secret_fields']);
+    }
+
     public function test_owner_and_editor_can_open_import(): void
     {
         $url = '/workspaces/'.$this->workspace.'/import';
         $this->get($url)->assertOk()->assertViewHas('environments', fn ($rows) => $rows->contains('id', $this->environment))
             ->assertViewHas('types', fn ($rows) => $rows->contains('key', 'api_key'))
-            ->assertSee('"environment_id": "'.$this->environment.'"', false);
+            ->assertSee('"environment_id": "'.$this->environment.'"');
         DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
         $this->get($url)->assertOk();
         $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
@@ -384,7 +399,7 @@ final class VaultTest extends TestCase
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entries')
-            ->assertSeeText('State: Archived')->assertSee('<span class="chip muted">archived</span>', false)->assertSeeText('used by agents');
+            ->assertSeeText('State: Archived')->assertSee('<span class="chip muted">archived</span>', false)->assertDontSeeText('used by agents');
         $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entries');
     }
 

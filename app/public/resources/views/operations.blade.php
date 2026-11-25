@@ -27,11 +27,12 @@
      row off at its deadline and refreshes the regions. Every row carries data-request (its id) and data-state, so a
      refresh can say what changed ("Request expired"). Timestamp labels are <small class="k">; .keep marks the two
      that no column head replaces. A date and its time never break apart (.nobreak).
-     Columns: Agent · Action · Entry. Phone card: "<agent> requests <action>", then "<entry> · <project> /
-     <environment>", the state, then "Requested …", "Expires …" or "Finished …" each on a line of its own, the
-     controls. The short request id ("Request 1a2b3c4d") belongs to the request's identity: it sits with the action,
-     before the decision controls, at every width, and ends each decision control's accessible name, so two
-     requests that are otherwise the same can be told apart.
+     Columns: Agent · Action · Entry. Card (below 1180 px): "<agent> requests <action>", then "<entry> · <project> /
+     <environment>", then the short request id ("Request 1a2b3c4d") with the state at the right, then "Requested …",
+     "Expires …" or "Finished …" each on a line of its own, and the controls last. The id belongs to the request's
+     identity: it comes after what is asked for and before the decision controls at every width (in the table it
+     sits under the action), and it ends each decision control's accessible name, so two requests that are
+     otherwise the same can be told apart.
      Decisions never go to the confirm page while script runs: one shared password block (confirm-inline, id
      "confirm-decide") stands above the waiting board, outside the refreshed region so a typed password survives a
      refresh; every decision form names it with data-confirm-from. --}}

@@ -27,6 +27,8 @@ document.querySelectorAll('[data-copy]').forEach(button => button.addEventListen
     button.textContent = 'Copied';
     document.getElementById(el.id + '-copy-note')?.remove();
     say('Copied');
+    // The one-time token page lifts its leave guard on this.
+    button.dispatchEvent(new CustomEvent('vault:copied', { bubbles: true }));
   } catch {
     // The clipboard is closed to this page (permission, old browser): the text is selected, so the device's own
     // Copy command works, and a note that stays says so. data-copy-name names the thing: "token", else "value".
@@ -66,17 +68,19 @@ const twoStep = (question, armed = armedText) => {
   let armedAt = 0;
   const disarm = focus => {
     if (!step) return;
-    const { box, button, text, label } = step;
+    const { box, button, nodes, label } = step;
     step = null;
     box.before(button);
     box.remove();
-    button.textContent = text;
+    button.replaceChildren(...nodes);
     button.classList.remove('armed');
     if (label === null) button.removeAttribute('aria-label'); else button.setAttribute('aria-label', label);
     if (focus) button.focus();
   };
   const arm = button => {
     const text = button.textContent.trim();
+    // What the control held (a link may hold a count chip) comes back as it was.
+    const nodes = [...button.childNodes];
     const label = button.getAttribute('aria-label');
     const box = document.createElement('span');
     box.className = 'confirm-step';
@@ -93,7 +97,7 @@ const twoStep = (question, armed = armedText) => {
     button.textContent = armed(text);
     button.setAttribute('aria-label', 'Confirm: ' + (label || text));
     button.classList.add('armed');
-    step = { box, button, text, label };
+    step = { box, button, nodes, label };
     armedAt = Date.now();
     button.focus();
     say(question + ' Press Confirm to go on, or Cancel.');
@@ -186,6 +190,10 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // waiting requests) stands outside its forms; they name it with data-confirm-from, and its password is copied into
 // the form that is sent. A submit that needs the password and has none is held: the focus moves to the field, and
 // Enter there sends the held form (or the block's default form, data-confirm-default).
+// A page states its confirmation once. A shared block that names an earlier one (data-primary: Reveal on the entry
+// page names the waiting requests' block) is deferred while that one is on screen: it shows nothing while the
+// confirmation is valid and, once it has expired, a line pointing to the one password field, which then serves this
+// block's forms too.
 const confirmBoxes = new Map();
 document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box => {
   const input = box.querySelector('input[type=password]');
@@ -196,20 +204,39 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   const verb = box.dataset.verb || 'continue';
   // With script the shared field works, so the line asks for the password instead of pointing at the confirm page.
   box.querySelectorAll('[data-script-text]').forEach(el => { el.textContent = el.dataset.scriptText; });
+  const primary = shared && box.dataset.primary ? document.getElementById(box.dataset.primary) : null;
   let shown = null;
+  let wasExpired = null;
   const check = () => {
     const expired = until - (Date.now() + skew) <= 5000;
-    if (expired === shown) return expired;
-    const first = shown === null;
-    shown = expired;
-    input.disabled = !expired;
-    input.required = expired;
-    box.classList.toggle('is-needed', expired);
-    box.querySelectorAll('[data-when]').forEach(el => { el.hidden = (el.dataset.when === 'expired') !== expired; });
-    if (!first && expired && !box.closest('[hidden]')) say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
+    const deferred = Boolean(primary && !primary.hidden);
+    const key = expired + '/' + deferred;
+    if (key === shown) return expired;
+    shown = key;
+    input.disabled = !expired || deferred;
+    input.required = expired && !deferred;
+    box.classList.toggle('is-needed', expired && !deferred);
+    box.classList.toggle('is-deferred', deferred);
+    box.classList.toggle('is-quiet', deferred && !expired);
+    box.querySelectorAll('[data-when]').forEach(el => {
+      const when = el.dataset.when;
+      el.hidden = when === 'deferred' ? !(deferred && expired) : deferred || (when === 'expired') !== expired;
+    });
+    // Said once, by the block that shows the field.
+    if (wasExpired === false && expired && !deferred && !box.closest('[hidden]')) say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
+    wasExpired = expired;
     return expired;
   };
   check();
+  if (primary) new MutationObserver(check).observe(primary, { attributes: true, attributeFilter: ['hidden'] });
+  // The pointer of a deferred block leads to the one field and puts the focus in it.
+  box.querySelectorAll('a[data-confirm-goto]').forEach(link => link.addEventListener('click', event => {
+    const field = document.getElementById(link.dataset.confirmGoto)?.querySelector('input[type=password]');
+    if (!field || field.disabled) return;
+    event.preventDefault();
+    field.scrollIntoView({ block: 'center' });
+    field.focus({ preventScroll: true });
+  }));
   setInterval(check, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
   // Neither a typed password nor a copy of it stays in a page that is left or restored.
@@ -224,7 +251,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     return;
   }
   const hint = box.querySelector('[data-pending]');
-  const state = { box, input, check, held: null };
+  const state = { box, input, check, held: null, primary: box.dataset.primary || null };
   // The held form may have been replaced by a refresh: the same action (and button) is looked up again.
   const heldForm = () => {
     const held = state.held;
@@ -259,8 +286,11 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
 // The forms may arrive with a refresh, so one listener on the page serves them all.
 document.addEventListener('submit', event => {
   const form = event.target instanceof HTMLFormElement && event.target.matches('form[data-confirm-from]') ? event.target : null;
-  const state = form && confirmBoxes.get(form.dataset.confirmFrom);
+  let state = form && confirmBoxes.get(form.dataset.confirmFrom);
   if (!state || event.defaultPrevented) return;
+  // A deferred block's forms use the one password field that is on screen.
+  const first = state.primary && confirmBoxes.get(state.primary);
+  if (first && !first.box.hidden) state = first;
   form.querySelectorAll('input[type=hidden][data-confirm-copy]').forEach(copy => copy.remove());
   if (!state.check()) return;
   if (!state.input.value) {
@@ -276,20 +306,57 @@ document.addEventListener('submit', event => {
   form.append(copy);
   state.release();
 });
-// A link that leaves a page whose content cannot be shown again (the one-time token) asks first, in the same two
-// steps: data-confirm-leave is the question, data-confirm-armed the second press's wording. Without script it is a
-// plain link.
-document.querySelectorAll('a[data-confirm-leave]').forEach(link => {
-  const step = twoStep(link.dataset.confirmLeave, () => link.dataset.confirmArmed || 'Leave this page');
-  link.addEventListener('click', event => {
-    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
-    if (step.armed()) { if (step.tooSoon()) event.preventDefault(); return; }
-    event.preventDefault();
-    step.arm(link);
+// A page whose content cannot be shown again (the one-time token) guards every way out inside the app while the
+// token has not been copied. [data-leave-guard] holds the question ("Token copied?"); every link that leaves the
+// page, and Sign out, asks it first in the same two steps. A copy that worked lifts the guard, and so does "I've
+// saved it" ([data-leave-clear]) for a token that was selected and copied by hand. Without script the links are
+// plain links.
+const guard = document.querySelector('[data-leave-guard]');
+if (guard) {
+  let guarding = true;
+  const steps = [];
+  const step = armed => { const made = twoStep(guard.dataset.leaveGuard, armed); steps.push(made); return made; };
+  const only = keep => steps.forEach(other => { if (other !== keep) other.disarm(false); });
+  document.querySelectorAll('a[href]:not(.skip)').forEach(link => {
+    if (link.getAttribute('href').startsWith('#')) return;
+    const mine = step(() => 'Leave this page');
+    link.addEventListener('click', event => {
+      if (!guarding || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
+      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); return; }
+      event.preventDefault();
+      only(mine);
+      mine.arm(link);
+    });
   });
-  link.parentElement?.addEventListener('keydown', event => { if (event.key === 'Escape' && step.armed()) { event.stopPropagation(); step.disarm(true); } });
-  addEventListener('pageshow', event => { if (event.persisted) step.disarm(false); });
-});
+  document.querySelectorAll('form').forEach(form => {
+    if (guard.contains(form)) return;
+    const mine = step(armedText);
+    form.addEventListener('submit', event => {
+      if (!guarding || event.defaultPrevented) return;
+      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); return; }
+      const button = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])');
+      if (!button) return;
+      event.preventDefault();
+      only(mine);
+      mine.arm(button);
+    });
+  });
+  // Capture: the question is withdrawn before an open header menu hears the key and closes around it.
+  addEventListener('keydown', event => { if (event.key !== 'Escape') return; const open = steps.find(made => made.armed()); if (open) { event.stopPropagation(); open.disarm(true); } }, true);
+  addEventListener('pageshow', event => { if (event.persisted) only(null); });
+  const saved = [...guard.querySelectorAll('[data-leave-clear]')];
+  const lift = () => { guarding = false; only(null); saved.forEach(button => { button.hidden = true; }); };
+  saved.forEach(button => {
+    button.hidden = false;
+    button.addEventListener('click', () => {
+      lift();
+      // The button is gone: the focus goes to the way on.
+      guard.querySelector('[data-leave-done]')?.focus();
+      say('Marked as saved. You can leave this page now.');
+    });
+  });
+  guard.addEventListener('vault:copied', lift);
+}
 // Destructive actions confirm in place, in two steps (twoStep above): the form's data-confirm question is the note
 // and the second press sends the form.
 // In a table the armed buttons need more room than the single button. Each such cell gets invisible, zero-height
@@ -558,23 +625,23 @@ if (refreshUrl) {
     document.addEventListener('visibilitychange', ask);
   }
 }
-// Filter bars: an inline bar on wide screens, a closed drawer on phones. A resize follows along until the user
-// opens or closes the bar themselves.
+// Bars that are drawers on phones (details[data-wide-open]: the filter bars, the entry page's jump links). On wide
+// screens a bar is always open and never a toggle: its summary is out of the tab order and a press on it does
+// nothing (the filter bars do not show it at all). On phones it is an ordinary drawer, closed until it is opened;
+// a resize to wide and back keeps what the person chose there.
 const wide = matchMedia('(min-width: 901px)');
-const filterBars = document.querySelectorAll('details[data-wide-open]');
-// data-wide-static (the entry page's jump links): on wide screens the bar is always open and its summary is a plain
-// label, out of the tab order; on phones it is an ordinary closed drawer.
-const fixedBar = bar => {
-  if (!bar.hasAttribute('data-wide-static')) return;
+const bars = document.querySelectorAll('details[data-wide-open]');
+const syncBar = bar => {
   const label = bar.querySelector('summary');
-  if (wide.matches) { bar.open = true; label?.setAttribute('tabindex', '-1'); } else label?.removeAttribute('tabindex');
+  if (wide.matches) { bar.open = true; label?.setAttribute('tabindex', '-1'); } else { bar.open = bar.dataset.phone === 'open'; label?.removeAttribute('tabindex'); }
 };
-filterBars.forEach(bar => {
-  if (wide.matches) bar.open = true;
-  fixedBar(bar);
-  bar.querySelector('summary')?.addEventListener('click', event => { if (wide.matches && bar.hasAttribute('data-wide-static')) event.preventDefault(); else bar.dataset.toggled = '1'; });
+bars.forEach(bar => {
+  if (!wide.matches && bar.open) bar.dataset.phone = 'open';
+  syncBar(bar);
+  bar.querySelector('summary')?.addEventListener('click', event => { if (wide.matches) event.preventDefault(); });
+  bar.addEventListener('toggle', () => { if (!wide.matches) bar.dataset.phone = bar.open ? 'open' : 'closed'; });
 });
-wide.addEventListener('change', () => filterBars.forEach(bar => { if (!bar.dataset.toggled || bar.hasAttribute('data-wide-static')) bar.open = wide.matches; fixedBar(bar); }));
+wide.addEventListener('change', () => bars.forEach(syncBar));
 // Header menus are <details>: only one stays open, and a click outside or Escape closes it.
 const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {
@@ -589,14 +656,14 @@ addEventListener('keydown', event => {
     if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
   });
 });
-// A link to a collapsed editor (#type-KEY) opens it.
+// A link to something collapsed opens it: the target itself when it is a <details> (#environment-ids on Import),
+// and every <details> around it (#type-KEY, a field inside an editor).
 const openTarget = () => {
   let target = null;
   try { target = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null; } catch { return; }
-  const fold = target?.closest('details');
-  if (!fold || fold.classList.contains('menu')) return;
-  fold.open = true;
-  target.scrollIntoView();
+  let opened = false;
+  for (let el = target; el; el = el.parentElement) if (el.tagName === 'DETAILS' && !el.classList.contains('menu')) { el.open = true; opened = true; }
+  if (opened) target.scrollIntoView();
 };
 addEventListener('hashchange', openTarget);
 openTarget();

@@ -160,12 +160,16 @@ background:repeating-linear-gradient(-45deg,var(--hazard) 0 18px,#111 18px 36px)
 font-weight:600;padding:0 12px 2px}
 .board td{background:var(--panel);padding:10px 12px;vertical-align:top;border-top:1px solid var(--rule);border-bottom:1px solid var(--row-edge);font-size:13px}
 .board td[data-label]::before{content:none}
-.board td:first-child{border-radius:4px 0 0 4px;border-left:3px solid var(--amber)}
+.board td:first-child{border-radius:4px 0 0 4px;border-left:3px solid var(--stripe)}
 .board td:last-child{border-radius:0 4px 4px 0}
-.board tr.is-ok td:first-child{border-left-color:var(--go)}
-.board tr.is-bad td:first-child{border-left-color:var(--stop)}
-.board tr.is-idle td:first-child{border-left-color:var(--faint)}
-.board tr.is-wait td:first-child{border-left-color:var(--amber)}
+/* Row stripe: the row's state class sets --stripe once; the table row and its card (phone, and below 1180 px for
+   Requests and Grants) both draw it. .is-plain is a row that has no state (a person on Members). */
+.board tr{--stripe:var(--amber)}
+.board tr.is-ok{--stripe:var(--go)}
+.board tr.is-bad{--stripe:var(--stop)}
+.board tr.is-idle{--stripe:var(--faint)}
+.board tr.is-wait{--stripe:var(--amber)}
+.board tr.is-plain{--stripe:var(--rule)}
 .board td.name{min-width:14em;max-width:26em}
 .board td.name a{font-weight:700;font-size:14px}
 .board td.name small{display:block;margin-top:3px;color:var(--faint);overflow-wrap:anywhere}
@@ -186,7 +190,8 @@ font-weight:600;padding:0 12px 2px}
 .refresh-row{display:flex;flex-direction:row-reverse;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0}
 .refresh-row .note{margin:0}
 .refresh-row .btn{flex:none;white-space:nowrap}
-.tabs+.section-head,.tabs+h2{margin-top:20px}
+/* What follows the tabs starts at the same height on every tab, a heading or not. */
+.tabs+.section-head,.tabs+h2{margin-top:0}
 .board .line{display:block}
 .board .line+.line{margin-top:3px}
 .board .line b{color:var(--dim);font-weight:600}
@@ -243,8 +248,6 @@ input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px
 .form-foot .note:empty{display:none}
 .form-foot .controls{flex:none;justify-content:flex-end}
 .form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
-/* A secondary save inside a list or fold ("Save project", "Save environment", "Save role", "Save template",
-   "Save type") is the plain neutral button: only the page's main action (.go) is amber. */
 label.check.stop{color:var(--stop)}
 .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 8px}
 .toolbar label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
@@ -253,22 +256,31 @@ label.check.stop{color:var(--stop)}
 .toolbar :is(button,.btn){min-height:36px}
 .toolbar>a:not(.btn),.toolbar .clear{display:inline-flex;align-items:center;min-height:36px;font-size:13px}
 .toolbar .count{margin-left:auto;color:var(--dim);font-size:13px;align-self:center}
-/* Filter bar (Entries, Grants, Activity): <details class="filters" data-wide-open> holding one .toolbar form.
-   app.js opens it on wide screens, where it reads as an inline bar under a quiet summary line; on phones it is
-   a closed drawer. The status line below it carries the count, one chip per active filter and Clear filters. */
+/* Filter bar (Entries, Grants, Activity): <details class="filters" data-wide-open> holding one .toolbar.
+   Wide screens: app.js keeps it open and its summary is not shown, so it is a plain bar and never a toggle (without
+   script the summary stays, to open it). Phones: a closed drawer. The status line below it carries the count with
+   Clear filters beside it (.filter-count), then one chip per active filter (.chip.filter). */
 details.filters{margin:0 0 10px}
 details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px}
 details.filters>summary::before,details.filters[open]>summary::before{flex:none;content:"\25B8"}
 details.filters[open]>summary::before{content:"\25BE"}
 details.filters .toolbar{margin:0;padding:4px 12px 12px}
 .filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:var(--wide);font-size:13px;color:var(--dim)}
-.filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
+.filter-count a{margin-left:6px}
+.chip.filter{font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
 @media (min-width:901px){
 details.filters[data-wide-open]{background:none;border:none;border-radius:0}
 details.filters[data-wide-open]>summary{display:inline-flex;min-height:32px;padding:4px 12px 4px 0;margin:0 0 2px;font-size:12px;font-weight:400;color:var(--dim)}
 details.filters[data-wide-open]>summary:hover{color:var(--amber)}
+details.filters[data-wide-open][open]>summary{display:none}
 details.filters[data-wide-open] .toolbar{padding:0}
+/* Entries: the search field and the filters share one line. */
+form.catalog-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px}
+form.catalog-filters>.entry-search{flex:1 1 15rem;margin:0}
+form.catalog-filters>details.filters{flex:0 1 auto;min-width:0;margin:0}
 }
+/* Entries: the Search button is for the closed drawer; an open filter bar has Apply, which sends the search too. */
+.catalog-filters:has(details.filters[open]) .catalog-search{display:none}
 @media (max-width:900px){details.filters>summary{min-height:40px}}
 .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0}
 .inline label{margin:0}
@@ -300,7 +312,7 @@ pre[data-hidden]{color:var(--faint)}
 .masked{font:700 22px/1 var(--mono);letter-spacing:.08em;color:var(--faint);margin:6px 0 12px}
 .empty{padding:30px;text-align:center;color:var(--dim);border:1px dashed var(--edge);border-radius:4px}
 .empty b{display:block;color:var(--ink);margin-bottom:4px}
-.pager{display:flex;justify-content:space-between;gap:10px;margin:4px 0 14px;font-size:13px}
+.pager{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 14px;font-size:13px}
 .foot{margin-top:28px;color:var(--faint);font-size:12px}
 
 /* Entry history */
@@ -320,9 +332,9 @@ nav.subnav{gap:0 18px}
 nav.subnav .subnav-label{flex-basis:100%}
 nav.subnav a,nav.subnav a:hover{min-height:40px}
 }
-/* Jump links of a long page with many sections (the entry page): <details class="jump" data-wide-open
-   data-wide-static>. Wide screens: app.js keeps it open and it reads as the label and one line of links. Phones: a
-   closed drawer "On this page", so the links do not take four lines before the content. */
+/* Jump links of a long page with many sections (the entry page): <details class="jump" data-wide-open>. Wide
+   screens: app.js keeps it open and its summary is a plain label before one line of links. Phones: a closed drawer
+   "On this page", so the links do not take four lines before the content. */
 details.jump{flex:1;min-width:0;margin:0;background:none;border:none;border-radius:0}
 details.jump>summary{padding:0;font:400 12px/1.3 var(--mono);color:var(--faint)}
 details.jump>summary::before,details.jump[open]>summary::before{content:none}
@@ -375,8 +387,7 @@ label,main.login label{grid-template-columns:minmax(0,1fr);gap:4px}
 .board,.board tbody,.board tr,.board td{display:block;width:100%}
 /* Column heads stay for screen readers (app.js adds the table roles the block layout takes away). */
 .board thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-.board tr{margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px;overflow:hidden}
-.board tr.is-ok{border-left-color:var(--go)}.board tr.is-bad{border-left-color:var(--stop)}.board tr.is-idle{border-left-color:var(--faint)}.board tr.is-wait{border-left-color:var(--amber)}
+.board tr{margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--stripe);border-radius:4px;overflow:hidden}
 .board td{background:transparent;border-radius:0!important;border-top:none;border-bottom:none;padding:6px 14px}
 .board td:first-child{border-left:none;padding-top:12px}.board td:last-child{padding-bottom:12px}
 .board td.name{max-width:none}.board td.when{white-space:normal}
@@ -409,8 +420,8 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .board.requests .state{white-space:nowrap}
 .board.requests td.when .line{white-space:nowrap}
 .board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
-/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
-/* Phone: the time left follows the deadline on its line. Wide: it is a line of its own under the deadline. */
+/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays).
+   On a card the time left follows the deadline on its line; in the table it is a line of its own under it. */
 .board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
 @media (max-width:1180px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
 @media (min-width:1181px){.board.requests .left{display:block;margin-top:3px}}
@@ -467,7 +478,7 @@ form.action .list.edit :is(th,td):last-child{padding-right:0}
 .board.access :is(th,td):not(:last-child){width:1%;padding-right:28px}
 .board.access td:not(.when){white-space:nowrap}
 }
-/* With room for it the reason stays beside its date ("Revoked … UTC · agent revoked"); narrower, it wraps under. */
+/* The reason ("agent revoked") is a line of its own under the date; with room for it that line does not wrap. */
 @media (min-width:1000px){.board.access td.when{white-space:nowrap}.board.access td.when small.wrap{white-space:nowrap}}
 .board.versions td{vertical-align:middle}
 .board.versions td.act{white-space:nowrap}
@@ -538,6 +549,10 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .confirm-inline.is-needed{padding-top:14px;border-top:1px dashed var(--rule)}
 .confirm-inline.is-needed .note{margin:0 0 8px;font-size:13px;color:var(--dim)}
 .confirm-inline .pending{display:block;margin-top:4px;color:var(--ink)}
+/* Deferred: another block earlier on the page holds the confirmation state and the one password field. This one
+   shows nothing (.is-quiet) while the confirmation is valid, and a line pointing there when it has expired. */
+.confirm-inline.is-quiet{display:none}
+.confirm-inline.is-deferred .note{font-size:13px;color:var(--dim)}
 .confirm-inline.shared{margin:0 0 12px;scroll-margin-top:16px}
 .confirm-inline.shared label{margin-bottom:0}
 .card>.confirm-inline.shared.is-needed{margin-top:14px}
@@ -579,9 +594,12 @@ label.stack+.field-error,label.check+.field-error{margin-left:0}
 .confirm-step{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap;max-width:100%}
 .confirm-step .confirm-note{flex:0 1 auto;min-width:0;max-width:34ch;color:var(--ink);font:400 13px/1.4 var(--mono);letter-spacing:0;text-transform:none;
 white-space:normal;overflow-wrap:anywhere;text-align:right}
-.confirm-step button{flex:none;white-space:nowrap}
-.confirm-step button.armed{background:var(--stop);border-color:var(--stop);color:var(--on-accent)}
-.confirm-step button.armed:hover{color:var(--on-accent);box-shadow:0 0 14px var(--stop-glow)}
+.confirm-step :is(button,.btn){flex:none;white-space:nowrap}
+.confirm-step :is(button,.btn).armed{background:var(--stop);border-color:var(--stop);color:var(--on-accent)}
+.confirm-step :is(button,.btn).armed:hover{color:var(--on-accent);box-shadow:0 0 14px var(--stop-glow)}
+/* A guarded link that is no button (a tab, a menu item) keeps its look; the question beside it is the cue. */
+:is(.tabs,.menu-list) .confirm-step{padding:0 6px}
+.menu-list .confirm-step{justify-content:flex-start}.menu-list .confirm-step .confirm-note{text-align:left}
 /* In a table row the question sits above the two buttons and takes their width (width:0 keeps it out of the
    column's sizing). The column already has room for the armed buttons: app.js adds .confirm-size, an invisible
    zero-height copy of them, to every such cell. */
@@ -607,7 +625,9 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 @media (max-width:900px){
 /* Phone card: what happened, to what, then when, who and the outcome. The code is for screen readers only. */
 .board.activity td.event{order:0;flex-basis:100%}.board.activity td.subject{order:1;flex-basis:100%}
-.board.activity td.when{order:2}.board.activity td.actor{order:3;flex:0 1 auto}.board.activity td.outcome{order:4;margin-left:auto}
+/* One line: when, who, outcome. The actor takes what is left and wraps inside its own box, so the chip never
+   drops to a line of its own. */
+.board.activity td.when{order:2;flex:none}.board.activity td.actor{order:3;flex:1 1 0;min-width:5em}.board.activity td.outcome{order:4;flex:none;margin-left:auto}
 .board.activity td.subject.is-empty{display:none}
 .board.activity .event-code{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 }
@@ -644,13 +664,13 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 /* entries area */
 .entry-search label.grow{flex:1;min-width:0}.entry-search button{width:auto}
 @media (min-width:901px){.toolbar label.grow{min-width:15rem}}
-a.stat{display:block;color:inherit;text-decoration:none;border-radius:3px}
-a.stat:hover{text-decoration:none}
-a.stat:hover span,a.stat.is-on span{color:var(--amber)}
-a.stat:hover span{text-decoration:underline}
-a.stat.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
-a.stat.has-due b{color:var(--amber)}
-.entry-stats-summary{flex-basis:100%;grid-column:1/-1;color:var(--dim)}
+/* A stat that filters the list (rotation due). */
+.stat-link{display:block;color:inherit;text-decoration:none;border-radius:3px}
+.stat-link:hover{text-decoration:none}
+.stat-link:hover span,.stat-link.is-on span{color:var(--amber)}
+.stat-link:hover span{text-decoration:underline}
+.stat-link.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
+.stat-link.has-due b{color:var(--amber)}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
@@ -659,6 +679,10 @@ a.stat.has-due b{color:var(--amber)}
 .list.import-ids td.env-id code{white-space:nowrap;overflow-wrap:normal}
 details.import-ref>.inner .note{margin:0}
 details.import-ref>.inner .scroll{margin:0}
+/* Import: the reference folds follow the textarea inside the form card; the example is a block of its own. */
+form.action label+details.import-ref{margin-top:12px}
+form.action details.import-ref{background:var(--panel-2)}
+.import-example{max-width:var(--card);margin:0 0 14px}
 @media (max-width:900px){
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
@@ -700,37 +724,37 @@ details.import-ref>.inner .scroll{margin:0}
 .list.import-types tr{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px}
 .list.import-types td.type-name{color:var(--dim);justify-self:end}
 .list.import-types td.type-fields{grid-column:1/-1}
-.list.import-types td.type-fields::before{content:"Required: ";font-size:12px;color:var(--faint)}
 }
 
 /* agents area */
-.head:has(+.tabs[aria-label="Agents sections"]){min-height:40px}
-.tabs[aria-label="Agents sections"]+.section-head{margin-top:0}
+/* The head row of a tabbed area is as tall with a button as without one, so the tabs do not move between tabs. */
+.head:has(+.tabs){min-height:40px}
 .board.grants .when{white-space:normal}
 @media (min-width:1181px){
 .board.grants :is(th,td){padding-inline:8px}
 .board.grants :is(th,td):nth-last-child(-n+2){width:1%}
 }
-.board.grants [data-label="Entry"] small,.board.members [data-label="Role"] small{display:block;margin-top:2px;color:var(--dim)}
+/* Members columns: name, email, role, actions. */
+.board.grants td.entry small,.board.members td:nth-child(3) small{display:block;margin-top:2px;color:var(--dim)}
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
 @media (max-width:900px){
-.board.identities [data-label="Agent"]{flex:1 1 45%}
-.board.members [data-label="Name"]{flex:0 1 auto}
-.board.members [data-label="Email"]{flex:1 1 55%}
-.board.members [data-label="Role"]{flex:1 1 52%}
-.members td[data-label=""]:empty{display:none}
+.board.identities td.name{flex:1 1 45%}
+.board.members td:nth-child(1){flex:0 1 auto}
+.board.members td:nth-child(2){flex:1 1 55%}
+.board.members td:nth-child(3){flex:1 1 52%}
 }
 
 /* Requests and Grants need the whole --wide for their columns. Below a 1180 px window (1100 px plus the page
    padding and a scrollbar) they are compact cards already, so the action column is never behind a sideways scroll.
-   The generic card rules of the 900 px block are repeated here for these two boards; their own card rules live
-   here only. */
+   A media query cannot be shared by two widths, so the card layout is stated a second time for these two boards:
+   the first rules below are that copy, one rule per line of the 900 px block (block layout, hidden head, the card,
+   its cells, .k labels, .full/.end, the armed confirmation). Colours and stripes are not repeated (--stripe).
+   Everything after "Requests:" is these boards' own and lives here only. */
 @media (max-width:1180px){
 .board:is(.requests,.grants),.board:is(.requests,.grants) tbody,.board:is(.requests,.grants) tr,.board:is(.requests,.grants) td{display:block;width:100%}
 .board:is(.requests,.grants) thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-.board:is(.requests,.grants) tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px;overflow:hidden}
-.board:is(.requests,.grants) tr.is-ok{border-left-color:var(--go)}.board:is(.requests,.grants) tr.is-bad{border-left-color:var(--stop)}.board:is(.requests,.grants) tr.is-idle{border-left-color:var(--faint)}.board:is(.requests,.grants) tr.is-wait{border-left-color:var(--amber)}
+.board:is(.requests,.grants) tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--stripe);border-radius:4px;overflow:hidden}
 .board:is(.requests,.grants) td,.board:is(.requests,.grants) td:first-child,.board:is(.requests,.grants) td:last-child{width:auto;min-width:0;max-width:100%;padding:0;background:transparent;border:none;border-radius:0;overflow-wrap:anywhere;text-align:left;white-space:normal}
 .board:is(.requests,.grants) td:last-child:not(.decision):has(.controls,>form){width:auto;white-space:normal;text-align:left}
 .board:is(.requests,.grants) td[data-label]::before{content:none}
@@ -749,28 +773,33 @@ details.import-ref>.inner .scroll{margin:0}
 .board:is(.requests,.grants) :is(.controls,form):has(>.confirm-step,>form>.confirm-step){display:flex;flex-wrap:wrap;justify-content:flex-end;width:100%}
 .board:is(.requests,.grants) .confirm-step{display:flex;width:100%}
 .board:is(.requests,.grants) .confirm-step .confirm-note{flex:1 1 100%;width:auto;min-width:0}
-/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", the state, the times one per
-   line from the left, the controls, and the request id as the last quiet line. */
-.board.requests td.who{order:0}.board.requests td.action{order:1;flex:1 1 40%}.board.requests td.entry{order:2;flex-basis:100%}
-.board.requests td.state{order:3;flex-basis:100%}.board.requests td.when{order:4;flex-basis:100%}.board.requests td.decision{order:5;flex-basis:100%}
-.board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
-/* The request id is a line of its own under "<agent> requests <action>", from the card's left edge. */
+/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", then the request id with the
+   state at the right, the times one per line, and the controls last. The action cell is display:contents, so its
+   parts (the word "requests", the code, the id) are ordered as items of the card. */
+.board.requests td.who{order:0}
 .board.requests td.action{display:contents}
 .board.requests td.action>*{order:1}
 .board.requests td.action>code{margin-right:auto}
-.board.requests td.action small.rid{flex-basis:100%;margin-left:0;white-space:nowrap}
+.board.requests td.entry{order:2;flex-basis:100%}
+/* The line break before the id, also where the card has no entry line (the entry page). */
+.board.requests tr::before{content:"";order:2;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.requests td.action small.rid{order:3;margin:0 auto 0 0;white-space:nowrap}
+.board.requests td.state{order:3;margin-left:auto}
+.board.requests td.when{order:4;flex-basis:100%}
+.board.requests td.decision{order:5;flex-basis:100%}
+.board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
 .board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
-.board.grants [data-label="Agent"]{grid-area:1/1}
-.board.grants [data-label="Agent"]>b{white-space:normal;overflow-wrap:anywhere}
-.board.grants [data-label="Action"]{grid-area:1/2;justify-self:end}
-.board.grants [data-label="Entry"]{grid-area:2/1/3/3}
-.board.grants [data-label="State"]{grid-area:3/2;justify-self:end}
-.board.grants [data-label="Approval"]{grid-area:3/1}
-.board.grants .when{grid-area:4/1;white-space:normal}
-.board.grants tr:has(td:last-child:empty) .when{grid-column:1/-1}
+/* Grants: agent and action, the entry, approval and state, then the end date with Revoke at the right. */
+.board.grants td.who{grid-area:1/1}
+.board.grants td.action{grid-area:1/2;justify-self:end}
+.board.grants td.entry{grid-area:2/1/3/3}
+.board.grants td.approval{grid-area:3/1}
+.board.grants td.state{grid-area:3/2;justify-self:end}
+.board.grants td.when{grid-area:4/1}
+.board.grants tr:has(td:last-child:empty) td.when{grid-column:1/-1}
 .board.grants td:last-child{grid-area:4/2;justify-self:end}
-.board.grants [data-label="Entry"] small{display:inline}
+.board.grants td.entry small{display:inline}
 }
 
 /* setup area */
@@ -797,9 +826,9 @@ details.import-ref>.inner .scroll{margin:0}
 details.type-fold .list.edit :is(th,td){padding:7px 6px}
 :is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):first-child{padding-left:0}
 :is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):last-child{padding-right:0}
-details.type-fold .list.edit td[data-label="Field label"] input{min-width:10em}
-details.type-fold .list.edit td[data-label="Kind"] select{min-width:12em}
-details.type-fold .list.edit td[data-label="Key"] code{white-space:nowrap;overflow-wrap:normal}
+details.type-fold .list.edit td.field-label input{min-width:10em}
+details.type-fold .list.edit td.kind select{min-width:12em}
+details.type-fold .list.edit td.key code{white-space:nowrap;overflow-wrap:normal}
 :is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) label.check{white-space:nowrap}
 .list.edit.env-template td:last-child,.list.edit.type-new td:last-child{width:1%}
 /* The column head says "Production"; the row's own word is for phones, where the head is not shown. */
@@ -810,7 +839,7 @@ details.more.field-rules>summary{color:var(--dim);font-weight:400}
 details.more.field-rules>summary:hover{color:var(--ink)}
 details.more.field-rules ul{margin:0;padding-left:20px}
 details.more.field-rules li+li{margin-top:4px}
-/* Form section dividers inside a card (move to global CSS next to fieldset/legend when Fable merges). */
+/* Form sections inside a card (fieldset + legend): a dashed rule between one section and the next. */
 form.action fieldset+fieldset{margin-top:14px}
 form.action fieldset+fieldset>legend{padding-top:14px;border-top:1px dashed var(--rule)}
 form.action fieldset>:last-child{margin-bottom:0}
@@ -827,12 +856,15 @@ details.type-fold .list.edit td.remove{margin-left:auto}
 .list.edit td[data-label=""]::before{content:none}
 }
 
-/* Phone tap targets: everything that is pressed is at least 40 px high. Links in running text keep their line. */
+/* Phone tap targets: everything that is pressed is at least 40 px high. Links in running text keep their line.
+   A link on a line of its own grows to 40 px (.back, the pager, Clear filters). A link that shares its line with
+   text or other cells (a link in a card, .more-link after a note: "Manage grants", "Edit entry types") gets the
+   height from padding that a negative margin takes back, so it is 40 px to the finger and adds no empty band. */
 @media (max-width:900px){
 .back{display:inline-flex;align-items:center;min-height:40px;margin-bottom:4px}
-.filter-status a{display:inline-flex;align-items:center;min-height:40px}
-.board td a:not(.btn){display:inline-flex;align-items:center;min-height:40px;max-width:100%}
-.board.entries td.name>a{min-height:0;display:inline}
+.filter-status a,.pager a{display:inline-flex;align-items:center;min-height:40px}
+.board td a:not(.btn),.more-link{display:inline-block;max-width:100%;padding:11px 0;margin:-11px 0}
+.board.entries td.name>a{display:inline;padding:0;margin:0}
 label.check{min-height:40px;align-items:center}
 details>summary{min-height:40px}
 details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add)>summary{padding-top:11px;padding-bottom:11px}

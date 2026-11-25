@@ -340,7 +340,22 @@ final class Workspace
             : null;
         $types = $this->types->all($workspace);
 
-        return view('import', compact('firstProjectId', 'space', 'environments', 'types'));
+        $example = null;
+        if ($environments->isNotEmpty() && $types->isNotEmpty()) {
+            $type = $types->first();
+            $fields = collect($type->fields);
+            $required = $fields->where('required', true);
+            $exampleFields = $required->isEmpty() ? $fields->take(1) : $required;
+            $example = json_encode([[
+                'environment_id' => $environments->first()->id,
+                'name' => 'Example entry',
+                'alias' => 'example-entry',
+                'type' => $type->key,
+                'secret_fields' => (object) $exampleFields->mapWithKeys(fn ($field) => [$field['key'] => 'replace-me'])->all(),
+            ]], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        }
+
+        return view('import', compact('firstProjectId', 'space', 'environments', 'types', 'example'));
     }
 
     public function import(Request $r, string $workspace)

@@ -9,13 +9,13 @@
 @endphp
 <div class="scroll"><table class="board compact-board members">
     <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
-    <tbody>@foreach($members as $m)<tr class="is-idle"><td data-label="Name"><b>{{ $m->name }}</b> @if($m->id == auth()->id())<span class="chip muted">you</span>@endif</td><td data-label="Email">{{ $m->email }}</td>
+    <tbody>@foreach($members as $m)<tr class="is-plain"><td data-label="Name"><b>{{ $m->name }}</b> @if($m->id == auth()->id())<span class="chip muted">you</span>@endif</td><td data-label="Email">{{ $m->email }}</td>
         <td data-label="Role">@if($soleOwner && $m->id == auth()->id() && $m->role === 'owner')
             <span class="chip role">owner</span><small>Add another owner before changing your role</small>
         @else<form class="controls" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
             <input type="hidden" name="form" value="row:{{ $m->id }}">
             <input type="hidden" name="name" value="{{ $m->name }}"><input type="hidden" name="email" value="{{ $m->email }}">
-            <select name="role" aria-label="Role for {{ $m->name }}">@foreach($roles as $role)<option value="{{ $role }}" @selected($role === ($failedForm === 'row:'.$m->id ? old('role') : $m->role))>{{ ucfirst($role) }}</option>@endforeach</select><button class="plain" aria-label="Save role for {{ $m->name }}">Save role</button>
+            <select name="role" aria-label="Role for {{ $m->name }}">@foreach($roles as $role)<option value="{{ $role }}" @selected($role === ($failedForm === 'row:'.$m->id ? old('role') : $m->role))>{{ ucfirst($role) }}</option>@endforeach</select><button aria-label="Save role for {{ $m->name }}">Save role</button>
         </form>@endif</td>
         <td data-label="">@if($m->id != auth()->id())<form method="post" action="/workspaces/{{ $space->id }}/members" data-confirm="Remove {{ $m->name }} from this workspace?">@csrf
             <input type="hidden" name="form" value="remove:{{ $m->id }}">

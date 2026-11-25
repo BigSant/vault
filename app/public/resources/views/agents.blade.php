@@ -5,7 +5,7 @@
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
 
 @if($machines->isEmpty())
-    <div class="empty">No agent identities yet. Add one below.</div>
+    <div class="empty">No agents yet. <a href="#add-agent">Add an agent</a>.</div>
 @else
 <div class="scroll"><table class="board compact-board identities">
     <thead><tr><th scope="col">Agent</th><th scope="col">Expires (UTC)</th><th scope="col">Active grants</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
@@ -14,13 +14,7 @@
         @php $mState = $m->revoked_at ? 'revoked' : (strtotime($m->expires_at) <= time() ? 'expired' : 'active'); @endphp
         <tr id="agent-{{ $m->id }}" class="{{ $mState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td class="name" data-label="Agent"><b>{{ $m->name }}</b></td>
-            <td class="when" data-label="Expires (UTC)">
-                @if($m->revoked_at)
-                    Revoked <span class="nobreak">{{ substr($m->revoked_at, 0, 16) }}</span> <small class="k">UTC</small>
-                @else
-                    <small class="k">{{ strtotime($m->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($m->expires_at, 0, 16) }} <small class="k">UTC</small>
-                @endif
-            </td>
+            <td class="when" data-label="Expires (UTC)">@include('end-date', ['revoked' => $m->revoked_at, 'ends' => $m->expires_at, 'reason' => null, 'own' => null])</td>
             <td data-label="Active grants">@if($m->active_grants)<a href="/workspaces/{{ $space->id }}/grants?agent={{ $m->id }}">{{ $m->active_grants }} {{ Str::plural('grant', $m->active_grants) }} →</a>@else<span class="muted">no grants</span>@endif</td>
             <td data-label="State"><span class="chip {{ $mState === 'active' ? 'ok' : 'muted' }}">{{ $mState }}</span></td>
             <td data-label="">@if($mState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/machines/{{ $m->id }}" data-confirm="Revoke agent {{ $m->name }}? Its token stops working at once.">@csrf<button class="stop" aria-label="Revoke agent {{ $m->name }}">Revoke</button></form>@endif</td>

@@ -26,12 +26,12 @@
             @endphp
             <input type="hidden" name="environment_id" value="{{ $entry->environment_id }}">
             <input type="hidden" name="type" id="entry-type" value="{{ $entry->type }}">
-            <div class="field field-static">
-                <span class="field-key">Project / environment</span>
+            <div class="field">
+                <span>Project / environment</span>
                 <span class="field-val">@if($currentEnv){{ $currentEnv->project }} @include('sign', ['name' => $currentEnv->name, 'production' => $currentEnv->production])@else{{ $entry->environment_id }}@endif</span>
             </div>
-            <div class="field field-static">
-                <span class="field-key">Type</span>
+            <div class="field">
+                <span>Type</span>
                 <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
             </div>
         @else
@@ -46,7 +46,7 @@
                 <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>
-            <p class="note">Missing a type or a field? <a href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>
+            <p class="note">Missing a type or a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>
         @endif
     </fieldset>
 
@@ -76,7 +76,7 @@
                         @endif
                     </label>
                 @endif
-                @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> clear the current “{{ $f['label'] }}” value</label>@endif
+                @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> Clear the current “{{ $f['label'] }}” value</label>@endif
             @endforeach
         @endforeach
     </fieldset>

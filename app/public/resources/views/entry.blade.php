@@ -44,8 +44,9 @@
 {{-- Jump links right under the title: the sections in page order, each named like its heading. Links, not actions.
      When requests wait for this owner, they are the first link and the first section. --}}
 <nav class="subnav" aria-label="On this page">
-    {{-- A <details>: app.js keeps it open on wide screens (one line of links); on phones it is a closed drawer. --}}
-    <details class="jump" data-wide-open data-wide-static>
+    {{-- A <details data-wide-open>: on wide screens app.js keeps it open and its summary is a plain label (one line
+         of links); on phones it is a closed drawer. --}}
+    <details class="jump" data-wide-open>
         <summary>On this page</summary>
         <div class="jump-links">
             @if($isOwner)<a href="#waiting" data-shown-with="waiting" @if(!$hasWaiting) hidden @endif>Requests waiting for you</a>@endif
@@ -105,8 +106,10 @@
     @endisset
     @if($canEdit)
         {{-- One password field for every Reveal on this page (here and per version): an expired confirmation asks
-             here, in place, and never sends a reveal to the confirm page. --}}
-        @include('confirm-inline', ['verb' => 'reveal', 'shared' => 'confirm-reveal'])
+             here, in place, and never sends a reveal to the confirm page. While requests wait for this owner, their
+             block at the top of the page ("confirm-decide") is the page's one confirmation state and one password
+             field: this block then shows nothing while the confirmation is valid, and points up when it expired. --}}
+        @include('confirm-inline', ['verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
             {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice. --}}
@@ -184,31 +187,26 @@
 @if($isOwner)
 <h2 id="access">Agent access</h2>
 @if($grants->isEmpty())
-    <div class="empty">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
+    <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
 @else
 <div class="scroll"><table class="board compact-board access">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
     <tbody>
     @foreach($grants as $grant)
         {{-- The controller sets state, effective_expires_at (the earlier of the grant's and the agent's end), expiry_reason
-             (why it is not the grant's own date) and expires_at (the grant's own date). Shown as on the Grants page. --}}
-        @php
-            $gState = $grant->state;
-            $gEnds = (string) $grant->effective_expires_at;
-            // Revoked beats expiry: the date it was revoked (the agent's, when that caused it) replaces both expiry lines.
-            $gRevoked = $grant->effective_revoked_at ?? null;
-        @endphp
+             (why it is not the grant's own date) and expires_at (the grant's own date). Shown by the end-date partial, as on Grants. --}}
+        @php $gState = $grant->state; @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
             <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)">@if($gRevoked)Revoked <span class="nobreak">{{ $day($gRevoked) }} UTC</span>@if($grant->expiry_reason) <small class="wrap">{{ $grant->expiry_reason }}</small>@endif @else<small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) <small class="wrap">{{ $grant->expiry_reason }}</small>@endif @if($gEnds !== (string) $grant->expires_at)<small class="wrap">Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif @endif</td>
+            <td class="when" data-label="Expires (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach
     </tbody>
 </table></div>
-<p class="note">Read-only summary. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
+<p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
 <h2 id="activity">Activity</h2>

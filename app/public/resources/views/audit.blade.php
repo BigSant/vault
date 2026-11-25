@@ -16,13 +16,12 @@
     </form>
 </details>
 @if($filterCount)
-<p class="filter-status">Showing {{ $events->total() }} of {{ $total ?? $events->total() }} {{ Str::plural('event', $total ?? $events->total()) }}
+<p class="filter-status"><span class="filter-count">Showing {{ $events->total() }} of {{ $total ?? $events->total() }} {{ Str::plural('event', $total ?? $events->total()) }} <a href="/workspaces/{{ $space->id }}/audit">Clear filters</a></span>
     @if(request('group'))<span class="chip filter">Event group: {{ ucfirst(request('group')) }}</span>@endif
     @if(request('actor'))<span class="chip filter">Actor: {{ $actorOptions[request('actor')] ?? request('actor') }}</span>@endif
     @foreach(['outcome' => 'Outcome', 'from' => 'From', 'to' => 'To'] as $key => $label)
         @if(request($key))<span class="chip filter">{{ $label }}: {{ $key === 'outcome' ? ($outcomeLabels[request($key)] ?? request($key)) : request($key) }}</span>@endif
     @endforeach
-    <a href="/workspaces/{{ $space->id }}/audit">Clear filters</a>
 </p>
 @endif
 @include('activity', ['events' => $events, 'filtered' => $filterCount > 0])

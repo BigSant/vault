@@ -33,13 +33,16 @@
     @endif
 </div>
 @if($space)
+@unless($archived)
 <div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true" aria-label="Clear rotation-due filter"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
-    <small class="entry-stats-summary">{{ $prodCount }} production · {{ $usedRecent }} used by agents in 7 days</small>
+    <div class="stat"><b>{{ $prodCount }}</b><span>production</span></div>
+    <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents in 7 days</span></div>
 </div>
+@endunless
 
-<form method="get">
+<form class="catalog-filters" method="get">
     <input type="hidden" name="workspace" value="{{ $space->id }}">
     <div class="toolbar entry-search">
         <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
@@ -59,14 +62,13 @@
 
 @if($hasFilters)
 <div class="filter-status">
-    <span>Showing {{ $entries->total() }} of {{ $scopeCount }} entries</span>
+    <span class="filter-count">Showing {{ $entries->total() }} of {{ $scopeCount }} entries <a href="/?workspace={{ $space->id }}">Clear filters</a></span>
     @if(request()->filled('q'))<span class="chip filter">Search: {{ request('q') }}</span>@endif
     @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
     @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
     @if($activeType)<span class="chip filter">Type: {{ $activeType }}</span>@endif
     @if($dueOnly)<span class="chip filter">State: Rotation due</span>@endif
     @if($archived)<span class="chip filter">State: Archived</span>@endif
-    <a href="/?workspace={{ $space->id }}">Clear filters</a>
 </div>
 @endif
 @endif
@@ -111,6 +113,6 @@
 @endif
 @endif
 @if($space && !$archived && $archivedCount)
-<p class="note"><a href="/?workspace={{ $space->id }}&amp;state=archived">{{ $archivedCount }} archived {{ Str::plural('entry', $archivedCount) }} →</a></p>
+<p class="note"><a class="more-link" href="/?workspace={{ $space->id }}&amp;state=archived">{{ $archivedCount }} archived {{ Str::plural('entry', $archivedCount) }} →</a></p>
 @endif
 @endsection

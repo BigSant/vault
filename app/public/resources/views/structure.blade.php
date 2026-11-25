@@ -24,7 +24,7 @@
 <div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
 
-<h2>Projects and environments</h2>
+{{-- No h2 here: it would repeat the active tab. The project cards follow the tabs; the forms below keep their h2. --}}
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 <div class="project-list">

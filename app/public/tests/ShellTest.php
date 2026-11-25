@@ -88,8 +88,10 @@ final class ShellTest extends TestCase
         $this->get($this->base.'/types')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
             ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false)
-            ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add a type</a></div>'."\n".'<nav class="tabs"', false)
-            ->assertSee('<h2 id="add-type">', false);
+            ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add an entry type</a></div>'."\n".'<nav class="tabs"', false)
+            // Headings, links and buttons of this tab say "entry type"; a field label may say "Type".
+            ->assertSeeInOrder(['<h2 id="add-type">Add an entry type</h2>', '<span>Type name</span>', '<button class="go">Add entry type</button>'], false)
+            ->assertDontSee('Add a type')->assertDontSee('>Add type<', false);
         $this->get('/')->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="page">Entries</a>', false);
     }
 
@@ -461,7 +463,9 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;', $script);
         $this->assertStringContainsString('chip.focus({ preventScroll: true })', $script);
         $this->assertStringNotContainsString("getElementById('content')?.focus", $script);
-        $this->get($this->base.'/structure')->assertOk()->assertSee('</nav>'."\n\n".'<h2>Projects and environments</h2>', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
+        $this->get($this->base.'/structure')->assertOk()->assertDontSee('<h2>Projects', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
+            // No h2 repeats the active tab: the project cards follow the tabs, and the two forms keep their h2.
+            ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries by environment.', '<div class="project-list">', '<h2 id="add-project">Add a project</h2>', '<h2 id="template">Environment template</h2>'], false)
             ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
         $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
@@ -470,7 +474,9 @@ final class ShellTest extends TestCase
     public function test_account_wording_and_plain_footer(): void
     {
         $this->signIn('owner');
-        $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button class="plain" aria-label="Sign out of this session">Sign out</button>', false)
+        $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button aria-label="Sign out of this session">Sign out</button>', false)
+            // Changing the password is no destructive action: the plain button, like Sign out.
+            ->assertSee('<button>Change password and sign out</button>', false)
             ->assertSee('<form class="action quiet" method="post" action="/logout">', false)
             ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
         // The footer line belongs to the Entries pages and the Agents area only.
@@ -488,8 +494,15 @@ final class ShellTest extends TestCase
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
             ->assertSeeInOrder(['<div class="head"><h1>Agents</h1></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false)
-            // Leaving loses the token: no second way out in the head row, and "Add a grant" asks first.
-            ->assertDontSee('+ Add an agent')->assertSee('data-confirm-leave="Token copied?" data-confirm-armed="Leave this page">Add a grant</a>', false);
+            // Leaving loses the token: no second way out in the head row, and the card guards every way out of the page
+            // until the token is copied or marked as saved ("Token copied?", asked by app.js).
+            ->assertDontSee('+ Add an agent')
+            ->assertSeeInOrder(['<div class="card solo" data-leave-guard="Token copied?">', 'data-copy="agent-token" data-copy-name="token">Copy token</button>',
+                '<button type="button" data-leave-clear hidden>I\'ve saved it</button>', '#add-grant">Add a grant</a>',
+                '<a class="btn" href="'.$this->base.'/agents" data-leave-done>Done — back to Identities</a>'], false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("document.querySelector('[data-leave-guard]')", $script);
+        $this->assertStringContainsString("guard.addEventListener('vault:copied', lift)", $script);
         $operations = (string) file_get_contents(resource_path('views/operations.blade.php'));
         $this->assertStringContainsString('<th scope="col">Finished (UTC)</th>', $operations);
         $this->assertStringContainsString('data-label="Finished (UTC)"', $operations);
@@ -507,6 +520,60 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('anchor.after(note)', $script);
         $this->assertStringNotContainsString('holder.matches(\'label\') || field.hasAttribute', $script);
         $this->assertStringContainsString('@media (max-width:1180px){'."\n".'.board:is(.requests,.grants),', (string) file_get_contents(public_path('app.css')));
+    }
+
+    public function test_end_dates_read_the_same_on_identities_grants_and_agent_access(): void
+    {
+        // One partial: label, date and UTC, then the reason and the grant's own date on lines of their own.
+        $revoked = (string) $this->view('end-date', ['revoked' => '2026-11-20T10:15:00Z', 'ends' => '2026-12-01 09:00:00', 'reason' => 'agent revoked', 'own' => '2026-12-01 09:00:00']);
+        $this->assertStringContainsString('<small class="k keep">Revoked</small> <span class="nobreak">2026-11-20 10:15 <small class="k">UTC</small></span>', $revoked);
+        $this->assertStringContainsString('<small class="wrap">agent revoked</small>', $revoked);
+        $this->assertStringNotContainsString('Grant expiry', $revoked);
+        $soon = now()->addDays(2)->format('Y-m-d H:i');
+        $later = now()->addDays(9)->format('Y-m-d H:i');
+        $active = (string) $this->view('end-date', ['revoked' => null, 'ends' => $soon.':00', 'reason' => 'agent expires first', 'own' => $later.':00']);
+        $this->assertStringContainsString('<small class="k">Expires</small> <span class="nobreak">'.$soon.' <small class="k">UTC</small></span>', $active);
+        $this->assertStringContainsString('<small class="wrap">Grant expiry: <span class="nobreak">'.$later.' UTC</span></small>', $active);
+        $this->assertStringContainsString('<small class="k keep">Expired</small>', (string) $this->view('end-date', ['revoked' => null, 'ends' => '2020-01-01 00:00:00']));
+        foreach (['agents', 'grants', 'entry'] as $view) {
+            $source = (string) file_get_contents(resource_path('views/'.$view.'.blade.php'));
+            $this->assertStringContainsString("@include('end-date', [", $source);
+            $this->assertStringNotContainsString('Revoked <span', $source);
+        }
+        $this->signIn('owner');
+        $this->get($this->base.'/agents')->assertOk()->assertSee('No agents yet.')->assertDontSee('No agent identities');
+    }
+
+    public function test_a_page_with_two_shared_confirmations_states_it_once(): void
+    {
+        // The entry page: while requests wait, their block is the one confirmation state; the Reveal block is
+        // deferred (nothing while valid, a pointer when expired, set by app.js) and names the first block.
+        $this->signIn('owner');
+        $this->get('/account')->assertOk();
+        $deferred = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => true]);
+        $deferred->assertSee('class="confirm-inline shared is-deferred is-quiet" id="confirm-reveal"  data-primary="confirm-decide"', false)
+            ->assertSee('<span data-when="valid"  hidden >Confirmed until', false)
+            ->assertSee('<a href="#confirm-decide-password" data-confirm-goto="confirm-decide">', false);
+        // Nothing waits: the Reveal block is the one that says it.
+        $alone = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => false]);
+        $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Confirmed until', false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString('if (first && !first.box.hidden) state = first;', $script);
+    }
+
+    public function test_stylesheet_has_no_selector_keyed_on_label_text_and_views_use_no_undefined_class(): void
+    {
+        $css = (string) file_get_contents(public_path('app.css'));
+        $this->assertDoesNotMatchRegularExpression('/\[(aria-label|data-label)="[^"]+"\]/', $css);
+        foreach (['field-key', 'field-static', 'button.plain'] as $gone) {
+            $this->assertStringNotContainsString($gone, $css);
+        }
+        foreach (['.chip.filter{', '.catalog-search{', '.more-link{', '.board tr.is-plain{'] as $defined) {
+            $this->assertStringContainsString($defined, $css);
+        }
+        foreach (['account', 'entry-form', 'grants', 'agents', 'token', 'structure', 'types'] as $view) {
+            $this->assertDoesNotMatchRegularExpression('/class="[^"]*\b(plain|field-key|field-static)\b/', (string) file_get_contents(resource_path('views/'.$view.'.blade.php')));
+        }
     }
 
     public function test_entry_versions_are_paged(): void
