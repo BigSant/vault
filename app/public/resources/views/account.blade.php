@@ -21,7 +21,7 @@
      closed fold beside the confirm form (open again when its form came back with an error). A summary holds no
      heading: the fold's name is a span that looks like the card h3 it stands for. The deck is one column at the
      card width in both states, so the page keeps one right edge. --}}
-<h2 id="security">Security</h2>
+<h2 id="security" class="capped">Security</h2>
 <div class="deck wide capped">
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
@@ -31,7 +31,7 @@
         <div class="form-foot"><button class="go">Confirm</button></div>
     </form>
     <details class="fold password-fold"@if(session('error_form') === '/password') open @endif>
-        <summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>
+        <summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span></span></summary>
         <div class="inner">
     <form method="post" action="/password">@csrf
     @else
@@ -51,7 +51,7 @@
     @endunless
 </div>
 
-<h2>Workspaces</h2>
+<h2 class="capped">Workspaces</h2>
 @if($navSpaces->isEmpty())
     <div class="empty capped">You are in no workspace yet. <a class="more-link" href="/workspaces/new">Add a workspace</a></div>
 @else

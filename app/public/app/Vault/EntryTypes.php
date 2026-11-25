@@ -43,7 +43,7 @@ final class EntryTypes
     {
         $this->ensure($workspace);
 
-        return DB::table('entry_types')->where('workspace_id', $workspace)->orderBy('name')->get()->map(fn ($t) => $this->decode($t));
+        return DB::table('entry_types')->where('workspace_id', $workspace)->orderByRaw('LOWER(name)')->orderBy('name')->get()->map(fn ($t) => $this->decode($t));
     }
 
     public function find(string $workspace, string $key): ?object

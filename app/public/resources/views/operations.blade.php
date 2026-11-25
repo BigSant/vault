@@ -31,7 +31,9 @@
      data-now (Unix seconds): app.js shows the time left, switches a
      row off at its deadline and refreshes the regions. Every row carries data-request (its id) and data-state, so a
      refresh can say what changed ("Request expired"). Timestamp labels are <small class="k">; .keep marks the two
-     that no column head replaces. A date and its time never break apart (.nobreak).
+     that no column head replaces. A date and its time never break apart (.nobreak). An agent name and an action
+     code may wrap, inside a word when they must: long data never widens the board or a card. A separator ("·")
+     is glued to what comes before it, so a wrapped line never starts with one.
      Columns: Agent · Action · Entry. Card (below 1180 px): "<agent> requests <action>" ("requested" in the history), then "<entry> · <project> /
      <environment>", then the short request id ("Request 1a2b3c4d") with the state at the right, then "Requested …",
      "Expires …" or "Finished …" each on a line of its own, and the controls last. The id belongs to the request's
@@ -96,9 +98,9 @@
             $what = $o->agent.' runs '.$o->action.' on '.$o->entry.' — '.$o->project.' / '.$o->environment.', request '.$rid;
         @endphp
         <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-what="{{ $o->action }} on {{ $o->entry }} (request {{ $rid }})" data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
-            <td class="who" data-label="Agent"><b class="nobreak">{{ $o->agent }}</b></td>
+            <td class="who" data-label="Agent"><b>{{ $o->agent }}</b></td>
             <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{{ $o->action }}</code><small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
-            @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
+            @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><span class="k" aria-hidden="true">&nbsp;·</span><small>{{ $o->project }}&nbsp;/ @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
             <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> <span class="nobreak">{{ $time($o->created_at) }} <small class="k">UTC</small></span>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden></span></span>@endunless</td>
@@ -107,7 +109,7 @@
             @else
             <td class="decision" data-label="Decision">
                 {{-- What a held decision is about: app.js shows it beside the held button in the password block. --}}
-                <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code> <span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
+                <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
                 @if($o->state === 'pending')
                     <form class="controls" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/decision" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<button class="ok" name="decision" value="approve" aria-label="Allow once: {{ $what }}" data-held-name="Allow once: {{ $o->action }}, request {{ $rid }}">Allow once</button><button class="stop" name="decision" value="deny" aria-label="Deny: {{ $what }}" data-held-name="Deny: {{ $o->action }}, request {{ $rid }}">Deny</button></form>
                 @else

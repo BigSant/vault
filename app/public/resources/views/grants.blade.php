@@ -49,9 +49,9 @@
             $gState = $g->state;
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td class="who" data-label="Agent"><b class="nobreak">{{ $machine->name }}</b></td>
+            <td class="who" data-label="Agent"><b>{{ $machine->name }}</b></td>
             <td class="action" data-label="Action"><code>{{ $g->action }}</code></td>
-            <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
+            <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a><span class="k" aria-hidden="true">&nbsp;·</span> <small>{{ $target->project }}&nbsp;/ @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($g->approval ? 'asks every time' : 'runs without asking') : ($g->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
@@ -84,7 +84,7 @@
         @endif
         {{-- What a held "Add grant" is about: app.js fills the marked parts from the form and shows the line beside
              the held button in the password block, as its description (like a held request decision). --}}
-        <template data-held-summary><b class="name" data-held-value="machine_id"></b> may run <code data-held-value="action"></code> <span class="sep" aria-hidden="true">·</span> <span class="name" data-held-value="entry_id" data-held-attr="entry"></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak"><span class="name" data-held-value="entry_id" data-held-attr="project"></span> / <span data-held-sign="entry_id"></span></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">valid for <span data-held-value="days" data-held-unit="day"></span></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak" data-held-check="approval" data-on="asks every time" data-off="runs without asking"></span></template>
+        <template data-held-summary><b class="name" data-held-value="machine_id"></b> may run <code data-held-value="action"></code>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="name" data-held-value="entry_id" data-held-attr="entry"></span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak"><span class="name" data-held-value="entry_id" data-held-attr="project"></span> / <span data-held-sign="entry_id"></span></span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">valid for <span data-held-value="days" data-held-unit="day"></span></span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak" data-held-check="approval" data-on="asks every time" data-off="runs without asking"></span></template>
         <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button></div>
     </form>
 @endif

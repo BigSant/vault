@@ -47,8 +47,9 @@
         <details class="fold project-edit"@if($oldRename || $oldProjectDelete) open @endif>
             <summary>
                 <span class="fold-name"><span class="name">{{ $project->name }}</span></span>
-                <span class="fold-meta">{{ $entries($projectEntries) }}</span>
-                <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> project {{ $project->name }}</span></span>
+                {{-- .fold-tail: on phones the count and Edit stay together when a long name takes the first line. --}}
+                <span class="fold-tail"><span class="fold-meta">{{ $entries($projectEntries) }}</span>
+                <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> project {{ $project->name }}</span></span></span>
             </summary>
             <div class="inner">
                 <form id="{{ $projFormId }}" method="post" action="{{ $projPath }}" data-confirm-from="confirm-setup">@csrf

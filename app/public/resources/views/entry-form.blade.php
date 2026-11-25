@@ -19,7 +19,7 @@
         <legend>Details</legend>
         <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
         {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
-        <div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div>
+        <div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div>
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
@@ -36,8 +36,10 @@
                 <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
             </div>
             {{-- As on Add an entry: the detour to Setup opens a new tab, and "Reload fields" (shown by app.js) swaps
-                 only the type field rows. What was typed stays, and so does every "Clear the current … value" box. --}}
-            <p class="type-detour" data-reload-types-row><span class="note">Missing a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>, then reload here. What you typed stays.</span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></p>
+                 only the type field rows. What was typed stays, and so does every "Clear the current … value" box;
+                 a typed value whose field is gone is asked about first. The sentence names the button; without
+                 script there is no button, and the sentence printed here says so (data-script-text). --}}
+            <p class="type-detour" data-reload-types-row><span class="note">Missing a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></p>
         @else
             @php $selectedEnv = old('environment_id'); @endphp
             <label><span>Project / environment</span><select name="environment_id" required>
@@ -52,9 +54,12 @@
             </select></label>
             {{-- The detour to Setup never costs the draft: the link opens a new tab, and "Reload types" (shown by app.js)
                  fetches this page again and swaps only the Type options and the type field rows; what was typed stays.
+                 A typed value that would have no field after the reload is never dropped silently: the old fields
+                 stay, the status names the fields (labels only) and offers "Discard and reload" / "Cancel".
                  One line under the Type field, starting where the inputs start; the result of a reload is the line
-                 after it (data-reload-status, empty until then). --}}
-            <p class="type-detour" data-reload-types-row><span class="note">Missing a type or field? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>, then reload here. What you typed stays.</span> <button type="button" data-reload-types hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></p>
+                 after it (data-reload-status, empty until then). The sentence names the button ("…choose Reload
+                 types."); without script there is no button and the printed sentence says what is true then. --}}
+            <p class="type-detour" data-reload-types-row><span class="note">Missing a type or field? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></p>
         @endif
     </fieldset>
 

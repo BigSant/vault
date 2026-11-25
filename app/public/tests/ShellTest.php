@@ -692,16 +692,42 @@ final class ShellTest extends TestCase
             foreach (['<td class="who" data-label="Agent">', '<td class="action" data-label="Action">', '<td class="approval" data-label="Approval">', '<td class="state" data-label="State">'] as $cell) {
                 $this->assertStringContainsString($cell, $source, $board.' '.$cell);
             }
-            foreach (['tr{position:relative;align-items:center}', ' td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}', ' td.action{order:0;flex:0 1 auto;margin-right:84px}',
+            foreach (['tr{position:relative;align-items:center}', ' td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}', ' td.action{order:0;flex:0 1 auto;max-width:calc(100% - 84px);margin-right:84px}',
                 ' td.state{position:absolute;top:10px;right:12px}', ' td.approval{order:2;flex-basis:100%}'] as $rule) {
                 $this->assertStringContainsString('.board.'.$board.($rule[0] === ' ' ? '' : ' ').$rule, $css, $board.$rule);
             }
         }
         // Requests: the two boards share the widths of their leading columns.
         $this->assertStringContainsString('<th scope="col" class="c-who">Agent</th><th scope="col" class="c-action">Action</th>@empty($hideEntry)<th scope="col" class="c-entry">Entry</th>@endempty<th scope="col" class="c-state">State</th><th scope="col" class="c-when">Requested (UTC)</th>', $view('operations'));
-        foreach (['c-who{width:97px}', 'c-action{width:146px}', 'c-entry{width:166px}', 'c-state{width:203px}', 'c-when{width:200px}'] as $rule) {
+        foreach (['c-who{width:97px}', 'c-action{width:148px}', 'c-entry{width:166px}', 'c-state{width:203px}', 'c-when{width:200px}'] as $rule) {
             $this->assertStringContainsString('.board.requests th.'.$rule, $css);
         }
+        // Long data never moves a column or pushes the last one out of the board: Requests, Grants and an entry's
+        // Agent access are fixed-layout tables, and agent names and action codes wrap (no .nobreak on them).
+        foreach (['requests', 'grants', 'access'] as $board) {
+            $this->assertStringContainsString('.board.'.$board.'{table-layout:fixed}', $css);
+            $this->assertStringContainsString('.board.'.$board.' td{overflow-wrap:anywhere}', $css);
+        }
+        $this->assertStringContainsString('.board td:is(.who,.action,.name){overflow-wrap:anywhere}', $css);
+        foreach (['operations', 'grants', 'entry'] as $name) {
+            $this->assertStringNotContainsString('<b class="nobreak">', $view($name), $name);
+            $this->assertStringContainsString('<td class="who" data-label="Agent"><b>', $view($name), $name);
+        }
+        // Grants: the first cell keeps the board's left padding, like every other board.
+        $this->assertStringNotContainsString('.board.grants :is(th,td){padding-inline:8px}', $css);
+        // A separator belongs to what comes before it, so a wrapped card line never starts with one.
+        $this->assertStringContainsString('<span class="k" aria-hidden="true">&nbsp;·</span>', $view('operations'));
+        $this->assertStringContainsString('<span class="k" aria-hidden="true">&nbsp;·</span>', $view('grants'));
+        $this->assertStringContainsString('<span class="k" aria-hidden="true">&nbsp;·</span></td>', $view('catalog'));
+        foreach (['operations', 'grants', 'catalog'] as $name) {
+            $this->assertStringNotContainsString('<span class="k">· </span>', $view($name), $name);
+        }
+        $this->assertStringNotContainsString('.board.requests .left::before', $css);
+        // The header is one row on wide screens; the account name is capped and cut with an ellipsis.
+        $this->assertStringContainsString('.top{flex-wrap:nowrap}', $css);
+        $this->assertStringContainsString('.top>details.menu.account{min-width:0;max-width:16em}', $css);
+        // Entries: the open filter bar is one row, its selects capped at 12em.
+        $this->assertStringContainsString('form.catalog-filters>details.filters[open] .toolbar select{width:100%;min-width:0;max-width:12em}', $css);
         // Entries: four equal stat columns on desktop.
         $this->assertStringContainsString('@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', $css);
         // A viewer has no Secret values section.
@@ -847,13 +873,14 @@ final class ShellTest extends TestCase
             $this->assertStringContainsString('<span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span>', (string) file_get_contents(resource_path('views/'.$view.'.blade.php')));
         }
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])->assertSee('Leaving this page loses the token.');
-        $this->withSession(['confirmed_at' => time()])->get('/account')->assertOk()->assertSeeInOrder(['<h2 id="security">Security</h2>', '<h3>Change sign-in password</h3>'], false)
+        $this->withSession(['confirmed_at' => time()])->get('/account')->assertOk()->assertSeeInOrder(['<h2 id="security" class="capped">Security</h2>', '<h3>Change sign-in password</h3>'], false)
             ->assertDontSee('password-fold', false);
         // While a confirmation is needed the page shows one password field at rest: changing the password is a closed fold.
         $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()
-            ->assertSeeInOrder(['<h2 id="security">Security</h2>', '<form class="action" id="confirm" method="post" action="/confirm">', '<details class="fold password-fold">',
-                '<summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>',
-                '<form method="post" action="/password">', '</details>', '<h2>Workspaces</h2>'], false);
+            ->assertSeeInOrder(['<h2 id="security" class="capped">Security</h2>', '<form class="action" id="confirm" method="post" action="/confirm">', '<details class="fold password-fold">',
+                // The toggle reads "Edit" like every other fold; the section headings end where the cards end (.capped).
+                '<summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span></span></summary>',
+                '<form method="post" action="/password">', '</details>', '<h2 class="capped">Workspaces</h2>'], false);
         // A field error follows the label and is the field's description, never part of its name; Requests and Grants are cards below 1180 px.
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString('anchor.after(note)', $script);
@@ -865,15 +892,15 @@ final class ShellTest extends TestCase
     {
         // One partial: label, date and UTC, then the reason and the grant's own date on lines of their own.
         $revoked = (string) $this->view('end-date', ['revoked' => '2026-11-20T10:15:00Z', 'ends' => '2026-12-01 09:00:00', 'reason' => 'agent revoked', 'own' => '2026-12-01 09:00:00']);
-        $this->assertStringContainsString('<small class="k keep">Revoked</small> <span class="nobreak">2026-11-20 10:15 <small class="k">UTC</small></span>', $revoked);
+        $this->assertStringContainsString('<span class="nobreak"><small class="k keep">Revoked</small> 2026-11-20 10:15 <small class="k">UTC</small></span>', $revoked);
         $this->assertStringContainsString('<small class="wrap">agent revoked</small>', $revoked);
         $this->assertStringNotContainsString('Grant expiry', $revoked);
         $soon = now()->addDays(2)->format('Y-m-d H:i');
         $later = now()->addDays(9)->format('Y-m-d H:i');
         $active = (string) $this->view('end-date', ['revoked' => null, 'ends' => $soon.':00', 'reason' => 'agent expires first', 'own' => $later.':00']);
-        $this->assertStringContainsString('<small class="k">Expires</small> <span class="nobreak">'.$soon.' <small class="k">UTC</small></span>', $active);
+        $this->assertStringContainsString('<span class="nobreak"><small class="k">Expires</small> '.$soon.' <small class="k">UTC</small></span>', $active);
         $this->assertStringContainsString('<small class="wrap">Grant expiry: <span class="nobreak">'.$later.' UTC</span></small>', $active);
-        $this->assertStringContainsString('<small class="k keep">Expired</small>', (string) $this->view('end-date', ['revoked' => null, 'ends' => '2020-01-01 00:00:00']));
+        $this->assertStringContainsString('<span class="nobreak"><small class="k keep">Expired</small> 2020-01-01 00:00 ', (string) $this->view('end-date', ['revoked' => null, 'ends' => '2020-01-01 00:00:00']));
         foreach (['agents', 'grants', 'entry'] as $view) {
             $source = (string) file_get_contents(resource_path('views/'.$view.'.blade.php'));
             $this->assertStringContainsString("@include('end-date', [", $source);
@@ -963,11 +990,12 @@ final class ShellTest extends TestCase
         DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
         $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
         // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
-        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>, then reload here.', false)
+        // The sentence names the button, which only script shows: the page prints the wording for no script, and app.js swaps it.
+        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span>', false)
             ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Missing a type or field? ', 'Edit entry types in a new tab</a>', '<button type="button" data-reload-types hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             // The alias hint is the field's description, not part of its name.
-            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
+            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias"', false)
             ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">', false)
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
@@ -999,7 +1027,7 @@ final class ShellTest extends TestCase
         DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
         // The update form has the Setup detour too; its type is fixed, so the button reloads the fields.
         $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$entry)->assertOk()
-            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
+            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', 'data-script-text="After editing the entry type, return here and choose Reload fields."', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
             // Each "Clear the current … value" box has an id of its type and field, so a reload can give it back its state.
             ->assertSee('<input type="checkbox" id="clear-ssh-passphrase" name="clear_fields[]" value="passphrase" data-optional', false)
             ->assertDontSee('id="clear-ssh-private_key"', false);
@@ -1011,6 +1039,14 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('is no longer marked: its field is gone or is now required.', $script);
         $this->assertStringContainsString("'The rest of the form is unchanged.'", $script);
         $this->assertStringNotContainsString("if (el.type === 'checkbox') el.checked = true; else el.value = kept;", $script);
+        // A typed value without a field after the reload is asked about before anything is replaced: the fields are
+        // named by their labels, and the old controls stay until "Discard and reload".
+        $this->assertStringContainsString('if (labels.length) ask(nextType, nextRows, labels); else apply(nextType, nextRows, []);', $script);
+        $this->assertStringContainsString("discard.textContent = 'Discard and reload';", $script);
+        $this->assertStringContainsString("'Reload cancelled. The ' + what + ' and what you typed are as they were.'", $script);
+        $this->assertStringContainsString("row?.querySelectorAll('[data-script-text]')", $script);
+        // An action held by a block that becomes deferred is released.
+        $this->assertStringContainsString('if (deferred) release?.();', $script);
     }
 
     public function test_header_and_page_share_one_right_edge_and_phone_cards_keep_their_lines(): void
@@ -1060,7 +1096,8 @@ final class ShellTest extends TestCase
         $this->get($this->base.'/structure')->assertOk()->assertSee('<title>Projects · Main space · Vault</title>', false);
         // The entry form says what to do about a missing type in words on the page, not in a title.
         $this->assertStringNotContainsString('title="After saving', $view('entry-form'));
-        $this->assertSame(2, substr_count($view('entry-form'), 'Edit entry types in a new tab</a>, then reload here.'));
+        $this->assertSame(2, substr_count($view('entry-form'), 'After editing the entry type, load this page again. What you typed here is not kept.</span>'));
+        $this->assertStringNotContainsString('then reload here', $view('entry-form'));
         foreach (['entry', 'entry-form'] as $name) {
             $this->assertDoesNotMatchRegularExpression('/[“”‘’]/u', $view($name), $name);
         }

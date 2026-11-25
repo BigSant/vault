@@ -652,6 +652,10 @@ final class VaultTest extends TestCase
         }
         $this->post("/entries/$entry/unarchive")->assertForbidden()
             ->assertSee('Confirm: Restore <span class="name">Private name</span> from archive</button>', false);
+        // A reveal names the version it asks for; the current one is just the entry.
+        $this->post("/entries/$entry/reveal")->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal <span class="name">Private name</span></button>', false);
+        $this->post("/entries/$entry/reveal", ['version' => '1'])->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal version 1 of <span class="name">Private name</span></button>', false);
+        $this->post("/entries/$entry/reveal", ['version' => '1x'])->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal <span class="name">Private name</span></button>', false);
         $this->post("$base/grants")->assertForbidden()->assertSee('<button class="go action-name">Confirm and continue</button>', false);
         $ready = $this->post('/confirm', ['pending' => session('pending_action.nonce'), 'current_password' => 'Synthetic-password-123!'])->assertOk();
         $this->assertMatchesRegularExpression('~<button class="go action-name">\s*Continue\s*</button>~', $ready->getContent());
@@ -814,6 +818,14 @@ final class VaultTest extends TestCase
         $type = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'FTP server')->first();
         $this->assertSame('ftp_server', $type->key);
         $this->assertSame(['server_address', 'contrasena'], array_column(json_decode($type->fields, true), 'key'));
+        // Types are listed by name whatever the case: "apple vault" stands among the capitalised names, not after them.
+        $this->post($types, ['name' => 'apple vault', 'field_key' => [''], 'field_label' => ['Token'], 'field_kind' => ['secret'], 'field_required' => ['1']])->assertRedirect();
+        $names = array_values(app(\App\Vault\EntryTypes::class)->names($this->workspace));
+        $this->assertContains('apple vault', $names);
+        $sorted = $names;
+        usort($sorted, fn ($x, $y) => strcasecmp($x, $y));
+        $this->assertSame($sorted, $names);
+        $this->assertNotSame('apple vault', end($names));
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('Server address')->assertSee('secret_fields[contrasena]', false);
 
         $entry = ['environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];

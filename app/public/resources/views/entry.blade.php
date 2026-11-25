@@ -36,7 +36,7 @@
             <h1 class="name">{{ $entry->name }}</h1>
             @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
         </div>
-        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
+        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }}&nbsp;· version {{ $current }}</span></p>
     </div>
 </div>
 @php $hasWaiting = $isOwner && $waitingCount > 0; @endphp
@@ -213,7 +213,7 @@
              (why it is not the grant's own date) and expires_at (the grant's own date). Shown by the end-date partial, as on Grants. --}}
         @php $gState = $grant->state; @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td class="who" data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
+            <td class="who" data-label="Agent"><b>{{ $grant->machine }}</b></td>
             <td class="action" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($grant->approval ? 'asks every time' : 'runs without asking') : ($grant->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>

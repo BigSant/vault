@@ -114,7 +114,8 @@ final class PendingAction
             'unarchive' => self::label('Restore', $name, 'from archive'),
             'restoreVersion' => self::label("Restore version $version of", $name),
             'destroy' => self::label('Destroy', $name),
-            'reveal' => self::label("Reveal", $name),
+            // An older version is named: "Reveal version 1 of <name>". The current one reads "Reveal <name>".
+            'reveal' => ctype_digit($version) ? self::label("Reveal version $version of", $name) : self::label('Reveal', $name),
         };
     }
 

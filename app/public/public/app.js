@@ -216,8 +216,12 @@ wireReveal();
 // options (Add) and the type field rows (#type-fields). Nothing else is touched, so the draft stays: a value typed
 // into a type field is put back into the field with the same id (the same type and key) or, for the chosen type,
 // the same name, and every "Clear the current … value" box (id clear-<type>-<key>) gets back the state it had,
-// checked or not. Values never leave this page: they are copied from the old fields to the new ones. The status
-// line says what was kept and what could not be: it never claims more than happened.
+// checked or not. Values never leave this page: they are copied from the old fields to the new ones.
+// Nothing typed is dropped without a question. Before anything is replaced, the fields that hold a value are
+// compared with the fields that arrive: when a typed value would have no field to go to (its field or its type was
+// removed), the old fields stay as they are, the status names those fields (their labels, never their values) and
+// offers "Discard and reload" and "Cancel". The status line says what was kept and what was not: it never claims
+// more than happened.
 document.querySelectorAll('[data-reload-types]').forEach(button => {
   const row = button.closest('[data-reload-types-row]');
   const status = row?.querySelector('[data-reload-status]');
@@ -226,7 +230,111 @@ document.querySelectorAll('[data-reload-types]').forEach(button => {
   // Add: the type is a select. Edit: the type is fixed (a hidden input) and only its fields are reloaded.
   const select = type.matches('select');
   button.hidden = false;
+  // With script the sentence names the button; the server printed the wording for a page without one.
+  row?.querySelectorAll('[data-script-text]').forEach(el => { el.textContent = el.dataset.scriptText; });
   const tell = text => { if (status) status.textContent = text; say(text); };
+  const controls = scope => [...scope.querySelectorAll('input, textarea')].filter(el => el.name && el.type !== 'hidden');
+  const typesOf = el => (el.closest('[data-types]')?.dataset.types || '').split(',');
+  // The typed values that the fields in `fresh` have no place for, as the labels of their fields. A field of a
+  // type that is not the chosen one (typed before the type was changed) is named with its type.
+  const homeless = (nextType, nextRows) => {
+    const chosen = type.value;
+    const stays = !select || [...nextType.options].some(option => option.value === chosen);
+    const next = controls(nextRows).filter(el => el.type !== 'checkbox');
+    const labels = [];
+    controls(rows).forEach(el => {
+      if (el.type === 'checkbox' || el.value === '') return;
+      if (el.id && next.some(other => other.id === el.id)) return;
+      if (!el.disabled && stays && next.some(other => other.name === el.name && typesOf(other).includes(chosen))) return;
+      const own = typesOf(el)[0];
+      const typeName = select && el.disabled ? [...type.options].find(option => option.value === own)?.textContent.trim() : '';
+      labels.push(fieldName(el) + (typeName ? ' (' + typeName + ')' : ''));
+    });
+    return labels;
+  };
+  const apply = (nextType, nextRows, discarded) => {
+    const byId = new Map();
+    const byName = new Map();
+    // Every clear box by id: checked or not. marked: the checked ones of the type on screen.
+    const boxes = new Map();
+    const marked = new Set();
+    controls(rows).forEach(el => {
+      if (el.type === 'checkbox') {
+        if (!el.id) return;
+        boxes.set(el.id, el.checked);
+        if (el.checked && !el.disabled) marked.add(el.id);
+        return;
+      }
+      if (el.value === '') return;
+      if (el.id) byId.set(el.id, el.value);
+      if (!el.disabled) byName.set(el.name, el.value);
+    });
+    const chosen = type.value;
+    const before = select ? [...type.options].filter(option => option.value).length : 0;
+    if (select) {
+      type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
+      type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
+    }
+    rows.replaceChildren(...[...nextRows.childNodes].map(node => document.importNode(node, true)));
+    const placed = new Set();
+    let stillMarked = 0;
+    controls(rows).forEach(el => {
+      if (el.type === 'checkbox') {
+        if (!el.id || !boxes.has(el.id)) return;
+        el.checked = boxes.get(el.id);
+        if (marked.has(el.id)) stillMarked++;
+        return;
+      }
+      const mine = typesOf(el).includes(type.value);
+      const kept = el.id && byId.has(el.id) ? byId.get(el.id) : mine ? byName.get(el.name) : undefined;
+      if (kept === undefined) return;
+      el.value = kept;
+      placed.add(el.name);
+    });
+    let typed = 0;
+    byName.forEach((value, name) => { if (placed.has(name)) typed++; });
+    const unmarked = marked.size - stillMarked;
+    wireGenerate(rows);
+    wireReveal(rows);
+    fields();
+    const after = select ? [...type.options].filter(option => option.value).length : 0;
+    const parts = [select ? 'Types reloaded: ' + (after === 1 ? '1 type' : after + ' types') + (after > before ? ', ' + (after - before) + ' new' : '') + '.' : 'Fields reloaded.'];
+    if (chosen && !type.value) parts.push('The type you chose is gone: choose a type.');
+    if (discarded.length) parts.push('Discarded what you typed in: ' + discarded.join(', ') + '.');
+    if (unmarked) parts.push(unmarked === 1 ? '1 value marked to clear is no longer marked: its field is gone or is now required.' : unmarked + ' values marked to clear are no longer marked: their fields are gone or are now required.');
+    if (typed && stillMarked) parts.push('What you typed was kept, and the values marked to clear are still marked.');
+    else if (typed) parts.push(discarded.length ? 'The other typed values were kept.' : 'What you typed was kept.');
+    else if (stillMarked) parts.push(stillMarked === 1 ? 'The value marked to clear is still marked.' : 'The values marked to clear are still marked.');
+    else if (!discarded.length && !unmarked) parts.push('The rest of the form is unchanged.');
+    tell(parts.join(' '));
+  };
+  // The question, while it is open: its two buttons stand after the status line that names the fields.
+  let asking = null;
+  const close = () => { asking?.remove(); asking = null; button.disabled = false; };
+  const ask = (nextType, nextRows, labels) => {
+    close();
+    asking = document.createElement('span');
+    asking.className = 'controls reload-ask';
+    const discard = document.createElement('button');
+    discard.type = 'button';
+    discard.className = 'stop';
+    discard.textContent = 'Discard and reload';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.setAttribute('aria-label', 'Cancel the reload');
+    asking.append(discard, cancel);
+    (status || button).after(asking);
+    const what = select ? 'types' : 'fields';
+    tell((labels.length === 1 ? 'Nothing was reloaded yet. The field ' + labels[0] + ' no longer exists, and what you typed in it would be lost.'
+      : 'Nothing was reloaded yet. These fields no longer exist, and what you typed in them would be lost: ' + labels.join(', ') + '.')
+      + ' Copy it elsewhere first, or choose Discard and reload.');
+    button.disabled = true;
+    cancel.focus();
+    discard.addEventListener('click', () => { close(); apply(nextType, nextRows, labels); button.focus(); });
+    cancel.addEventListener('click', () => { close(); tell('Reload cancelled. The ' + what + ' and what you typed are as they were.'); button.focus(); });
+    asking.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); cancel.click(); } });
+  };
   let busy = false;
   button.addEventListener('click', async () => {
     if (busy) return;
@@ -238,62 +346,8 @@ document.querySelectorAll('[data-reload-types]').forEach(button => {
       const nextType = fresh.getElementById('entry-type');
       const nextRows = fresh.getElementById('type-fields');
       if (!nextType || nextType.matches('select') !== select || !nextRows) throw new Error('reload failed');
-      const controls = scope => [...scope.querySelectorAll('input, textarea')].filter(el => el.name && el.type !== 'hidden');
-      const byId = new Map();
-      const byName = new Map();
-      // Every clear box by id: checked or not. marked: the checked ones of the type on screen.
-      const boxes = new Map();
-      const marked = new Set();
-      controls(rows).forEach(el => {
-        if (el.type === 'checkbox') {
-          if (!el.id) return;
-          boxes.set(el.id, el.checked);
-          if (el.checked && !el.disabled) marked.add(el.id);
-          return;
-        }
-        if (el.value === '') return;
-        if (el.id) byId.set(el.id, el.value);
-        if (!el.disabled) byName.set(el.name, el.value);
-      });
-      const chosen = type.value;
-      const before = select ? [...type.options].filter(option => option.value).length : 0;
-      if (select) {
-        type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
-        type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
-      }
-      rows.replaceChildren(...[...nextRows.childNodes].map(node => document.importNode(node, true)));
-      const placed = new Set();
-      let stillMarked = 0;
-      controls(rows).forEach(el => {
-        if (el.type === 'checkbox') {
-          if (!el.id || !boxes.has(el.id)) return;
-          el.checked = boxes.get(el.id);
-          if (marked.has(el.id)) stillMarked++;
-          return;
-        }
-        const mine = (el.closest('[data-types]')?.dataset.types || '').split(',').includes(type.value);
-        const kept = el.id && byId.has(el.id) ? byId.get(el.id) : mine ? byName.get(el.name) : undefined;
-        if (kept === undefined) return;
-        el.value = kept;
-        placed.add(el.name);
-      });
-      let lost = 0;
-      byName.forEach((value, name) => { if (!placed.has(name)) lost++; });
-      const unmarked = marked.size - stillMarked;
-      wireGenerate(rows);
-      wireReveal(rows);
-      fields();
-      const after = select ? [...type.options].filter(option => option.value).length : 0;
-      const parts = [select ? 'Types reloaded: ' + (after === 1 ? '1 type' : after + ' types') + (after > before ? ', ' + (after - before) + ' new' : '') + '.' : 'Fields reloaded.'];
-      if (chosen && !type.value) parts.push('The type you chose is gone: choose a type.');
-      if (lost) parts.push(lost === 1 ? '1 typed value belonged to a field that no longer exists.' : lost + ' typed values belonged to fields that no longer exist.');
-      if (unmarked) parts.push(unmarked === 1 ? '1 value marked to clear is no longer marked: its field is gone or is now required.' : unmarked + ' values marked to clear are no longer marked: their fields are gone or are now required.');
-      const typed = byName.size - lost;
-      if (typed && stillMarked) parts.push('What you typed was kept, and the values marked to clear are still marked.');
-      else if (typed) parts.push(lost ? 'The other typed values were kept.' : 'What you typed was kept.');
-      else if (stillMarked) parts.push(stillMarked === 1 ? 'The value marked to clear is still marked.' : 'The values marked to clear are still marked.');
-      else if (!lost && !unmarked) parts.push('The rest of the form is unchanged.');
-      tell(parts.join(' '));
+      const labels = homeless(nextType, nextRows);
+      if (labels.length) ask(nextType, nextRows, labels); else apply(nextType, nextRows, []);
     } catch {
       tell('Could not reload' + (select ? ' the types' : ' the fields') + '. Nothing was changed. Check the connection and try again.');
     } finally { busy = false; }
@@ -372,6 +426,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   const quietValid = box.hasAttribute('data-quiet-valid');
   let shown = null;
   let wasExpired = null;
+  let release = null;
   const own = primary ? box.closest('form, .card') : null;
   const plainOwn = pointing => {
     if (!own) return;
@@ -396,6 +451,9 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     box.classList.toggle('is-needed', expired && !deferred);
     box.classList.toggle('is-deferred', deferred);
     box.classList.toggle('is-quiet', !expired && (deferred || quietValid));
+    // A block that is deferred now shows no field and no held button: an action held here is let go (its forms go
+    // to the primary block from now on), so the page's solid buttons are not left plain.
+    if (deferred) release?.();
     box.querySelectorAll('[data-when]').forEach(el => {
       const when = el.dataset.when;
       el.hidden = when === 'deferred' ? !(deferred && expired) : deferred || (when === 'expired') !== expired;
@@ -522,6 +580,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     say(why + ', then press: ' + name + '.');
   };
   state.release = () => { state.held = null; showHeld(''); line(''); solid(false); };
+  release = () => { if (state.held) { state.release(); say('The held action was released: the password field is now above. Choose the action again.'); } };
   // The field that is part of the wording was changed while its action is held: the button says the new choice.
   document.addEventListener('change', event => {
     const held = state.held;

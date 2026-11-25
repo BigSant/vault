@@ -35,7 +35,21 @@ background:linear-gradient(180deg,var(--top-1),var(--top-2))}
    where the boards end at every width (the bar itself stays full width). */
 @media (min-width:901px){
 .top{--top-left:max(28px,calc((100% - 1760px)/2 + 28px));padding-left:var(--top-left);padding-right:max(28px,calc(100% - var(--wide) - var(--top-left)))}
+/* The bar is one row, whatever the names are: the nav keeps its width, the two menus give way and cut their names
+   with an ellipsis (the whole name is in the menu's accessible name and, for the workspace, in its list). The
+   account name is capped at 16em; the workspace name keeps at least 8em. */
+.top{flex-wrap:nowrap}
+.top>.mark,.top>.nav{flex:none}
+.top>.nav{flex-wrap:nowrap}
+.top>details.menu{flex:0 1 auto}
+.top>details.menu.space{min-width:8em;max-width:24em}
+.top>details.menu.account{min-width:0;max-width:16em}
+.top>details.menu>summary{max-width:100%}
+/* The account summary reaches 12 px past its box (its negative margin puts its text on the page edge). */
+.top>details.menu.account>summary{max-width:calc(100% + 12px)}
 }
+/* Just above the phone layout the bar is tight: smaller gaps keep the usual names whole down to 901 px (12 px, never less: the account summary reaches 12 px past its box). */
+@media (min-width:901px) and (max-width:1040px){.top{gap:12px}}
 .mark{font:800 17px/1.2 var(--mono);letter-spacing:.08em;color:var(--amber)}
 .mark:hover{text-decoration:none}
 .mark small{display:block;letter-spacing:.04em;font-size:12px;color:var(--dim);font-weight:400;max-width:22em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -146,6 +160,9 @@ box-shadow:inset 0 0 0 1.5px var(--edge);vertical-align:-1px}
 @keyframes pulse{50%{opacity:.3}}
 .sign{display:inline-block;padding:3px 9px 4px;font:800 11.5px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;
 color:#fff;border-radius:3px;background:var(--steel-fill);white-space:nowrap}
+/* A sign is one line. Where its box has a width of its own (a board cell or card, a fold's head, an entry's title
+   line, a held summary) a long environment name wraps inside the sign instead of leaving that box. */
+:is(.board,.fold-name,.head .sub,.field-val,.held-what) .sign{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .sign.stage{background:var(--stage-fill)}
 .sign.prod{background:repeating-linear-gradient(-45deg,var(--hazard) 0 4px,#111 4px 8px) left bottom/100% 3px no-repeat,var(--prod-fill)}
 .callout{border:1px solid var(--rule);border-left:4px solid var(--go);background:var(--panel);padding:10px 14px;margin:0 0 16px;border-radius:3px}
@@ -187,8 +204,8 @@ font-weight:600;padding:0 12px 2px}
 .board td.when small{display:block;color:var(--faint)}
 /* A secondary line ("Grant expiry: …") may wrap under the value; it never widens the column. */
 .board td.when small.wrap{white-space:normal}
-/* Codes and names are never broken inside a word: an action code stays whole, and so does an agent name (.nobreak). */
-.board td:is(.end,.action,.who) code{white-space:nowrap;overflow-wrap:normal}
+/* Long data never widens a board: a name (agent, entry) and an action code wrap, inside a word when they must. */
+.board td:is(.who,.action,.name){overflow-wrap:anywhere}
 /* A section heading with something beside it (the waiting requests: "Check now", "Pause automatic checks" and
    the status). The heading keeps its rule line. The row reads left to right in the order of the document: the two
    buttons, then the status. The status has a fixed slot as wide as its longest steady text ("Paused · last checked
@@ -302,6 +319,14 @@ main>details.filters[data-wide-open] .toolbar>button:last-child{margin-left:auto
 form.catalog-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px}
 form.catalog-filters>.entry-search{flex:1 1 15rem;margin:0}
 form.catalog-filters>details.filters{flex:0 1 auto;min-width:0;margin:0}
+/* With the bar open (script) the search field and the four filters are one row, Apply last at the right edge,
+   whatever the names in the selects are: a select is at most 12em wide and gives way before anything wraps (a long
+   project name is cut by the select, and whole in its list). */
+form.catalog-filters:has(>details.filters[open]){flex-wrap:nowrap}
+form.catalog-filters>details.filters[open] .toolbar{flex-wrap:nowrap}
+form.catalog-filters>details.filters[open] .toolbar label{flex:0 1 auto;min-width:6.5em}
+form.catalog-filters>details.filters[open] .toolbar select{width:100%;min-width:0;max-width:12em}
+form.catalog-filters>details.filters[open] .toolbar button{flex:none}
 }
 /* Entries: the Search button is for the closed drawer; an open filter bar has Apply, which sends the search too. */
 .catalog-filters:has(details.filters[open]) .catalog-search{display:none}
@@ -395,7 +420,7 @@ nav.subnav>details.jump[open]+a.jump-quick{display:none}
 .entry-page>.deck{max-width:var(--card)}
 @media (min-width:901px){
 .entry-page .board td.name{min-width:0}
-.board.requests td.action :is(code,.rid){white-space:nowrap;overflow-wrap:normal}
+.board.requests td.action .rid{white-space:nowrap}
 }
 .board.requests .rid{color:var(--faint)}
 
@@ -408,11 +433,13 @@ main.login .field>label{display:block;margin:0}
 .totp-qr{display:block;width:240px;height:240px;margin:6px auto 14px;background:var(--qr-light);padding:8px;border-radius:4px;image-rendering:pixelated}
 
 @media (max-width:900px){
-/* The workspace name gets the room it needs first; the account name takes what is left and truncates.
+/* The workspace name and the account name share the room that is left beside the mark: each gets what it needs
+   while there is room, and when both are long they get equal shares and both end in an ellipsis (two tracks that
+   grow together up to their content; the last one also takes what is over, so the account menu ends at the edge).
    Rows: [mark, workspace switcher, account menu], then [nav]. app.js moves the account menu before the nav in the
    document at this width, so the focus order is the order seen. (CSS reading-flow is not used: in Chrome it takes the two
    menus' summaries out of the Tab order of this grid.) */
-.top{display:grid;grid-template-columns:auto minmax(0,max-content) minmax(5.5em,1fr);gap:8px 8px;padding:10px 16px}
+.top{display:grid;grid-template-columns:auto minmax(0,max-content) minmax(0,auto);gap:8px 8px;padding:10px 16px}
 .top details.menu.account{justify-self:end;max-width:100%}
 .top .spacer{display:none}.top .nav{grid-column:1/-1;grid-row:2}
 .top details.menu.space{justify-self:start;max-width:100%}.top details.menu>summary{min-height:40px;max-width:100%}
@@ -421,7 +448,9 @@ main.login .field>label{display:block;margin:0}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
 input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}
-/* Phones: both buttons on one row at the left edge, the status as a small line under them. */
+/* Phones: both buttons on one row at the left edge, the status as a small line under them: it belongs to "Check
+   now". The password line that follows is another matter and stands apart, under a dashed rule. */
+.section-head+.confirm-inline.shared:not(.is-needed){padding-top:10px;border-top:1px dashed var(--rule)}
 .section-head .refresh-row{flex:1 1 100%;flex-wrap:wrap;gap:4px 8px}
 .section-head .refresh-row .note{flex:1 1 100%;width:auto;margin:0;text-align:left;font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
@@ -458,51 +487,56 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .list.edit td[data-label]::before{content:attr(data-label);content:attr(data-label)/"";display:block;margin-bottom:3px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 .list.edit td.act{padding-top:4px}.list.edit td.act .controls{flex-wrap:wrap}
 .fold-foot button{width:auto}}
-/* Requests: the site MFA code keeps its visible label; the button lines up with the input, on the same line. */
+/* Requests (the boards of agent requests). Every property is set once: what differs between the table (1181 px
+   and up) and the card (below) stands in one of the two blocks after the shared rules, never in both. */
+/* The site MFA code keeps its visible label; the button lines up with the input, on the same line. */
 .board.requests form.mfa{align-items:flex-end;gap:8px}
-.board.requests form.mfa label{flex:1 1 11em;min-width:11em;font-size:12px;color:var(--dim);white-space:nowrap}
+.board.requests form.mfa label{font-size:12px;color:var(--dim);white-space:nowrap}
 .board.requests form.mfa button{flex:none;white-space:nowrap}
-/* The field is as wide as its label, never wider: on a narrow card it must not reach under the button. */
-.board.requests form.mfa label input{min-width:0}
 .board.requests .state{white-space:nowrap}
-.board.requests td.when .line{white-space:nowrap}
 .board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
-/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays).
-   On a card the time left follows the deadline on its line; in the table it is a line of its own under it. */
+/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
 .board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
-@media (max-width:1180px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
-@media (min-width:1181px){.board.requests .left{display:block;margin-top:3px}}
 /* Allow once and Deny: full-size buttons with room between them, so the wrong one is not hit. */
 @media (min-width:901px){
 .board.requests td.decision .controls{gap:12px}
 .board.requests td.decision .controls button{min-height:32px;padding:7px 13px}
 }
+@media (max-width:1180px){
+/* Card. The MFA field is as wide as its label, never wider: on a narrow card it must not reach under the button. */
+.board.requests form.mfa label{flex:1 1 11em;min-width:11em}
+.board.requests form.mfa label input{min-width:0}
+/* The time left follows the deadline on its line; the separator stays with the deadline, so a wrapped line never
+   starts with it. */
+.board.requests .line.expires>.nobreak:has(+.left:not([hidden]))::after{content:"\00A0\00B7";color:var(--faint)}
+}
 @media (min-width:1181px){
-/* Six columns fit --wide: tighter cells, and the MFA field never gets narrower than eight digits (8ch plus its padding). */
-.board.requests :is(th,td):not(:first-child){padding-left:8px;padding-right:8px}
-.board.requests form.mfa label input{min-width:calc(8ch + 24px)}
-/* Allow once and Deny share one row. */
-.board.requests td.decision{white-space:nowrap}
-.board.requests td.decision .controls{flex-wrap:nowrap}
-.board.requests form.mfa{flex-wrap:nowrap}
-.board.requests td.who,.board.requests td.action{min-width:0}
-/* The entry name keeps one line for a name of sixteen letters ("Shop admin panel"); the room comes from the MFA
-   field, which needs eight digits and no more (its label may run on above the button). The field has one width
-   wherever the board is a table: on Requests, and on an entry page, where the cell would have room for more. */
-.board.requests td.entry{min-width:12.8em}
-.board.requests form.mfa label{flex:0 0 8.6em;min-width:0}
-/* The last cell keeps the board's normal right padding (12 px), so "Continue sign-in" does not sit on the edge. */
-.board.requests :is(th,td):last-child{padding-right:12px}
-/* "Requests waiting for you" and "Recent requests" are two boards with the same leading columns: Agent, Action,
-   Entry, State and Requested have one width each, so a column starts at the same place in both, and the last
-   column (Decision or Finished) takes what is left. The widths are what the fullest cell needs: a nine-letter
-   agent name, a sixteen-letter action and entry name, "waiting for approval" with its lamp, "Expires" with its
-   date. Longer data widens its own board only. */
+/* Table. "Requests waiting for you" and "Recent requests" are two boards with the same leading columns, in a fixed
+   layout: Agent, Action, Entry, State and Requested have one width each, so a column starts at the same place in
+   both and no data moves it, and the last column (Decision or Finished) takes what is left, always inside the
+   board. The widths are what the usual cell needs: a nine-letter agent name, a sixteen-letter action and entry
+   name, "waiting for approval" with its lamp, "Expires" with its date. Longer names and codes wrap in their cell. */
+.board.requests{table-layout:fixed}
 .board.requests th.c-who{width:97px}
-.board.requests th.c-action{width:146px}
+.board.requests th.c-action{width:148px}
 .board.requests th.c-entry{width:166px}
 .board.requests th.c-state{width:203px}
 .board.requests th.c-when{width:200px}
+.board.requests td{overflow-wrap:anywhere}
+/* Six columns fit --wide: tighter cells; the last one keeps the board's normal right padding (12 px), so "Continue
+   sign-in" does not sit on the edge. */
+.board.requests :is(th,td):not(:first-child){padding-left:8px}
+.board.requests :is(th,td):not(:first-child):not(:last-child){padding-right:8px}
+.board.requests td.when .line{white-space:nowrap}
+/* The time left is a line of its own under the deadline. */
+.board.requests .left{display:block;margin-top:3px}
+/* Allow once and Deny share one row. The MFA field needs eight digits and no more (8ch plus its padding; its label
+   may run on above the button), and has one width wherever the board is a table: on Requests, and on an entry
+   page, where the cell would have room for more. */
+.board.requests td.decision{white-space:nowrap}
+.board.requests td.decision .controls,.board.requests form.mfa{flex-wrap:nowrap}
+.board.requests form.mfa label{flex:0 0 8.6em;min-width:0}
+.board.requests form.mfa label input{min-width:calc(8ch + 24px)}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .nobreak{white-space:nowrap}
@@ -544,14 +578,17 @@ form.action>input[type=hidden]:first-child+.form-foot:last-child{margin-top:0;al
 form.action .list.edit :is(th,td):first-child{padding-left:0}
 form.action .list.edit :is(th,td):last-child{padding-right:0}
 }
-/* Agent access: every column takes the width of its text and the last one (State) keeps what is left, so no gap
-   opens between Expires and State. */
+/* Agent access as a table: a fixed layout, so a long agent name or action code wraps in its own column and the
+   State column is always inside the board. The shares fit "previously ran without asking" and a date with its
+   label on one line from a 1000 px window up. */
 @media (min-width:901px){
-.board.access :is(th,td):not(:last-child){width:1%;padding-right:28px}
-.board.access td:not(.when){white-space:nowrap}
+.board.access{table-layout:fixed}
+.board.access th:nth-child(1){width:15%}
+.board.access th:nth-child(2){width:21%}
+.board.access th:nth-child(3){width:27%}
+.board.access th:nth-child(4){width:25%}
+.board.access td{overflow-wrap:anywhere}
 }
-/* The reason ("agent revoked") is a line of its own under the date; with room for it that line does not wrap. */
-@media (min-width:1000px){.board.access td.when{white-space:nowrap}.board.access td.when small.wrap{white-space:nowrap}}
 .board.versions td{vertical-align:middle}
 .board.versions td.act{white-space:nowrap}
 button.ok{color:var(--go);border-color:var(--go-line)}
@@ -623,8 +660,15 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 @media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}details.fold>summary:has(.fold-act) .fold-name{flex-basis:100%}.fold-act{margin-left:auto}
 /* A project's head and each environment row stay one line: the name or sign, the count, Edit. A long name wraps
    inside its own share. */
-details.fold:is(.env,.project-edit,.password-fold)>summary{flex-wrap:nowrap;gap:6px 10px}
-details.fold:is(.env,.project-edit,.password-fold)>summary:has(.fold-act) .fold-name{flex:1 1 0;min-width:0}}
+details.fold:is(.env,.password-fold)>summary{flex-wrap:nowrap;gap:6px 10px}
+details.fold:is(.env,.password-fold)>summary:has(.fold-act) .fold-name{flex:1 1 0;min-width:0}
+/* A project's head: name, count, Edit on one line while they fit. A long name takes the line and wraps in it; the
+   count then drops under the name, with Edit at the right of that second line (.fold-tail holds the two). */
+details.fold.project-edit>summary{gap:6px 10px}
+details.fold.project-edit>summary:has(.fold-act) .fold-name{flex:0 1 auto;min-width:0}
+details.fold.project-edit>summary>.fold-tail{display:flex;flex:1 0 auto;align-items:center;justify-content:space-between;gap:10px}}
+/* Wide screens: the count and the toggle are items of the summary itself. */
+@media (min-width:901px){.fold-tail{display:contents}}
 /* Password confirmation inside the page (confirm-inline). Valid: one quiet line, "Confirmed until HH:MM UTC.".
    Expired (.is-needed, set by the server or app.js): the legend, the reason and the field under a dashed rule.
    .shared stands outside the forms it serves: above the form foot of the Secret values card, and as a panel of
@@ -783,7 +827,7 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
    at the top right; approval; the end date. (Grants states the same card below, for its own breakpoint.) */
 .board.access tr{position:relative;align-items:center}
 .board.access td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
-.board.access td.action{order:0;flex:0 1 auto;margin-right:84px}
+.board.access td.action{order:0;flex:0 1 auto;max-width:calc(100% - 84px);margin-right:84px}
 .board.access td.state{position:absolute;top:10px;right:12px}
 .board.access td.approval{order:2;flex-basis:100%}
 .board.access td.when{order:4;flex-basis:100%}
@@ -825,6 +869,8 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
 .type-detour .note{margin:0}
 .type-detour .reload-status{flex:1 1 100%}
 .type-detour .reload-status:empty{display:none}
+/* A reload that would drop something typed asks first: its two buttons take the line after the status. */
+.type-detour .reload-ask{flex:1 1 100%}
 /* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of "Reload types". */
 @media (max-width:900px){.type-detour{margin-left:0;gap:12px}}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
@@ -896,7 +942,7 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.entries td.proj{order:2;color:var(--dim)}
 .board.entries td.type{order:3;color:var(--dim)}
 .board.entries td.type .k{display:inline}
-.board.entries td.env[data-label]::before{content:"/ ";display:inline;color:var(--dim)}
+.board.entries td.proj::after{content:" /";color:var(--dim)}
 .board.entries td.env{order:2;align-self:center}
 .board.entries td.updated{order:5;color:var(--dim)}
 .board.entries td:is(.updated,.used){font-size:12px}
@@ -928,8 +974,19 @@ form.action details.import-ref{background:var(--panel-2)}
 .head:has(+.tabs){min-height:40px}
 .board.grants .when{white-space:normal}
 @media (min-width:1181px){
-.board.grants :is(th,td){padding-inline:8px}
-.board.grants :is(th,td):nth-last-child(-n+2){width:1%}
+/* Grants as a table: a fixed layout. Every column but Entry has a width of its own, so no column moves between the
+   whole list and a filtered one, and Revoke is always inside the board; the entry takes what is left. The first
+   cell keeps the board's left padding, so its text starts where every other board's does. */
+.board.grants{table-layout:fixed}
+.board.grants th:nth-child(1){width:104px}
+.board.grants th:nth-child(2){width:150px}
+.board.grants th:nth-child(4){width:166px}
+.board.grants th:nth-child(5){width:192px}
+.board.grants th:nth-child(6){width:84px}
+.board.grants th:nth-child(7){width:227px}
+.board.grants td{overflow-wrap:anywhere}
+.board.grants :is(th,td):not(:first-child){padding-left:8px}
+.board.grants :is(th,td):not(:last-child){padding-right:8px}
 }
 /* Members columns: name, email, role, actions. */
 .board.grants td.entry small,.board.members td:nth-child(3) small{display:block;margin-top:2px;color:var(--dim)}
@@ -946,7 +1003,7 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.identities td:last-child{order:3;flex:none;margin-left:auto}
 .board.identities td:last-child .controls{margin-top:0}
 .board.members td:nth-child(1){flex:0 1 auto}
-.board.members td:nth-child(2){flex:1 1 55%}
+.board.members td:nth-child(2){flex:1 1 55%;color:var(--dim)}
 .board.members td:nth-child(3){flex:1 1 52%}
 }
 
@@ -984,15 +1041,13 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.requests td.who{order:0}
 .board.requests td.action{display:contents}
 .board.requests td.action>*{order:1}
-.board.requests td.action>code{margin-right:auto}
+.board.requests td.action>code{min-width:0;max-width:100%;margin-right:auto}
 .board.requests td.entry{order:2;flex-basis:100%}
 /* The line break before the id, also where the card has no entry line (the entry page). */
 .board.requests tr::before{content:"";order:2;flex-basis:100%;height:0;margin-bottom:-4px}
 .board.requests td.action small.rid{order:3;margin:0 auto 0 0;white-space:nowrap}
 .board.requests td.state{order:3;margin-left:auto}
 .board.requests td.when{order:4;flex-basis:100%}
-/* On a card the deadline and the time left may take two lines (a 360 px phone); each part stays whole. */
-.board.requests td.when .line{white-space:normal}
 .board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
@@ -1003,7 +1058,7 @@ form.action details.import-ref{background:var(--panel-2)}
    under it and never pushes it down. Every line is a flex line of its own. */
 .board.grants tr{position:relative;align-items:center}
 .board.grants td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
-.board.grants td.action{order:0;flex:0 1 auto;margin-right:84px}
+.board.grants td.action{order:0;flex:0 1 auto;max-width:calc(100% - 84px);margin-right:84px}
 .board.grants td.state{position:absolute;top:10px;right:12px}
 .board.grants td.entry{order:1;flex-basis:100%}
 .board.grants td.approval{order:2;flex-basis:100%}
@@ -1079,6 +1134,10 @@ details.type-fold .list.edit td.remove{margin-left:auto}
 .back{display:inline-flex;align-items:center;min-height:40px;margin-bottom:4px}
 .filter-status a,.pager a{display:inline-flex;align-items:center;min-height:40px}
 .board td a:not(.btn),.list td:not(.desc) a:not(.btn),.more-link{display:inline-block;max-width:100%;padding:11px 0;margin:-11px 0}
+/* The entry name on a request or grant card is followed by "·" and the project on the same line: the link stays
+   inline, so a name of two lines ends with the separator instead of sending it to the next line. Its tap height
+   comes from the same padding (an inline box's padding adds no height to its line). */
+.board:is(.requests,.grants) td.entry>a{display:inline;margin:0}
 /* The header mark, and each message of an error summary (a line of its own), are 40 px high. */
 .top .mark{display:inline-flex;align-items:center;min-height:40px}
 main.login .mark{padding:3px 0}

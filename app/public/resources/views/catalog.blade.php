@@ -104,8 +104,8 @@
         <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
             <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}?from={{ rawurlencode($from) }}">{{ $e->name }}</a>@if($e->state === 'archived')<small><span class="chip muted">archived</span></small>@elseif($due)<small><span class="chip warn">rotation due</span> since {{ substr($e->rotate_at, 0, 10) }}</small>@endif @if($e->tags)<small class="entry-tags">Tags: {{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
-            <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
-            <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
+            <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])<span class="k" aria-hidden="true">&nbsp;·</span></td>
+            <td class="type" data-label="Type">{{ $typeNames[$e->type] ?? $e->type }}</td>
             <td class="when updated" data-label="Updated (UTC)"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
             <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">@if($e->last_used_at)<small class="k">Last used</small> <span class="nobreak">{{ substr($e->last_used_at, 0, 16) }} <small class="k">UTC</small></span> @else — @endif</td>
         </tr>

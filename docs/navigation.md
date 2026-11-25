@@ -80,6 +80,11 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - **One right edge.** On desktop the header's contents start and end where the page's do: the bar is full width,
   its contents are capped at `--wide` and left-aligned like `main`, so the account menu ends where the boards end
   (checked at 1280 and 1920).
+- **One row, whatever the names.** From 901 px up the bar never wraps: the mark and the nav keep their width, the
+  two menus give way and cut their names with an ellipsis (the whole name is the menu's accessible name). The
+  account menu is at most 16em wide, the workspace menu at most 24em and at least 8em; between 901 and 1040 px the
+  bar's gaps are smaller, so the usual names stay whole. On phones the two names share the room beside the mark:
+  each gets what it needs while there is room, and two long names get equal shares, both cut.
 
 ## Areas
 
@@ -101,6 +106,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Columns (decided):** as a table (901 px and up) the board has a fixed layout: Project and Environment
   14 % each, Type 18 %, Updated 124 px, Last used 168 px, and the entry name takes the rest, so no column moves when a
   filter changes the rows. The board is named by the h1 (`aria-labelledby="page-title"`).
+  **Filter bar (decided):** with the bar open, the search field and the four filters are one row with Apply last,
+  at the board's right edge, at every desktop width: a select is at most 12em wide and gives way before anything
+  wraps (a long project name is cut by the select and whole in its list); the search field keeps at least 15rem.
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table; a viewer gets the note "Viewers see entry details and version history, not values." under it and no Secret
   values section), secret values (reveal; while values are on screen a plain "Hide values" button
@@ -116,12 +124,24 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
   cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
 - `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
-  the line under Type says what to do in words on the page, never in a `title`: "Missing a type or field? Edit
-  entry types in a new tab, then reload here. What you typed stays." ("Missing a field? …" on the update form).
+  the line under Type says what to do in words on the page, never in a `title`, and names the button: "Missing a
+  type or field? Edit entry types in a new tab. After editing the entry type, return here and choose Reload types."
+  ("Missing a field? … choose Reload fields." on the update form). Without script there is no button, and the
+  sentence printed by the server says what is true then: "After editing the entry type, load this page again. What
+  you typed here is not kept." (app.js swaps in the other wording, `data-script-text`).
   The link opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
   update form, where the type is fixed) fetches the form again and swaps only the Type options and the type field
   rows; typed values stay in the fields that still exist, and every "Clear the current … value" box
   (`clear-<type>-<key>`) keeps its state, checked or not. The status line says what was kept and what was not.
+  **Reload never drops a typed value without asking (decided).** Before anything is replaced, the fields that hold
+  a value are compared with the fields that arrive. When a typed value would have no field to go to (its field or
+  its type was removed), the old fields stay as they are; the status names those fields by their labels, never
+  their values ("Nothing was reloaded yet. The field Password no longer exists, and what you typed in it would be
+  lost. Copy it elsewhere first, or choose Discard and reload."), and two buttons follow it: "Discard and reload"
+  and "Cancel" (the focus goes to Cancel; Escape cancels; the reload button is off while the question is open).
+  Cancel changes nothing; after a discard the status says which fields were discarded and that the rest was kept.
+  "Agent alias" carries the marker `<small>required</small>`, the counterpart of the `optional` marker of the type
+  fields.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
   reference (field table, example; the example's long lines wrap and an environment ID may break, so no value is clipped) stand side by side; below that they stack and "Format ↓" in the intro jumps
   to the reference. The form column is the wider one (1.5 : 1), so an environment ID and its "Copy ID" share one
@@ -196,9 +216,12 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 - `/workspaces/{w}/structure` — the project cards right under the tabs, with no h2 of their own (each project a
   card with Edit folds; the cards are a `.deck`, two side by side at `--wide` and one column below), then the h2
   sections "Add a project" and "Environment template". A fold's toggle is a compact control with an edge
-  (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open; on phone an environment row is one line (sign,
-  count, Edit). One shared password block (`confirm-setup`) above the cards serves every form of the page.
-- `/workspaces/{w}/types` — the entry types as folds under the tabs, then the h2 section "Add an entry type".
+  (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open (every fold, Account's "Change sign-in password"
+  too); on phone an environment row is one line (sign, count, Edit; a long sign wraps inside itself), and a
+  project's head is one line while it fits: a long project name takes the line and the count drops under it, with
+  Edit at the right of that second line (`.fold-tail`). One shared password block (`confirm-setup`) above the cards serves every form of the page.
+- `/workspaces/{w}/types` — the entry types as folds under the tabs, listed by name whatever the case (so are
+  the Type options everywhere), then the h2 section "Add an entry type".
   One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
   after the confirmation expired is held as "Save entry type Login", "Remove entry type Login" or "Add entry type
   FTP server". New field rows start with Required unchecked, in a fold and in the add form alike.
@@ -206,6 +229,11 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 ### Activity (owner)
 
 - `/workspaces/{w}/audit` — the workspace audit log with actor and subject names (not ids) and filters.
+  **Outcome chips (the rule).** A chip has a state colour only where the state is the news. A request's own
+  outcome is: on Requests and an entry's Recent requests "succeeded" is green and "failed" / "denied" red. In the
+  Activity log nearly every row succeeded, so "ok" is a muted chip there (the `outcome` partial's `quiet`) and
+  only what went wrong ("denied", "failed") keeps its colour. The words are the stored ones: an audit outcome
+  reads "ok", a request state "succeeded".
 
 ### Account (any signed-in user)
 
@@ -219,7 +247,7 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 - `/confirm?return=/path` — confirm your password (keeps the signed-in header). The page says what happened once
   (the callout "Nothing was changed. …"), has one sentence about the 5-minute validity in the form foot, and names
   a stopped action once, in its solid button: "Confirm: Reveal <name>" ("Confirm and continue" when the action
-  has no known name), then "Reveal <name>" after the password, both in a right-aligned `.form-foot`. That button
+  has no known name; a reveal of an older version names it: "Confirm: Reveal version 1 of <name>"), then "Reveal <name>" after the password, both in a right-aligned `.form-foot`. That button
   (`.action-name`) wraps inside the card however long the label is, and the name is in normal weight beside the bold verb. Action labels
   carry no colon of their own ("Allow once shop.admin-login on …"). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
@@ -272,7 +300,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    "Password confirmation expired. Go to the password field ↑" (the link puts the focus in that field), and while it
    shows, the solid button of its own form or card ("Add member", "Reveal current") is plain: nothing on the page
    is solid until an action is held. A block is not deferred while its own field holds the focus or something
-   typed (the entry page, when a request arrives under a person who is typing); it is looked at again on focusout. A page whose list is still empty has no shared
+   typed (the entry page, when a request arrives under a person who is typing); it is looked at again on focusout.
+   An action held by a block that then becomes deferred is released and said so ("The held action was released:
+   the password field is now above. Choose the action again."): its field and held button are gone, and the
+   page's solid buttons must not stay plain. A page whose list is still empty has no shared
    block (no agents, no grants, no entry types): its add form then holds an ordinary block with its own field.
    Everything else goes to the confirm page, which
    offers the action again after the password ("Confirm: <action>", then "<action>"), so no action has to be repeated;
@@ -314,6 +345,20 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    request has one width wherever the board is a table (Requests and the entry page). Requests and Grants need the whole `--wide` for their
    columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
    never behind a sideways scroll. Every other board switches at 900 px.
+   **Long data never widens a board (decided).** As tables, Requests, Grants and an entry's Agent access have a
+   fixed layout (like Entries): every column has its width from the table, so the last column (Decision, Finished,
+   Revoke, State) always ends inside the board and no column moves between the whole list and a filtered one.
+   Grants: Agent 104 px, Action 150, Approval 166, End date 192, State 84, the Revoke column 227 (room for its armed
+   two-step), and the entry takes the rest; the first cell keeps the board's left padding, so its text starts
+   where every other board's does. Agent access: 15 / 21 / 27 / 25 % and State the rest. An agent name, an action
+   code, an entry name and an environment sign wrap in their cell or card, inside a word when they must; agent
+   names carry no `.nobreak`. A date with its label ("Revoked 2026-11-20 10:15") is one `.nobreak` piece, in the
+   `end-date` partial too. The widths fit the usual data on one line (a nine-letter agent name, a sixteen-letter
+   action code). On a grant card the action wraps beside the state chip like the name does (both leave it 84 px).
+   **Separators stay with what comes before them.** A "·" or "/" between two parts of a card line is glued to the
+   part before it (a no-break space, or the pseudo-element of the earlier item), so a wrapped line never starts
+   with one: "Shop admin panel ·" then the project, "shop /" then the sign, the deadline "·" then the time left.
+   On request and grant cards the entry link is inline for that reason (its 40 px tap height comes from padding).
    **Control edges:** everything pressed that looks like a box has a `--edge` border: buttons (also
    `button.quiet`), fields, the header menus, `.fold-act`, and on phones the drawers (`details.filters`,
    `details.jump`) and the boxed link `a.jump-quick`. `--rule` is for cards, rows and dividers only. A request card reads: agent "requests"
@@ -323,10 +368,15 @@ Every page follows these, so the same kind of thing looks and behaves the same e
   environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right (Grants only). The
   chip is out of the flow, so a long name or action wraps under it and never moves it.
   **Requests columns:** as tables, "Requests waiting for you" and "Recent requests" share the widths of their
-  leading columns (Agent, Action, Entry, State, Requested), so each column starts at the same place in both; the
-  last column (Decision or Finished) takes the rest. The site MFA field is 9em wide to make that room.
+  leading columns (Agent 97 px, Action 148, Entry 166, State 203, Requested 200), so each column starts at the same
+  place in both, with any data; the last column (Decision or Finished) takes the rest. The site MFA field is 9em
+  wide to make that room. In app.css every property of these boards is set once: shared rules first, then one
+  block for the card (below 1181 px) and one for the table; nothing is set in one and overridden in the other.
+  **Requests on phones:** "Checked HH:MM UTC" is a small line right under "Check now" and belongs to it; the
+  password line ("Password confirmed until …") follows under a dashed rule, apart from it and before the cards.
   On phone everything pressed is at least 40 px high; a link that shares its line with text (a link in a card,
-   `.more-link` after a note) gets that height from padding, not from a taller line.
+   `.more-link` after a note) gets that height from padding, not from a taller line. On the Members card the
+   email is `--dim`, so the name leads.
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished or inactive) and `is-wait` (waiting
    for a decision or still running). A row whose thing has no state (a person on Members) is `is-plain`: no
    stripe colour. Every row carries one of the five.
@@ -356,7 +406,8 @@ with an edge: ▸ "Edit" closed, ▾ "Close" open), `.filter-status` (the "Showi
 Clear filters and one `.chip.filter` per active filter), `.held` (the row in a shared `.confirm-inline` that names
 the action waiting for the password, as the page's one solid button, with `.held-what` beside it) and `.more-link`
 (a link on a line of its own or after a note that leads to more of the same thing elsewhere, "Manage grants →";
-40 px to the finger on phones), and `.secret-row.compact` (a revealed value with its Copy on the same row).
+40 px to the finger on phones), and `.secret-row` (a value block: its label, the value and its Copy button, on the
+entry page, the token page and the authenticator setup alike; `.compact` puts a revealed value and its Copy on one row).
 
 Validation messages use the visible labels from `lang/en/validation.php` (`attributes`, plus `form_attributes`
 keyed by request path for labels that differ per form). Messages thrown by hand with
@@ -406,6 +457,7 @@ validates the date. An import that fails names the item by its place in the arra
 - **Removing a project or environment** that still holds entries says "Archive and destroy all entries in this
   project before removing it." (an archived entry still counts; only destroyed ones do not).
 - **Environment template rows** are labelled "Environment" on phones (the column head is not shown there).
-- **Account.** The head row is as wide as the cards (`.capped`), so "Sign out" ends where they end, and it keeps
+- **Account.** The head row and both h2s ("Security", "Workspaces") are as wide as the cards (`.capped`), so
+  "Sign out" and the heading rules end where the cards end, and the head row keeps
   the block gap of other head rows above the facts. The Security deck is one column at the card width in both
   confirmation states (`deck wide capped`): the page has one right edge.
