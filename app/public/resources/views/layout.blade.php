@@ -47,7 +47,7 @@
     @endauth
     {{-- A role with one place to go (a viewer: Entries) gets no nav row; the VAULT mark already leads there.
          A page without a workspace (role unknown) keeps its Entries link.
-         data-refresh: app.js keeps the waiting count current while requests wait. --}}
+         data-refresh: app.js keeps the waiting count current on the pages that poll for requests. --}}
     @if(count($items) > 1 || ! $navRole)
     <nav class="nav" aria-label="Main" data-refresh="nav">
         @foreach($items as [$text, $href, $active, $count])

@@ -58,7 +58,7 @@
                     <p class="note">@if($projectEntries > 0)Holds {{ $entries($projectEntries) }}, so it cannot be removed.@endif</p>
                     <div class="controls">
                         @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>@endif
-                        <button form="{{ $projFormId }}" aria-label="Rename project {{ $project->name }}">Rename</button>
+                        <button form="{{ $projFormId }}" aria-label="Save project {{ $project->name }}">Save project</button>
                     </div>
                 </div>
             </div>
@@ -89,7 +89,7 @@
                         <p class="note">@if($n > 0)Holds {{ $entries($n) }}, so it cannot be removed.@endif</p>
                         <div class="controls">
                             @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment “{{ $env->name }}”?">@csrf<button class="stop" aria-label="Remove environment {{ $where }}">Remove</button></form>@endif
-                            <button form="{{ $formId }}" aria-label="Save environment {{ $where }}">Save</button>
+                            <button form="{{ $formId }}" aria-label="Save environment {{ $where }}">Save environment</button>
                         </div>
                     </div>
                 </div>

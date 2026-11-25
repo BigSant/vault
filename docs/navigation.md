@@ -74,10 +74,12 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 - `/workspaces/{w}/requests` — agent requests. "Waiting for you" first (approval or a site MFA code), each row
   saying which agent asks to run which action on which entry and environment, then recent history. This is where
-  Allow once / Deny / Continue sign-in live. Each waiting row shows the time left; while rows wait, app.js
-  re-fetches the page every 30 s and swaps only the `[data-refresh]` regions (the requests sections and the header
-  nav count), never while focus or a started input is inside them. A "Refresh requests" button works without
-  script.
+  Allow once / Deny / Continue sign-in live. Each waiting row shows the time left. While the page is visible
+  (also while nothing waits; a hidden tab pauses), app.js re-fetches it every 30 s and swaps only the
+  `[data-refresh]` regions (the request sections, the waiting heading and the header nav count), never while focus
+  or a started input is inside them. "Refresh requests" and "Checked HH:MM UTC" sit beside the waiting heading,
+  here and on an owner's entry page; the button works without script. A request that expires while it holds the
+  focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page,
   whose next step links to Grants for that agent.

@@ -29,7 +29,7 @@
 <h2>Format</h2>
 <p class="note">Each object’s <code>type</code> must exist in this workspace and include every required field for that type.</p>
 
-<details class="import-ref capped">
+<details class="import-ref capped" open>
     <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
     <div class="inner">
         @if($environments->isEmpty())

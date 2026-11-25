@@ -50,7 +50,7 @@
             <td data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="Expires (UTC)">
                 @if($g->effective_revoked_at)
-                    Revoked {{ substr($g->effective_revoked_at, 0, 16) }} UTC {{ $g->expiry_reason ? '· '.$g->expiry_reason : '' }}
+                    <span class="nobreak">Revoked {{ substr($g->effective_revoked_at, 0, 16) }} UTC</span> @if($g->expiry_reason)<small class="wrap">{{ $g->expiry_reason }}</small>@endif
                 @else
                     <small class="k">{{ strtotime($g->effective_expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->effective_expires_at, 0, 16) }} <small class="k">UTC</small>@if($g->expiry_reason) · {{ $g->expiry_reason }}@endif @if($g->effective_expires_at !== $g->expires_at)<small class="wrap">Grant expiry: {{ substr($g->expires_at, 0, 16) }} UTC</small>@endif
                 @endif

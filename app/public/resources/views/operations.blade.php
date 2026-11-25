@@ -7,19 +7,23 @@
      $workspace   workspace id for the decision forms
      $hideEntry   leave out the Entry column (the entry page)
      $heading, $sectionId, $empty   override the h2 text, its id and the empty text in the single modes
-     $refreshUrl  the page these requests are on. Adds a "Refresh requests" button under the last table and is the
-                  address app.js fetches every 30 seconds while requests wait (without it: $back)
-     $region      the sections sit in one <div data-refresh="NAME" data-refresh-url="…">: app.js replaces the content
-                  of every such region in place, never the page. NAME defaults to the mode ('both': "requests");
-                  false leaves the wrapper out, for a page that prints its own region (the entry page's waiting one,
-                  which stays in the page while it is empty so that new requests have a place to appear).
+     $refreshUrl  the page these requests are on: the address app.js fetches every 30 seconds while the page is
+                  visible (also while nothing waits). Each section then sits in a region app.js replaces in place,
+                  never the page: <div data-refresh="waiting|history" data-refresh-url="…">, and the waiting heading
+                  is a region of its own ("waiting-title"). Beside that heading, outside every region so that it
+                  keeps the focus through a refresh, sit "Refresh requests" (a plain link without script) and
+                  "Checked HH:MM UTC".
+     $quietEmpty  the waiting section shows nothing while nothing waits (the entry page): its heading row is hidden
+                  and its region is empty, so new requests have a place to appear. data-shown-with="waiting" lets
+                  app.js show the row again when the region fills.
      $back        sent with the decision and MFA forms as a hidden `back`, so the controller returns to that page
                   (the entry page sends its own path, /entries/{id}); without it the controller returns to Requests
      State shown: "denied" (the owner said no), "expired" (the deadline passed) or "cancelled" (stored as revoked
      without an owner decision: the agent withdrew it, or its grant or agent was revoked). The controller's
      `decision_label` says which; without it, revoked with approved_by reads "denied".
      An expired row shows its deadline ("Expired …") where a finished one shows "Finished …".
-     Waiting rows carry data-expires and the table data-now (Unix seconds): app.js shows the time left, switches a
+     Waiting rows carry data-expires, data-what ("<action> on <entry>", for the expiry announcement) and the table
+     data-now (Unix seconds): app.js shows the time left, switches a
      row off at its deadline and refreshes the regions. Every row carries data-request (its id) and data-state, so a
      refresh can say what changed ("Request expired"). Timestamp labels are <small class="k">; .keep marks the two
      that no column head replaces. A date and its time never break apart (.nobreak).
@@ -45,14 +49,22 @@
     }
     $stripes = ['succeeded' => 'is-ok', 'approved' => 'is-ok', 'failed' => 'is-bad', 'denied' => 'is-bad', 'pending' => 'is-wait', 'requires_user_action' => 'is-wait', 'running' => 'is-wait'];
     $time = fn ($value) => substr(str_replace('T', ' ', (string) $value), 0, 16);
-    $reload = $refreshUrl ?? $back ?? null;
-    $region = $region ?? ($mode === 'both' ? 'requests' : $mode);
+    $reload = $refreshUrl ?? null;
+    $quietEmpty = ! empty($quietEmpty);
 @endphp
-@if($region && $reload)<div data-refresh="{{ $region }}" data-refresh-url="{{ $reload }}">@endif
 @foreach($sections as [$finished, $rows, $id, $title, $none])
+@if($finished)
+@if($reload)<div data-refresh="history" data-refresh-url="{{ $reload }}">@endif
 <h2 id="{{ $id }}">{{ $title }}</h2>
+@else
+<div class="section-head"@if($quietEmpty) data-shown-with="waiting"@if($rows->isEmpty()) hidden @endif @endif>
+    <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}</h2>
+    @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Checked {{ gmdate('H:i') }} UTC</span></p>@endif
+</div>
+@if($reload)<div data-refresh="waiting" data-refresh-url="{{ $reload }}">@endif
+@endif
 @if($rows->isEmpty())
-    <div class="empty">{{ $none }}</div>
+@unless($quietEmpty && ! $finished)<div class="empty">{{ $none }}</div>@endunless
 @else
 <div class="scroll"><table class="board compact-board requests"@unless($finished) data-now="{{ time() }}"@endunless>
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th>@empty($hideEntry)<th scope="col">Entry</th>@endempty<th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
@@ -67,7 +79,7 @@
             }
             $what = $o->agent.' runs '.$o->action.' on '.$o->entry.' — '.$o->project.' / '.$o->environment;
         @endphp
-        <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
+        <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-what="{{ $o->action }} on {{ $o->entry }}" data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
             <td class="who" data-label="Agent"><b class="nobreak">{{ $o->agent }}</b></td>
             <td class="name action" data-label="Action"><small class="k">requests</small> <code>{{ $o->action }}</code><small class="muted rid" title="Request {{ $o->id }}">{{ substr($o->id, 0, 8) }}</small></td>
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
@@ -91,9 +103,5 @@
     </tbody>
 </table></div>
 @endif
+@if($reload)</div>@endif
 @endforeach
-@if($region && $reload)</div>@endif
-{{-- Outside the region, so it keeps focus through a refresh. Without script it is a plain link to the page. --}}
-@isset($refreshUrl)
-<p class="refresh-row"><a class="btn" href="{{ $refreshUrl }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status></span></p>
-@endisset

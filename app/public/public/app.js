@@ -292,11 +292,14 @@ const tableRoles = (root = document) => root.querySelectorAll('table.board, tabl
 tableRoles();
 // Requests are time-critical. Every waiting row carries data-expires (Unix seconds) and shows how long it still
 // waits; the table's data-now is the server's clock, so this device's clock does not matter. A row past its deadline
-// is switched off and reads "expired".
-// The page is never reloaded. While rows wait, the page's address (data-refresh-url) is fetched every 30 seconds
-// and only the content of the [data-refresh] regions is replaced: the request sections and the header's waiting
-// count. A region that holds the focus or a started input is left alone until the next round. What changed is said
-// in the live region and shown beside the "Refresh requests" button, which does the same on demand.
+// is switched off and reads "expired"; when the focus was in that row it moves to the row's expired status, never
+// out of the row, and the announcement names the action and the entry.
+// The page is never reloaded. While the page is visible (also while nothing waits, so a new request shows up), the
+// page's address (data-refresh-url) is fetched every 30 seconds and only the content of the [data-refresh] regions
+// is replaced: the request sections, the waiting heading and the header's waiting count. A hidden tab pauses and
+// catches up when it is looked at again. A region that holds the focus or a started input is left alone until the
+// next round. What changed is said in the live region; "Refresh requests" beside the waiting heading does the same
+// on demand, and "Checked HH:MM UTC" next to it says when the page last matched the server.
 const regions = () => [...document.querySelectorAll('[data-refresh]')];
 const refreshUrl = regions().map(region => region.dataset.refreshUrl).find(Boolean);
 if (refreshUrl) {
@@ -307,27 +310,37 @@ if (refreshUrl) {
     if (!skews.has(table)) skews.set(table, table.dataset.now ? Number(table.dataset.now) * 1000 - Date.now() : 0);
     return skews.get(table);
   };
-  const tick = () => waitingRows().forEach(row => {
-    if (row.dataset.late) return;
-    const left = Number(row.dataset.expires) * 1000 - (Date.now() + skewOf(row.closest('table')));
-    const out = row.querySelector('.left');
-    if (left > 0) {
-      const minutes = Math.floor(left / 60000);
-      if (out) { out.textContent = minutes >= 60 ? Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min left' : minutes >= 1 ? minutes + ' min left' : 'under 1 min left'; out.hidden = false; }
-      return;
-    }
-    row.dataset.late = '1';
-    row.classList.remove('is-wait');
-    row.classList.add('is-idle', 'is-late');
-    if (out) out.hidden = true;
-    row.querySelectorAll('.k.keep').forEach(label => { if (label.textContent.trim() === 'Expires') label.textContent = 'Expired'; });
-    const state = row.querySelector('td.state');
-    if (state) { const chip = document.createElement('span'); chip.className = 'chip muted'; chip.textContent = 'expired'; state.replaceChildren(chip); }
-    const inside = row.contains(document.activeElement);
-    row.querySelectorAll('button, input:not([type=hidden])').forEach(control => { control.disabled = true; });
-    if (inside) document.getElementById('content')?.focus({ preventScroll: true });
-    say('A request expired before a decision. It can no longer be allowed.');
-  });
+  const tick = () => {
+    const expired = [];
+    waitingRows().forEach(row => {
+      if (row.dataset.late) return;
+      const left = Number(row.dataset.expires) * 1000 - (Date.now() + skewOf(row.closest('table')));
+      const out = row.querySelector('.left');
+      if (left > 0) {
+        const minutes = Math.floor(left / 60000);
+        if (out) { out.textContent = minutes >= 60 ? Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min left' : minutes >= 1 ? minutes + ' min left' : 'under 1 min left'; out.hidden = false; }
+        return;
+      }
+      row.dataset.late = '1';
+      row.classList.remove('is-wait');
+      row.classList.add('is-idle', 'is-late');
+      if (out) out.hidden = true;
+      row.querySelectorAll('.k.keep').forEach(label => { if (label.textContent.trim() === 'Expires') label.textContent = 'Expired'; });
+      const state = row.querySelector('td.state');
+      const chip = document.createElement('span');
+      chip.className = 'chip muted';
+      chip.textContent = 'expired';
+      chip.tabIndex = -1;
+      if (state) state.replaceChildren(chip);
+      const inside = row.contains(document.activeElement);
+      row.querySelectorAll('button, input:not([type=hidden])').forEach(control => { control.disabled = true; });
+      // The focus stays in the row, on what just changed.
+      if (inside && state) chip.focus({ preventScroll: true });
+      expired.push(row.dataset.what || '');
+    });
+    if (expired.length === 1) say('Request expired before a decision: ' + (expired[0] || 'one request') + '. It can no longer be allowed.');
+    else if (expired.length) say(expired.length + ' requests expired before a decision: ' + expired.filter(Boolean).join('; ') + '. They can no longer be allowed.');
+  };
   tick();
   setInterval(tick, 5000);
   // In use: the focus is inside, or a field holds something that was typed and not sent.
@@ -337,10 +350,21 @@ if (refreshUrl) {
   const waitingIn = root => new Map(waitingRows(root).filter(row => !row.dataset.late).map(row => [row.dataset.request, row]));
   const count = n => n === 1 ? '1 request waiting' : n + ' requests waiting';
   const status = text => document.querySelectorAll('[data-refresh-status]').forEach(el => { el.textContent = text; });
+  // The server's clock, for "Checked HH:MM UTC": the offset comes from the status line's data-now.
+  const stamp = document.querySelector('[data-refresh-status][data-now]');
+  const clockSkew = stamp ? Number(stamp.dataset.now) * 1000 - Date.now() : 0;
+  const checked = () => 'Checked ' + new Date(Date.now() + clockSkew).toISOString().slice(11, 16) + ' UTC';
+  // The waiting heading row and its jump link (the entry page) show only while their region holds something. A row
+  // that holds the focus stays until the focus has left it.
+  const showWith = () => document.querySelectorAll('[data-shown-with]').forEach(el => {
+    const region = document.querySelector('[data-refresh="' + el.dataset.shownWith + '"]');
+    const empty = !region?.children.length;
+    if (!empty || !el.contains(document.activeElement)) el.hidden = empty;
+  });
   let due = Date.now() + 30000;
   let running = false;
   const refresh = async manual => {
-    if (running || (!manual && (document.hidden || Date.now() < due || !waitingRows().length))) return;
+    if (running || (!manual && (document.hidden || Date.now() < due))) return;
     running = true;
     due = Date.now() + 30000;
     try {
@@ -360,8 +384,7 @@ if (refreshUrl) {
       });
       tick();
       const after = waitingIn(document);
-      // The jump link to the waiting section (the entry page) is there only while something waits.
-      document.querySelectorAll('[data-waiting-link]').forEach(link => { link.hidden = !document.querySelector('#waiting'); });
+      showWith();
       const arrived = [...after.keys()].filter(id => !before.has(id)).length;
       const gone = [...before.keys()].filter(id => !after.has(id));
       const parts = [];
@@ -374,8 +397,8 @@ if (refreshUrl) {
       if (skipped && manual) parts.push('The section you are working in was left as it is');
       const text = parts.length ? parts.join('. ') + '.' : '';
       if (text) say(text); else if (manual) say('Requests are up to date.');
-      const now = new Date(Date.now() + (skews.get(document.querySelector('table.requests[data-now]')) || 0));
-      status((text || 'Up to date.') + ' Checked ' + now.toISOString().slice(11, 16) + ' UTC.');
+      // A press always gets an answer in words; a quiet round only moves the time.
+      status((text ? text + ' ' : manual ? 'Up to date. ' : '') + checked());
     } catch {
       // No connection or a server error: the next round tries again; a press says so.
       if (manual) { status('Could not refresh. Check the connection and try again.'); say('Could not refresh requests.'); }

@@ -387,11 +387,18 @@ final class ShellTest extends TestCase
         // Setup mode: the activation code comes first.
         $this->get('/login')->assertOk()->assertSeeInOrder(['<span>Activation code</span>', '<span>Name</span>', '<span>Email</span>', '<span>Password</span>'], false);
         $this->signIn('owner');
-        // The requests sections sit in a region app.js replaces in place; the button is outside it and is a plain link without script.
+        // The request sections sit in regions app.js replaces in place. The button and the time of the last check sit beside the
+        // waiting heading, outside every region; without script the button is a plain link.
         $this->get($this->base.'/requests')->assertOk()
-            ->assertSeeInOrder(['<div data-refresh="requests" data-refresh-url="'.$this->base.'/requests">', '<h2 id="waiting">', '<h2 id="history">', '</div>',
-                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status'], false)
+            ->assertSeeInOrder(['<div class="section-head">', '<h2 id="waiting" data-refresh="waiting-title">',
+                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', 'Checked ', ' UTC</span>',
+                '<div data-refresh="waiting" data-refresh-url="'.$this->base.'/requests">', '<div data-refresh="history" data-refresh-url="'.$this->base.'/requests">', '<h2 id="history">'], false)
             ->assertDontSee('>Refresh</a>', false);
+        // Polling does not stop while the queue is empty; a hidden tab pauses. An expired row keeps the focus on its status.
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due))) return;', $script);
+        $this->assertStringContainsString('chip.focus({ preventScroll: true })', $script);
+        $this->assertStringNotContainsString("getElementById('content')?.focus", $script);
         $this->get($this->base.'/structure')->assertOk()->assertSee('<h2 class="setup-first">Environments by project</h2>', false)->assertDontSee('<h2>Projects', false)
             ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));

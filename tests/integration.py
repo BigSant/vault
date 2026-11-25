@@ -147,6 +147,8 @@ def run():
     print('PASS: browser cancellation during MFA denies continuation')
     agent.request('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=token)
     assert 'vault_execute' in agent.last and 'get_secret' not in agent.last
+    human.request('/workspaces/'+workspace+'/audit')
+    assert re.search(r'\d+ events</p>', human.last) and 'Page 1 of ' in human.last
     human.request('/workspaces/'+workspace+'/audit?outcome=ok')
     assert 'Outcome: OK' in human.last and re.search(r'Showing \d+ of \d+ events', human.last)
     assert 'synthetic-token' not in human.last and 'synthetic-password' not in human.last

@@ -24,9 +24,11 @@
     @endforeach
     <a href="/workspaces/{{ $space->id }}/audit">Clear filters</a>
 </p>
+@else
+<p class="filter-status">{{ $events->total() }} {{ Str::plural('event', $events->total()) }}</p>
 @endif
 @include('activity', ['events' => $events, 'filtered' => $filterCount > 0])
-@if($events->hasPages())
+@if(!$filterCount || $events->hasPages())
 <div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>
 @endif
 @endsection

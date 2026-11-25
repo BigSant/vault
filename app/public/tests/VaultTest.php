@@ -392,7 +392,7 @@ final class VaultTest extends TestCase
             $response = $this->get($base.'/grants')->assertOk()->assertSeeText('Revoked 2024-05-06 11:30 UTC')
                 ->assertDontSeeText('2025-02-01')->assertDontSeeText('2025-01-01');
             if ($agentDate) {
-                $response->assertSeeText('UTC · agent revoked');
+                $response->assertSeeTextInOrder(['Revoked 2024-05-06 11:30 UTC', 'agent revoked']);
                 $this->get($base.'/agents')->assertSeeText('Revoked 2024-05-06 11:30 UTC')->assertDontSeeText('2025-01-01');
             } else {
                 $response->assertDontSeeText('agent revoked');
@@ -474,6 +474,7 @@ final class VaultTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
                 'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
         }
+        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertSeeText('4 events')->assertSeeText('Page 1 of 1');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
             ->assertOk()->assertSeeText('Showing 1 of 4 events')->assertSeeText('Outcome: Denied')

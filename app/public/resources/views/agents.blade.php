@@ -16,7 +16,7 @@
             <td class="name" data-label="Agent"><b>{{ $m->name }}</b></td>
             <td class="when" data-label="Expires (UTC)">
                 @if($m->revoked_at)
-                    Revoked {{ substr($m->revoked_at, 0, 16) }} UTC
+                    <span class="nobreak">Revoked {{ substr($m->revoked_at, 0, 16) }} UTC</span>
                 @else
                     <small class="k">{{ strtotime($m->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($m->expires_at, 0, 16) }} <small class="k">UTC</small>
                 @endif

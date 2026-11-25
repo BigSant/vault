@@ -169,14 +169,24 @@ font-weight:600;padding:0 12px 2px}
 .board td.name{min-width:14em;max-width:26em}
 .board td.name a{font-weight:700;font-size:14px}
 .board td.name small{display:block;margin-top:3px;color:var(--faint);overflow-wrap:anywhere}
+/* A when-cell is one line, unless it marks what must stay whole with span.nobreak (the date): then the text after
+   it (a reason such as "· agent expired") may wrap under the date instead of widening the column. */
 .board td.when{white-space:nowrap}
+.board td.when:has(>.nobreak){white-space:normal}
 .board td.when small{display:block;color:var(--faint)}
 /* A secondary line ("Grant expiry: …") may wrap under the value; it never widens the column. */
 .board td.when small.wrap{white-space:normal}
 /* Codes and names are never broken inside a word: an action code stays whole, and so does an agent name (.nobreak). */
 .board td:is(.end,.action,.who) code{white-space:nowrap;overflow-wrap:normal}
-.refresh-row{display:flex;align-items:center;gap:8px 14px;flex-wrap:wrap;margin:12px 0 0}
+/* A section heading with something beside it (the waiting requests: "Refresh requests" and the time of the last
+   check). The heading keeps its rule line; the row wraps under it on a narrow screen. */
+.section-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:34px 0 12px}
+.section-head>h2{flex:1 1 16em;min-width:0;margin:0}
+.section-head[hidden]{display:none}
+.refresh-row{display:flex;flex-direction:row-reverse;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0}
 .refresh-row .note{margin:0}
+.refresh-row .btn{flex:none;white-space:nowrap}
+.tabs+.section-head{margin-top:20px}
 .board .line{display:block}
 .board .line+.line{margin-top:3px}
 .board .line b{color:var(--dim);font-weight:600}
@@ -232,8 +242,9 @@ input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px
 .form-foot .note:empty{display:none}
 .form-foot .controls{flex:none;justify-content:flex-end}
 .form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
-/* A plain submit is outlined in amber; a helper such as "+ Row" is not a submit and stays secondary. */
-.form-foot button:not(.go):not(.stop):not(.plain):not([type=button]){border-color:var(--amber);color:var(--amber)}
+/* A secondary save inside a list or fold ("Save project", "Save environment", "Save role", "Save template",
+   "Save type") is the plain neutral button: only the page's main action (.go) is amber. */
+label.check.stop{color:var(--stop)}
 .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 8px}
 .toolbar label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 .toolbar label.grow{flex:1;min-width:16em}
@@ -253,7 +264,7 @@ details.filters .toolbar{margin:0;padding:4px 12px 12px}
 .filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
 @media (min-width:901px){
 details.filters[data-wide-open]{background:none;border:none;border-radius:0}
-details.filters[data-wide-open]>summary{display:inline-flex;padding:0;margin:0 0 6px;font-size:12px;font-weight:400;color:var(--dim)}
+details.filters[data-wide-open]>summary{display:inline-flex;min-height:32px;padding:4px 12px 4px 0;margin:0 0 2px;font-size:12px;font-weight:400;color:var(--dim)}
 details.filters[data-wide-open]>summary:hover{color:var(--amber)}
 details.filters[data-wide-open] .toolbar{padding:0}
 }
@@ -326,7 +337,7 @@ details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .jump-links{gap:0 18px;padding:0 12px 8px}
 }
 /* Entry page: boards end at --wide like everywhere; facts, cards and the archive forms keep --card. */
-.entry-page>:is(.head,nav.subnav)+h2,.entry-page>:is(.head,nav.subnav)+.waiting-first:empty+h2{margin-top:18px}
+.entry-page>:is(.head,nav.subnav)+h2,.entry-page>.waiting-first:has(>.section-head[hidden])+h2{margin-top:18px}
 .entry-page>.deck{max-width:var(--card)}
 @media (min-width:901px){
 .entry-page .board td.name{min-width:0}
@@ -350,6 +361,8 @@ main.login label{grid-template-columns:10.5em minmax(0,1fr)}
 .menu-list a{min-height:44px}.tabs a{min-height:40px}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}
+.section-head .refresh-row{flex-direction:row;flex:1 1 100%}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
 .form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
@@ -390,15 +403,17 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .board.requests form.mfa label{flex:1 1 11em;min-width:11em;font-size:12px;color:var(--dim);white-space:nowrap}
 .board.requests form.mfa button{flex:none;white-space:nowrap}
 .board.requests .state{white-space:nowrap}
+.board.requests td.when .line{white-space:nowrap}
+.board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 /* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
 /* Phone: the time left follows the deadline on its line. Wide: it is a line of its own under the deadline. */
 .board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
 @media (max-width:900px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
 @media (min-width:901px){.board.requests .left{display:block;margin-top:3px}}
 @media (min-width:901px){
-/* Six columns fit --wide: tighter cells, and the MFA field is as wide as its eight digits need. */
+/* Six columns fit --wide: tighter cells, and the MFA field never gets narrower than eight digits (8ch plus its padding). */
 .board.requests :is(th,td):not(:first-child){padding-left:8px;padding-right:8px}
-.board.requests form.mfa input{min-width:7em}
+.board.requests form.mfa input{min-width:calc(8ch + 24px)}
 /* Allow once and Deny share one row. */
 .board.requests td.decision{white-space:nowrap}
 .board.requests td.decision .controls{flex-wrap:nowrap}
@@ -429,8 +444,6 @@ label.indent{margin-left:min(14em,30%)}
 }
 /* A form that is one button and its note (Sign out): a plain row at the card width, not a card. */
 form.plain-row{max-width:var(--card);margin:0 0 14px}
-/* button.plain: a submit that is neither the page's main action nor a change (Sign out on Account) is not outlined
-   in amber (see the form foot rule). */
 /* A page head followed by the stats keeps the normal block gap. */
 .head:has(+.stats){margin-bottom:14px}
 .head:has(+.stats) h1{margin-bottom:0}
@@ -520,7 +533,7 @@ td>.field-error{margin-top:4px}
 .card.solo{max-width:var(--card);margin-bottom:14px}
 .card.danger>.block-label:first-child{margin-bottom:10px}
 /* Entry page: requests waiting for the owner sit right under the title. */
-.waiting-first>h2{margin-top:14px}
+.waiting-first>.section-head{margin-top:14px}
 /* Destructive actions confirm in place: app.js turns the button into "Confirm <verb>" with a Cancel beside it and
    the question from data-confirm as the note. The note wraps and never decides a width. */
 .confirm-step{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap;max-width:100%}
@@ -616,14 +629,22 @@ details.import-ref>.inner .scroll{margin:0}
 @media (max-width:900px){
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
-.board.entries td.name{order:0}
+.board.entries tr{column-gap:5px}
+.board.entries td.name{display:contents}
+.board.entries td.name>a{order:0}
+.board.entries td.name>small:not(.entry-tags),.board.entries td.name>.chip{order:0}
+.board.entries td.name .entry-tags{order:4;flex-basis:100%}
+.board.entries tr::before{content:"";flex-basis:100%;order:1;height:0;margin-bottom:-4px}
 .board.entries td.name small{margin-top:2px}
-.board.entries td.proj{order:1;color:var(--dim)}
-.board.entries td.type{order:3;flex-basis:100%;color:var(--dim)}
-.board.entries td.type .k{display:none}
+.board.entries td.proj{order:2;color:var(--dim)}
+.board.entries td.type{order:3;color:var(--dim)}
+.board.entries td.type .k{display:inline}
 .board.entries td.env[data-label]::before{content:"/ ";display:inline;color:var(--dim)}
 .board.entries td.env{order:2;align-self:center}
-.board.entries td.updated{order:4;color:var(--dim)}
+.board.entries td.updated{order:5;color:var(--dim)}
+.board.entries td:is(.updated,.used){font-size:11px}
+.board.entries td.when small.k{font-size:inherit}
+.board.entries tr:not(:has(.entry-tags))::after{content:"";order:4;flex-basis:100%;height:0;margin-bottom:-4px}
 .board.entries td.updated small:not(.k){margin-top:2px}
 .board.entries td.used{order:5;color:var(--dim)}
 .board.entries td.used.is-empty{display:none}
@@ -645,6 +666,11 @@ details.import-ref>.inner .scroll{margin:0}
 }
 
 /* agents area */
+.board.grants .when{white-space:normal}
+@media (min-width:901px){
+.board.grants :is(th,td){padding-inline:8px}
+}
+.board.grants [data-label="Approval"]{white-space:nowrap}
 .board.grants [data-label="Entry"] small,.board.members [data-label="Role"] small{display:block;margin-top:2px;color:var(--dim)}
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
@@ -659,7 +685,8 @@ details.import-ref>.inner .scroll{margin:0}
 .board.grants [data-label="Entry"]{grid-area:2/1/3/3}
 .board.grants [data-label="State"]{grid-area:3/2;justify-self:end}
 .board.grants [data-label="Approval"]{grid-area:3/1}
-.board.grants .when{grid-area:4/1;white-space:nowrap}
+.board.grants .when{grid-area:4/1;white-space:normal}
+.board.grants tr:has(td:last-child:empty) .when{grid-column:1/-1}
 .board.grants td:last-child{grid-area:4/2;justify-self:end}
 .board.grants [data-label="Entry"] small{display:inline}
 .members td[data-label=""]:empty{display:none}
@@ -707,6 +734,14 @@ form.action fieldset+fieldset{margin-top:14px}
 form.action fieldset+fieldset>legend{padding-top:14px;border-top:1px dashed var(--rule)}
 form.action fieldset>:last-child{margin-bottom:0}
 @media (max-width:900px){
+/* Types editor: label, kind and key each take a line; "Required" and "Remove field" close the row side by side, so
+   the remove box belongs to its row and not to the key above it. */
+details.type-fold .list.edit tr{display:flex;flex-wrap:wrap;align-items:center;gap:0 16px}
+details.type-fold .list.edit td{flex:1 1 100%}
+details.type-fold .list.edit td.key{order:1}
+details.type-fold .list.edit td.key::before{display:inline;margin:0 8px 0 0}
+details.type-fold .list.edit td:is(.req,.remove){order:2;flex:0 1 auto;width:auto;padding-bottom:0}
+details.type-fold .list.edit td.remove{margin-left:auto}
 .card details.env-add>summary{min-height:40px}
 .list.edit td[data-label=""]::before{content:none}
 }

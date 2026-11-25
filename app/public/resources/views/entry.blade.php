@@ -39,7 +39,7 @@
     <details class="jump" data-wide-open data-wide-static>
         <summary>On this page</summary>
         <div class="jump-links">
-            @if($isOwner)<a href="#waiting" data-waiting-link @if(!$hasWaiting) hidden @endif>Requests waiting for you</a>@endif
+            @if($isOwner)<a href="#waiting" data-shown-with="waiting" @if(!$hasWaiting) hidden @endif>Requests waiting for you</a>@endif
             <a href="#details">Details</a><a href="#values">Secret values</a><a href="#versions">Versions</a>
             @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
             @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
@@ -48,9 +48,11 @@
 </nav>
 @endif
 {{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading.
-     The region stays in the page while nothing waits (empty, no whitespace), so a refresh in place can fill it. --}}
+     While nothing waits the heading row is hidden and the region is empty; a refresh in place fills both. --}}
 @if($isOwner)
-<div class="waiting-first" data-refresh="waiting" data-refresh-url="/entries/{{ $entry->id }}">@if($hasWaiting)@include('operations', ['mode' => 'waiting', 'region' => false, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id])@endif</div>
+<div class="waiting-first">
+@include('operations', ['mode' => 'waiting', 'quietEmpty' => true, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id, 'refreshUrl' => '/entries/'.$entry->id])
+</div>
 @endif
 
 <h2 id="details">Details</h2>
