@@ -60,7 +60,7 @@
 
 @if($hasFilters)
 <div class="filter-status">
-    <span>Showing {{ $entries->total() }} of {{ $scopeCount }}</span>
+    <span>Showing {{ $entries->total() }} of {{ $scopeCount }} entries</span>
     @if(request()->filled('q'))<span class="chip filter">Search: {{ request('q') }}</span>@endif
     @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
     @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
@@ -100,7 +100,7 @@
         <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
             <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}">{{ $e->name }}</a>@if($e->state === 'archived') <span class="chip muted">archived</span>@elseif($due)<small><span class="chip warn">rotation due since {{ substr($e->rotate_at, 0, 10) }}</span></small>@endif @if($e->tags)<small>{{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
-            <td class="env end" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
+            <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
             <td class="when updated full" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
             <td class="when used full{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">@if($e->last_used_at)<small class="k">Last used</small> {{ substr($e->last_used_at, 0, 16) }} <small class="k">UTC</small>@else—@endif</td>

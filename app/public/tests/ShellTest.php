@@ -61,7 +61,10 @@ final class ShellTest extends TestCase
     public function test_primary_nav_shows_only_what_the_role_can_open(string $role, array $shown, array $hidden): void
     {
         $this->signIn($role);
-        $response = $this->get('/')->assertOk()->assertSee('aria-label="Main"', false)->assertSee('href="/?workspace='.$this->workspace.'"', false)
+        // A role with one place to go (viewer: Entries) gets no nav row; the VAULT mark leads to the entries.
+        $response = $this->get('/')->assertOk()->assertSee('<a class="mark" href="/?workspace='.$this->workspace.'">VAULT</a>', false);
+        $role === 'viewer' ? $response->assertDontSee('aria-label="Main"', false) : $response->assertSee('<nav class="nav" aria-label="Main" data-refresh="nav">', false);
+        $response
             ->assertSee('href="/account"', false)->assertSee('action="/logout"', false)->assertSee('href="/workspaces/new"', false)
             ->assertDontSee('Confirm sensitive actions')->assertDontSee('Change sign-in password');
         foreach ($shown as $section) {
@@ -211,11 +214,11 @@ final class ShellTest extends TestCase
         $this->signIn('owner');
         $this->get($this->base.'/agents')->assertOk()
             ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content" tabindex="-1">', 'id="live"'], false)
-            ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button aria-label="Sign out">Sign out</button>', false)->assertDontSee('Lock');
+            ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button>Sign out</button>', false)->assertDontSee('aria-label="Sign out"', false)->assertDontSee('Lock');
         $this->get('/account')->assertOk()->assertSee('Change password and sign out')->assertSee('<span class="chip role">owner</span>', false)->assertDontSee('>Lock<', false);
         // A signed-in person keeps the header on an error page; a guest gets the bare page.
         $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled')
-            ->assertSee('aria-label="Main"', false)->assertSee('<button aria-label="Sign out">Sign out</button>', false)->assertSee('Back to entries</a>', false)->assertSessionHas('last_page', '/account');
+            ->assertSee('aria-label="Main"', false)->assertSee('<button>Sign out</button>', false)->assertSee('Back to entries</a>', false)->assertSessionHas('last_page', '/account');
         $this->get('/api/nothing-here')->assertNotFound();
     }
 
@@ -377,6 +380,22 @@ final class ShellTest extends TestCase
         $this->assertSame("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>",
             $end("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>\n<h2>Projects</h2>"));
         $this->assertSame('', $end('<p>No heading</p>'));
+    }
+
+    public function test_requests_refresh_in_place_regions_and_round_11_wording(): void
+    {
+        // Setup mode: the activation code comes first.
+        $this->get('/login')->assertOk()->assertSeeInOrder(['<span>Activation code</span>', '<span>Name</span>', '<span>Email</span>', '<span>Password</span>'], false);
+        $this->signIn('owner');
+        // The requests sections sit in a region app.js replaces in place; the button is outside it and is a plain link without script.
+        $this->get($this->base.'/requests')->assertOk()
+            ->assertSeeInOrder(['<div data-refresh="requests" data-refresh-url="'.$this->base.'/requests">', '<h2 id="waiting">', '<h2 id="history">', '</div>',
+                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status'], false)
+            ->assertDontSee('>Refresh</a>', false);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('<h2 class="setup-first">Environments by project</h2>', false)->assertDontSee('<h2>Projects', false)
+            ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
+        $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
+        $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
     }
 
     public function test_account_wording_and_plain_footer(): void

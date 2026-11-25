@@ -14,7 +14,7 @@
     </form>
 </details>
 @if($agent || $entry)
-<p class="filter-status">Showing {{ $grants->count() }} of {{ $total }}
+<p class="filter-status">Showing {{ $grants->count() }} of {{ $total }} grants
     @if($agent)<span class="chip filter">Agent: {{ $agent->name }}</span>@endif
     @if($entry)<span class="chip filter">Entry: {{ $entry->name }} — {{ $entry->project }} / {{ $entry->environment }}</span>@endif
     <a href="/workspaces/{{ $space->id }}/grants">Clear filters</a>
@@ -44,11 +44,17 @@
             $gState = $g->state;
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b>{{ $machine->name }}</b></td>
+            <td data-label="Agent"><b class="nobreak">{{ $machine->name }}</b></td>
             <td class="end" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($g->effective_expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->effective_expires_at, 0, 16) }} <small class="k">UTC</small>@if($g->expiry_reason) · {{ $g->expiry_reason }}@endif @if($g->effective_expires_at !== $g->expires_at)<small>Grant expiry: {{ substr($g->expires_at, 0, 16) }} UTC</small>@endif</td>
+            <td class="when" data-label="Expires (UTC)">
+                @if($g->effective_revoked_at)
+                    Revoked {{ substr($g->effective_revoked_at, 0, 16) }} UTC {{ $g->expiry_reason ? '· '.$g->expiry_reason : '' }}
+                @else
+                    <small class="k">{{ strtotime($g->effective_expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->effective_expires_at, 0, 16) }} <small class="k">UTC</small>@if($g->expiry_reason) · {{ $g->expiry_reason }}@endif @if($g->effective_expires_at !== $g->expires_at)<small class="wrap">Grant expiry: {{ substr($g->expires_at, 0, 16) }} UTC</small>@endif
+                @endif
+            </td>
             <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
             <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?">@csrf<button class="stop" aria-label="{{ $revoke }}">Revoke</button></form>@endif</td>
         </tr>

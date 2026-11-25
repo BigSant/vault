@@ -45,18 +45,23 @@
         </div>
     </details>
     @endauth
-    <nav class="nav" aria-label="Main">
+    {{-- A role with one place to go (a viewer: Entries) gets no nav row; the VAULT mark already leads there.
+         A page without a workspace (role unknown) keeps its Entries link.
+         data-refresh: app.js keeps the waiting count current while requests wait. --}}
+    @if(count($items) > 1 || ! $navRole)
+    <nav class="nav" aria-label="Main" data-refresh="nav">
         @foreach($items as [$text, $href, $active, $count])
             <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="page"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}<span class="sr-only"> {{ $count === 1 ? 'request' : 'requests' }} waiting</span></span>@endif</a>
         @endforeach
     </nav>
+    @endif
     <span class="spacer"></span>
     @auth
     <details class="menu account">
         <summary aria-label="Account: {{ auth()->user()->name }}"><span class="menu-name">{{ auth()->user()->name }}</span></summary>
         <div class="menu-list">
             <a href="/account"{!! $path === 'account' ? ' class="on" aria-current="page"' : '' !!}>Account</a>
-            <form action="/logout" method="post">@csrf<button aria-label="Sign out">Sign out</button></form>
+            <form action="/logout" method="post">@csrf<button>Sign out</button></form>
         </div>
     </details>
     @endauth

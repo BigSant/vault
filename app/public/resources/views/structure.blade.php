@@ -29,7 +29,7 @@
     <a href="#template">Environment template</a>
 </nav>
 
-<h2 class="setup-first">Projects and environments</h2>
+<h2 class="setup-first">Environments by project</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 <div class="project-list">
@@ -116,7 +116,7 @@
 
 <h2 id="add-project">Add a project</h2>
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
-    <label><span>Name</span><input name="name" value="{{ $oldAddProject ? old('name') : '' }}" required maxlength="100" placeholder="shop"></label>
+    <label><span>Name</span><input name="name" value="{{ $oldAddProject ? old('name') : '' }}" required maxlength="100" placeholder="e.g. billing"></label>
     <div class="form-foot"><p class="note">Projects you add start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go">Add project</button></div>
 </form>
 
@@ -128,9 +128,9 @@
         <tbody id="template-rows">
         @foreach($templateRows as $i => $env)
             @php $rowName = $env['name'] !== '' ? $env['name'] : 'row '.$loop->iteration; @endphp
-            <tr><td data-label="Environment"><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> Production</label></td></tr>
+            <tr><td data-label="Environment"><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> <span class="phone-only">Production</span></label></td></tr>
         @endforeach
-            <tr data-row-template><td data-label="Environment"><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="Add an environment" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> Production</label></td></tr>
+            <tr data-row-template><td data-label="Environment"><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="Add an environment" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
         </tbody>
     </table>
     @include('confirm-inline', ['verb' => 'save this template'])

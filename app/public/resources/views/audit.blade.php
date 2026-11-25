@@ -16,7 +16,7 @@
     </form>
 </details>
 @if($total !== null)
-<p class="filter-status">Showing {{ $events->total() }} of {{ $total }}
+<p class="filter-status">Showing {{ $events->total() }} of {{ $total }} events
     @if(request('group'))<span class="chip filter">Event group: {{ ucfirst(request('group')) }}</span>@endif
     @if(request('actor'))<span class="chip filter">Actor: {{ $actorOptions[request('actor')] ?? request('actor') }}</span>@endif
     @foreach(['outcome' => 'Outcome', 'from' => 'From', 'to' => 'To'] as $key => $label)

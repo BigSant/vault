@@ -390,9 +390,11 @@ final class Workspace
         $grant->effective_expires_at = min($grant->expires_at, $grant->machine_expires_at);
         $grant->state = strtotime($grant->effective_expires_at) <= time() ? 'expired' : 'active';
         $grant->expiry_reason = null;
+        $grant->effective_revoked_at = $grant->revoked_at;
         if ($grant->revoked_at || $grant->machine_revoked_at) {
             $grant->state = 'revoked';
-            if ($grant->machine_revoked_at && (! $grant->revoked_at || $grant->machine_revoked_at < $grant->revoked_at)) {
+            if ($grant->machine_revoked_at && (! $grant->revoked_at || $grant->machine_revoked_at <= $grant->revoked_at)) {
+                $grant->effective_revoked_at = $grant->machine_revoked_at;
                 $grant->expiry_reason = 'agent revoked';
             }
         } elseif ($grant->machine_expires_at < $grant->expires_at) {

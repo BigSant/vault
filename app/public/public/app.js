@@ -280,17 +280,36 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
   addEventListener('pageshow', sync);
   sync();
 });
+// On phones the rows of these tables are cards (display:block/grid/flex), which drops the table semantics.
+// Explicit roles keep the column and row heads tied to their cells for screen readers.
+const tableRoles = (root = document) => root.querySelectorAll('table.board, table.facts, table.list.edit, table.list.import-format, table.list.import-ids, table.list.import-types').forEach(table => {
+  table.setAttribute('role', 'table');
+  table.querySelectorAll('thead, tbody, tfoot').forEach(el => el.setAttribute('role', 'rowgroup'));
+  table.querySelectorAll('tr').forEach(el => el.setAttribute('role', 'row'));
+  table.querySelectorAll('th').forEach(el => el.setAttribute('role', el.scope === 'row' ? 'rowheader' : 'columnheader'));
+  table.querySelectorAll('td').forEach(el => el.setAttribute('role', 'cell'));
+});
+tableRoles();
 // Requests are time-critical. Every waiting row carries data-expires (Unix seconds) and shows how long it still
 // waits; the table's data-now is the server's clock, so this device's clock does not matter. A row past its deadline
-// is switched off and reads "expired". While rows wait the page reloads itself every 30 seconds (the table's
-// data-refresh address), but never while a field is in use, a confirmation is open or a secret is on screen.
-const waitingRows = [...document.querySelectorAll('table.requests tr[data-expires]')];
-if (waitingRows.length) {
-  const board = waitingRows[0].closest('table');
-  const skew = board.dataset.now ? Number(board.dataset.now) * 1000 - Date.now() : 0;
-  const tick = () => waitingRows.forEach(row => {
+// is switched off and reads "expired".
+// The page is never reloaded. While rows wait, the page's address (data-refresh-url) is fetched every 30 seconds
+// and only the content of the [data-refresh] regions is replaced: the request sections and the header's waiting
+// count. A region that holds the focus or a started input is left alone until the next round. What changed is said
+// in the live region and shown beside the "Refresh requests" button, which does the same on demand.
+const regions = () => [...document.querySelectorAll('[data-refresh]')];
+const refreshUrl = regions().map(region => region.dataset.refreshUrl).find(Boolean);
+if (refreshUrl) {
+  const waitingRows = (root = document) => [...root.querySelectorAll('table.requests tr[data-expires]')];
+  // The offset between the server's clock and this device's, taken once per table when it arrives.
+  const skews = new WeakMap();
+  const skewOf = table => {
+    if (!skews.has(table)) skews.set(table, table.dataset.now ? Number(table.dataset.now) * 1000 - Date.now() : 0);
+    return skews.get(table);
+  };
+  const tick = () => waitingRows().forEach(row => {
     if (row.dataset.late) return;
-    const left = Number(row.dataset.expires) * 1000 - (Date.now() + skew);
+    const left = Number(row.dataset.expires) * 1000 - (Date.now() + skewOf(row.closest('table')));
     const out = row.querySelector('.left');
     if (left > 0) {
       const minutes = Math.floor(left / 60000);
@@ -311,28 +330,65 @@ if (waitingRows.length) {
   });
   tick();
   setInterval(tick, 5000);
-  const place = 'vault-refresh-scroll';
-  // A refresh keeps the place on the page.
-  try {
-    const kept = JSON.parse(sessionStorage.getItem(place) || 'null');
-    sessionStorage.removeItem(place);
-    if (kept && kept.path === location.pathname && !location.hash) scrollTo(0, kept.y);
-  } catch { /* no session storage: the page starts at the top */ }
-  const busy = () => {
-    const active = document.activeElement;
-    if (document.hidden || document.querySelector('.confirm-step, details.menu[open], [data-secret]:not([data-hidden])')) return true;
-    if (active?.matches('input, select, textarea') || active?.closest('table.requests')) return true;
-    return [...document.querySelectorAll('main input, main textarea')].some(field => !['hidden', 'checkbox', 'radio'].includes(field.type) && field.value !== field.defaultValue);
-  };
-  const url = [...document.querySelectorAll('table.requests[data-refresh]')].map(table => table.dataset.refresh).find(Boolean);
+  // In use: the focus is inside, or a field holds something that was typed and not sent.
+  const inUse = region => region.contains(document.activeElement) && document.activeElement !== document.body
+    || [...region.querySelectorAll('input, textarea')].some(field => !['hidden', 'checkbox', 'radio'].includes(field.type) && field.value !== field.defaultValue);
+  // The rows that still wait: id => row. A row past its deadline no longer counts.
+  const waitingIn = root => new Map(waitingRows(root).filter(row => !row.dataset.late).map(row => [row.dataset.request, row]));
+  const count = n => n === 1 ? '1 request waiting' : n + ' requests waiting';
+  const status = text => document.querySelectorAll('[data-refresh-status]').forEach(el => { el.textContent = text; });
   let due = Date.now() + 30000;
-  const refresh = () => {
-    if (!url || Date.now() < due || busy()) return;
-    try { sessionStorage.setItem(place, JSON.stringify({ path: location.pathname, y: scrollY })); } catch { /* fine */ }
-    location.replace(url);
+  let running = false;
+  const refresh = async manual => {
+    if (running || (!manual && (document.hidden || Date.now() < due || !waitingRows().length))) return;
+    running = true;
+    due = Date.now() + 30000;
+    try {
+      const response = await fetch(refreshUrl, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      // Signed out or sent elsewhere: the page itself has to follow.
+      if (response.redirected || [401, 403, 419].includes(response.status)) { location.assign(refreshUrl); return; }
+      if (!response.ok) throw new Error('refresh failed');
+      const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const before = waitingIn(document);
+      let skipped = false;
+      regions().forEach(region => {
+        const next = fresh.querySelector('[data-refresh="' + region.dataset.refresh + '"]');
+        if (!next) return;
+        if (inUse(region)) { skipped = true; return; }
+        region.replaceChildren(...next.childNodes);
+        tableRoles(region);
+      });
+      tick();
+      const after = waitingIn(document);
+      // The jump link to the waiting section (the entry page) is there only while something waits.
+      document.querySelectorAll('[data-waiting-link]').forEach(link => { link.hidden = !document.querySelector('#waiting'); });
+      const arrived = [...after.keys()].filter(id => !before.has(id)).length;
+      const gone = [...before.keys()].filter(id => !after.has(id));
+      const parts = [];
+      if (gone.length === 1) {
+        // Its row in the history says how it ended: expired, denied, cancelled, succeeded, failed, running.
+        const state = document.querySelector('table.requests tr[data-request="' + CSS.escape(gone[0]) + '"]:not([data-expires])')?.dataset.state;
+        parts.push('Request ' + ({ approved: 'allowed', running: 'allowed and running' }[state] || state || 'no longer waiting'));
+      } else if (gone.length) parts.push(gone.length + ' requests no longer waiting');
+      if (arrived || gone.length) parts.push(after.size ? count(after.size) : 'No requests waiting');
+      if (skipped && manual) parts.push('The section you are working in was left as it is');
+      const text = parts.length ? parts.join('. ') + '.' : '';
+      if (text) say(text); else if (manual) say('Requests are up to date.');
+      const now = new Date(Date.now() + (skews.get(document.querySelector('table.requests[data-now]')) || 0));
+      status((text || 'Up to date.') + ' Checked ' + now.toISOString().slice(11, 16) + ' UTC.');
+    } catch {
+      // No connection or a server error: the next round tries again; a press says so.
+      if (manual) { status('Could not refresh. Check the connection and try again.'); say('Could not refresh requests.'); }
+    } finally { running = false; }
   };
-  setInterval(refresh, 5000);
-  document.addEventListener('visibilitychange', refresh);
+  setInterval(() => refresh(false), 5000);
+  document.addEventListener('visibilitychange', () => refresh(false));
+  document.addEventListener('click', event => {
+    const button = event.target.closest?.('[data-refresh-now]');
+    if (!button || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
+    event.preventDefault();
+    refresh(true);
+  });
 }
 // Filter bars: an inline bar on wide screens, a closed drawer on phones. A resize follows along until the user
 // opens or closes the bar themselves.
@@ -374,15 +430,6 @@ const openTarget = () => {
   fold.open = true;
   target.scrollIntoView();
 };
-// On phones the rows of these tables are cards (display:block/grid/flex), which drops the table semantics.
-// Explicit roles keep the column and row heads tied to their cells for screen readers.
-document.querySelectorAll('table.board, table.facts, table.list.edit, table.list.import-format, table.list.import-ids, table.list.import-types').forEach(table => {
-  table.setAttribute('role', 'table');
-  table.querySelectorAll('thead, tbody, tfoot').forEach(el => el.setAttribute('role', 'rowgroup'));
-  table.querySelectorAll('tr').forEach(el => el.setAttribute('role', 'row'));
-  table.querySelectorAll('th').forEach(el => el.setAttribute('role', el.scope === 'row' ? 'rowheader' : 'columnheader'));
-  table.querySelectorAll('td').forEach(el => el.setAttribute('role', 'cell'));
-});
 addEventListener('hashchange', openTarget);
 openTarget();
 // Error summary of a form that failed validation. The server prints it under the page head; here it moves to the

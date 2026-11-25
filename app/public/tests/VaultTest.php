@@ -320,7 +320,7 @@ final class VaultTest extends TestCase
             ->assertSee('<select name="action" required><option value="">Choose an action</option>', false)
             ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
             ->assertSeeText('test.http');
-        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
+        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1 grants')
             ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
         $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
@@ -328,8 +328,8 @@ final class VaultTest extends TestCase
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant)->assertSeeText('agent revoked');
         $this->get('/?q=Private')->assertOk()->assertSeeText('Search: Private')
             ->assertSee('<button class="catalog-search">Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
-        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1')->assertViewHas('archivedCount', 0);
-        $this->get('/?due=1')->assertSeeText('Showing 0 of 1')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1 entries')->assertViewHas('archivedCount', 0);
+        $this->get('/?due=1')->assertSeeText('Showing 0 of 1 entries')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => '2020-11-01 12:00:00']);
         $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
@@ -340,16 +340,16 @@ final class VaultTest extends TestCase
             $this->get('/?'.http_build_query($current))->assertOk()
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
-        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1')
+        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1 entries')
             ->assertSeeInOrder(['data-label="Entry"', 'rotation due since 2020-11-01', 'data-label="Project"'], false);
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
-        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1')
+        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entries')
             ->assertSeeText('State: archived')->assertSee('<span class="chip muted">archived</span>', false)->assertSeeText('used by agents');
-        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1');
+        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entries');
     }
 
     public function test_grants_order_by_effective_state_then_agent_and_action(): void
@@ -378,6 +378,26 @@ final class VaultTest extends TestCase
         $this->withSession(['last_workspace' => $other])->get('/')->assertViewHas('space', fn ($space) => $space->id === $other);
         DB::table('members')->where('workspace_id', $other)->delete();
         $this->get('/')->assertViewHas('space', fn ($space) => $space->id === $this->workspace);
+    }
+
+    public function test_revoked_dates_override_expiry(): void
+    {
+        $entry = $this->entry();
+        [$agent, , $grant] = $this->machine($entry);
+        $base = '/workspaces/'.$this->workspace;
+        $revoked = '2024-05-06 11:30:00';
+        foreach ([[$revoked, null], [null, $revoked], [$revoked, $revoked]] as [$grantDate, $agentDate]) {
+            DB::table('grants')->where('id', $grant)->update(['revoked_at' => $grantDate, 'expires_at' => '2025-02-01 00:00:00']);
+            DB::table('machines')->where('id', $agent)->update(['revoked_at' => $agentDate, 'expires_at' => '2025-01-01 00:00:00']);
+            $response = $this->get($base.'/grants')->assertOk()->assertSeeText('Revoked 2024-05-06 11:30 UTC')
+                ->assertDontSeeText('2025-02-01')->assertDontSeeText('2025-01-01');
+            if ($agentDate) {
+                $response->assertSeeText('UTC · agent revoked');
+                $this->get($base.'/agents')->assertSeeText('Revoked 2024-05-06 11:30 UTC')->assertDontSeeText('2025-01-01');
+            } else {
+                $response->assertDontSeeText('agent revoked');
+            }
+        }
     }
 
     public function test_expired_agent_and_missing_grant_prerequisites(): void
@@ -456,7 +476,7 @@ final class VaultTest extends TestCase
         }
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
-            ->assertOk()->assertSeeText('Showing 1 of 4')->assertSeeText('Outcome: Denied')
+            ->assertOk()->assertSeeText('Showing 1 of 4 events')->assertSeeText('Outcome: Denied')
             ->assertSeeText('From: 2026-01-02')->assertSeeText('To: 2026-01-02')
             ->assertViewHas('events', fn ($events) => $events->first()->created_at === '2026-01-02 23:59:59' && $events->first()->outcome === 'denied');
     }

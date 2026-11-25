@@ -49,7 +49,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   | Setup   | `/workspaces/{w}/structure`, `/types` | owner, editor |
   | Activity | `/workspaces/{w}/audit` | owner |
 
-  The Agents item carries a count chip when requests wait for a decision or an MFA code.
+  The Agents item carries a count chip when requests wait for a decision or an MFA code. A role with a single
+  nav item (viewer) gets no nav row.
 - The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
   derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
 - **Account menu** (`<details>` under the user's name): Account → `GET /account`, Sign out (POST `/logout`).
@@ -73,7 +74,10 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 - `/workspaces/{w}/requests` — agent requests. "Waiting for you" first (approval or a site MFA code), each row
   saying which agent asks to run which action on which entry and environment, then recent history. This is where
-  Allow once / Deny / Continue sign-in live.
+  Allow once / Deny / Continue sign-in live. Each waiting row shows the time left; while rows wait, app.js
+  re-fetches the page every 30 s and swaps only the `[data-refresh]` regions (the requests sections and the header
+  nav count), never while focus or a started input is inside them. A "Refresh requests" button works without
+  script.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page,
   whose next step links to Grants for that agent.
@@ -90,7 +94,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 Two tabs under the h1 "Setup": **Projects · Entry types**.
 
-- `/workspaces/{w}/structure` — projects, environments, the environment template, the production flag.
+- `/workspaces/{w}/structure` — "Environments by project" (each project a card with Edit folds), "Add a
+  project", "Environment template".
 - `/workspaces/{w}/types` — entry types and their fields.
 
 ### Activity (owner)
@@ -99,7 +104,8 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 ### Account (any signed-in user)
 
-- `/account` — who you are, sensitive-action confirmation state (with the confirm form), change password, sign out.
+- `/account` — who you are, sensitive-action confirmation state (with the confirm form), change password, the
+  workspaces you belong to with your role in each, sign out.
 - `/confirm?return=/path` — confirm your password (keeps the signed-in header). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because

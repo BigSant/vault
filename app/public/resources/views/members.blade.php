@@ -4,7 +4,7 @@
 <h1>Members</h1>
 @php
     $soleOwner = $members->where('role', 'owner')->count() === 1;
-    $roles = ['viewer' => 'viewer — view entry metadata', 'editor' => 'editor — add, change, reveal entries; edit Setup', 'owner' => 'owner — editor access; manage members, agents, grants'];
+    $roles = ['viewer', 'editor', 'owner'];
 @endphp
 <p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 <div class="scroll"><table class="board compact-board members">
@@ -14,7 +14,7 @@
             <span class="chip role">owner</span><small>Add another owner before changing your role</small>
         @else<form class="controls" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
             <input type="hidden" name="name" value="{{ $m->name }}"><input type="hidden" name="email" value="{{ $m->email }}">
-            <select name="role" aria-label="Role for {{ $m->name }}">@foreach(array_keys($roles) as $role)<option value="{{ $role }}" @selected($role === $m->role)>{{ $role }}</option>@endforeach</select><button aria-label="Save role for {{ $m->name }}">Save</button>
+            <select name="role" aria-label="Role for {{ $m->name }}">@foreach($roles as $role)<option value="{{ $role }}" @selected($role === $m->role)>{{ $role }}</option>@endforeach</select><button aria-label="Save role for {{ $m->name }}">Save</button>
         </form>@endif</td>
         <td data-label="">@if($m->id != auth()->id())<form method="post" action="/workspaces/{{ $space->id }}/members" data-confirm="Remove {{ $m->name }} from this workspace?">@csrf
             <input type="hidden" name="name" value="{{ $m->name }}"><input type="hidden" name="email" value="{{ $m->email }}">
@@ -26,7 +26,7 @@
         <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>
         <label><span>Email</span><input name="email" type="email" value="{{ old('email') }}" required></label>
         <div class="field"><label for="first-password"><span>First password <small>new user only</small></span></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate first password">Generate</button></span></div>
-        <label><span>Role</span><select name="role">@foreach($roles as $value => $text)<option value="{{ $value }}" @selected(old('role', 'viewer') === $value)>{{ $text }}</option>@endforeach</select></label>
+        <label><span>Role</span><select name="role">@foreach($roles as $role)<option value="{{ $role }}" @selected(old('role', 'viewer') === $role)>{{ $role }}</option>@endforeach</select></label>
         @include('confirm-inline', ['verb' => 'add this member'])
         <div class="form-foot"><p class="note">Hand the password over privately. MFA is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>
     </form>

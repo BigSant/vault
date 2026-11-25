@@ -39,7 +39,7 @@
     <details class="jump" data-wide-open data-wide-static>
         <summary>On this page</summary>
         <div class="jump-links">
-            @if($hasWaiting)<a href="#waiting">Requests waiting for you</a>@endif
+            @if($isOwner)<a href="#waiting" data-waiting-link @if(!$hasWaiting) hidden @endif>Requests waiting for you</a>@endif
             <a href="#details">Details</a><a href="#values">Secret values</a><a href="#versions">Versions</a>
             @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
             @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
@@ -47,11 +47,10 @@
     </details>
 </nav>
 @endif
-{{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading. --}}
-@if($hasWaiting)
-<div class="waiting-first">
-@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id])
-</div>
+{{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading.
+     The region stays in the page while nothing waits (empty, no whitespace), so a refresh in place can fill it. --}}
+@if($isOwner)
+<div class="waiting-first" data-refresh="waiting" data-refresh-url="/entries/{{ $entry->id }}">@if($hasWaiting)@include('operations', ['mode' => 'waiting', 'region' => false, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id])@endif</div>
 @endif
 
 <h2 id="details">Details</h2>
@@ -96,7 +95,7 @@
     @if($canEdit)
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. You may be asked to confirm your password first. Older versions are under Versions.</p>
-            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf @if($shownCurrent)<button aria-label="Reveal the current values of {{ $entry->name }} again">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
+            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf @if($shownCurrent)<button aria-label="Reveal again: current values of {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
         </div>
     @endif
 </div>
@@ -168,12 +167,14 @@
         @php
             $gState = $grant->state;
             $gEnds = (string) $grant->effective_expires_at;
+            // Revoked beats expiry: the date it was revoked (the agent's, when that caused it) replaces both expiry lines.
+            $gRevoked = $grant->effective_revoked_at ?? null;
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
+            <td data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
             <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) · {{ $grant->expiry_reason }}@endif @if($gEnds !== (string) $grant->expires_at)<small>Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif</td>
+            <td class="when" data-label="Expires (UTC)">@if($gRevoked)<span class="nobreak">Revoked {{ $day($gRevoked) }} UTC</span>@if($grant->expiry_reason) <span class="nobreak">· {{ $grant->expiry_reason }}</span>@endif @else<small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) <span class="nobreak">· {{ $grant->expiry_reason }}</span>@endif @if($gEnds !== (string) $grant->expires_at)<small class="wrap">Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif @endif</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach
@@ -203,7 +204,7 @@
     @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf
         <h3>Destroy permanently</h3>
-        <label><span>Type DELETE</span><input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
+        <label><span>Type DELETE to destroy</span><input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
         <div class="form-foot"><p class="note">Removes every version from the live store. Backups keep it until they expire.</p><button class="stop">Destroy all versions</button></div>
     </form>
     @endif

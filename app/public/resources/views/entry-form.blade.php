@@ -87,7 +87,7 @@
     </fieldset>
     @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">
-        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
+        <p class="note">{{ $entry ? 'Saving cancels agent requests that are waiting for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
         <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Add entry' }}</button></div>
     </div>
 </form>
