@@ -80,7 +80,7 @@
 @unless($quietEmpty && ! $finished)<div class="empty">{{ $none }}</div>@endunless
 @else
 <div class="scroll"><table class="board compact-board requests"@unless($finished) data-now="{{ time() }}"@endunless>
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th>@empty($hideEntry)<th scope="col">Entry</th>@endempty<th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
+    <thead><tr><th scope="col" class="c-who">Agent</th><th scope="col" class="c-action">Action</th>@empty($hideEntry)<th scope="col" class="c-entry">Entry</th>@endempty<th scope="col" class="c-state">State</th><th scope="col" class="c-when">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
     <tbody>
     @foreach($rows as $o)
         @php

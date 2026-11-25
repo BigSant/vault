@@ -50,7 +50,7 @@
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td class="who" data-label="Agent"><b class="nobreak">{{ $machine->name }}</b></td>
-            <td class="action end" data-label="Action"><code>{{ $g->action }}</code></td>
+            <td class="action" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td class="approval" data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
@@ -73,15 +73,18 @@
 @else
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/grants"@unless($grants->isEmpty()) data-confirm-from="confirm-grants"@endunless>@csrf
         <label><span>Agent</span><select name="machine_id" required><option value="">Choose an agent</option>@foreach($activeMachines as $m)<option value="{{ $m->id }}"{{ $m->id === old('machine_id', $agent?->id) ? ' selected' : '' }}>{{ $m->name }}</option>@endforeach</select></label>
-        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}{{ $e->production ? ' (production)' : '' }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
+        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" data-entry="{{ $e->name }}" data-project="{{ $e->project }}" data-env="{{ $e->environment }}" data-sign="{{ $e->production ? 'prod' : (mb_strtolower($e->environment) === 'stage' ? 'stage' : '') }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}{{ $e->production ? ' (production)' : '' }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
         <label><span>Action</span><select name="action" required><option value="">Choose an action</option>@foreach($actions as $id => $a)@php $required = \App\Vault\EntryTypes::actionFields($a['kind']); @endphp<option value="{{ $id }}" data-fields="{{ implode(',', $required) }}" @selected(old('action') === $id)>{{ $id }}</option>@endforeach</select></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 1) }}" required></label>
-        <label class="check"><input type="checkbox" name="approval" value="1" @checked(old('approval', !session()->hasOldInput()))> Ask me before every run</label>
+        <label class="check"><input type="checkbox" name="approval" value="1" @checked(old('approval', !session()->hasOldInput()))> Require owner approval for every run</label>
         @if($grants->isEmpty())
             @include('confirm-inline', ['verb' => 'grant this action'])
         @else
             @include('confirm-inline', ['verb' => 'grant this action', 'shared' => 'confirm-add-grant', 'primary' => 'confirm-grants', 'primaryShown' => true, 'fallback' => true])
         @endif
+        {{-- What a held "Add grant" is about: app.js fills the marked parts from the form and shows the line beside
+             the held button in the password block, as its description (like a held request decision). --}}
+        <template data-held-summary><b class="name" data-held-value="machine_id"></b> may run <code data-held-value="action"></code> <span class="sep" aria-hidden="true">·</span> <span class="name" data-held-value="entry_id" data-held-attr="entry"></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak"><span class="name" data-held-value="entry_id" data-held-attr="project"></span> / <span data-held-sign="entry_id"></span></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">valid for <span data-held-value="days" data-held-unit="day"></span></span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak" data-held-check="approval" data-on="asks every time" data-off="runs without asking"></span></template>
         <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button></div>
     </form>
 @endif

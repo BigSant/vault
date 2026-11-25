@@ -29,6 +29,9 @@ Use these words in every UI text. Code names may differ.
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
 - **Password confirmation** — the one name for the 5-minute confirmation before sensitive actions (Account row,
   the confirm page, the inline field). Not "identity", not "sensitive actions".
+- **Entry details** — what a viewer sees of an entry. Not "metadata".
+- Buttons that add a row to an editable table read "+ Add a field", "+ Add an environment". Copy uses straight
+  apostrophes.
 - **Sign out** — not "Lock". Create actions in the signed-in UI: headings and links "Add a/an X", submit
   buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **End date (UTC)** as the column head for agent and grant end dates (rows say Expires, Expired or Revoked).
   **rotation due**. Password fields are labelled **Current password**.
@@ -88,18 +91,26 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Stats (decided, final):** desktop shows all four as stats (active entries, rotation due →, production, used by
   agents in 7 days). On phone only the two actionable numbers stay stats (active entries, rotation due →); production
   and agent use follow as one small summary line ("3 production · 2 used by agents in 7 days"). Reviewers disagreed
-  both ways; do not reopen it. While the rotation-due filter is on, its stat is underlined and says "Clear ×".
+  both ways; do not reopen it. On desktop the four are equal columns across the strip. While the rotation-due
+  filter is on, its stat is underlined and says "Clear ×".
+  **Rotation-due count (decided):** the stat's link keeps the search and the project, environment and type filters,
+  so its number is counted inside them (`Workspace::index`): it is what the link will show. While any of them is
+  on, the label reads "rotation due in this view". The other three stats stay workspace totals. The phone summary
+  keeps "used by agents, 7 days": "in the past 7 days" does not fit its one line at 390 px.
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
-  wait), details (the facts table), secret values (reveal; while values are on screen a plain "Hide values" button
+  wait), details (the facts table; a viewer gets the note "Viewers see entry details only." under it and no Secret
+  values section), secret values (reveal; while values are on screen a plain "Hide values" button
   conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again"
   ("Reveal version N again" under an older version); the values hide by themselves after 30 seconds either way, and
   then the focus moves to that button only when it stood on a Copy of these values or on "Hide values", and stays
   where it is otherwise). On phones, where the jump links are a closed drawer, a person who may reveal gets
-  "Secret values" as a link beside the drawer: one tap to the values, while waiting requests stay the first
+  "Secret values ↓" as a boxed link (no underline) beside the drawer: one tap to the values, while waiting requests stay the first
   section (the open drawer lists the link itself, versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
   Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
   ("Request activity for this entry →", "All activity for this entry →").
+  **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
+  cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
 - `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
   "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
   update form, where the type is fixed) fetches the form again and swaps only the Type options and the type field
@@ -133,14 +144,18 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
   copied, every link out of that page (header, tabs, both next steps) and Sign out asks "Token copied?" in the
-  two-step pattern; a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
+  two-step pattern (an armed link reads "Leave this page" and is named "Leave this page: <link text>"); a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
   The ways out that are not links of the page (Back, reload, closing the tab) get the browser's own question from
   a `beforeunload` handler, registered only while the token is unsaved: a copy that worked, "I've saved it" and a
   departure confirmed in the page (the second press of an armed link or of Sign out) remove it. The visible
   warning stays. An armed header mark is a button like the armed nav links, not the wordmark.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
-  and the "Add a grant" form (pre-selected from the filter). The shared password block (`confirm-grants`) stands
-  above the filter bar, so the bar, its status line and the board stay together.
+  and the "Add a grant" form (pre-selected from the filter; its checkbox reads "Require owner approval for every
+  run"). The shared password block (`confirm-grants`) stands above the filter bar, so the bar, its status line and
+  the board stay together. A held "Add grant" keeps its context like a held request decision: beside the button
+  the block says "<agent> may run <action> · <entry> · <project> / <environment> · valid for N days · asks every
+  time" (the form's own `<template data-held-summary>`, filled from its fields by app.js and following them while
+  held); it is the button's description (`aria-describedby`).
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)
@@ -150,7 +165,7 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   rule 4): one shared password block (`confirm-members`) above the board is the page's one confirmation state
   ("Password confirmed until …") and, once expired, its one password field. An action pressed then is held under a
   button that names it, "Change Dana's role to Editor" (the role chosen in the row, which stays chosen and can
-  still be changed), "Remove Dana" or "Add member: Dana"; Remove still asks its two-step question first, and the
+  still be changed; the name keeps its case together with its "'s"), "Remove Dana" or "Add member: Dana"; Remove still asks its two-step question first, and the
   held button does not ask again. The "Add a member" form only points to that field when the confirmation has expired.
 
 ### Setup (owner, editor)
@@ -175,7 +190,7 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 - `/account` — who you are and "Sign out" as a plain button in the head row beside the h1 (no section of its
   own), the password confirmation state (while needed the facts row is the chip and the link "Confirm your
-  password", nothing more; what it is for is said once, by the card's subtitle), "Security" (the confirm form
+  password", which puts the focus in the password field, nothing more; what it is for is said once, by the card's subtitle), "Security" (the confirm form
   while a confirmation is needed, and change password; the h2 is the same in both states; while a confirmation is
   needed "Change sign-in password" is a closed `details.fold`, so the page shows one password field at rest; a
   `<summary>` never holds a heading, the fold's name is a span with the h3 look), the workspaces you belong to
@@ -189,7 +204,9 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
   `Referrer-Policy: no-referrer` hides the Referer, the return path falls back to the last page shown (kept in the
-  session as `last_page`). A wrong password re-renders the form with 401.
+  session as `last_page`). A wrong password re-renders the form with 401. On phones the solid button comes first
+  and Cancel stands under it, both at the right edge (`data-phone-first`: CSS order, and app.js moves the button
+  before Cancel in the document at that width, so the focus order is the order seen).
 - `/workspaces/new` — create a workspace.
 
 ## Ownership of files
@@ -254,8 +271,8 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    one while a block is deferred), its message links to and is repeated under that block's field, the focus goes
    to the field and the action that failed is held again under its name. The one exception: when the form came
    back with a secret field emptied (the summary says "Secret fields are not refilled." and carries
-   `data-unfilled`), the action is not held again and the focus goes to that emptied field, so the form is never
-   sent without it. Without script
+   `data-unfilled`), the action is not held again and the focus goes to that emptied field (a password input, or
+   a waiting request's site MFA code), so the form is never sent without it. Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
    requests, the block above them carries "Password confirmed until …" and, once expired, the page's one password field;
    the Reveal block (`'primary' => 'confirm-decide'`) then shows nothing while valid and a pointer to that field
@@ -275,7 +292,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
    never behind a sideways scroll. Every other board switches at 900 px. A request card reads: agent "requests"
    action ("requested" in the history, where the row is finished); entry · project / environment; "Request 1a2b3c4d" with the state at the right; the times; the controls.
-   On phone everything pressed is at least 40 px high; a link that shares its line with text (a link in a card,
+   **One grant card** (Grants below 1180 px, an entry's Agent access below 900 px): line 1 the agent and the action
+  together with the state chip at the top right, where the Identities card has it; line 2 the entry · project /
+  environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right (Grants only). The
+  chip is out of the flow, so a long name or action wraps under it and never moves it.
+  **Requests columns:** as tables, "Requests waiting for you" and "Recent requests" share the widths of their
+  leading columns (Agent, Action, Entry, State, Requested), so each column starts at the same place in both; the
+  last column (Decision or Finished) takes the rest. The site MFA field is 9em wide to make that room.
+  On phone everything pressed is at least 40 px high; a link that shares its line with text (a link in a card,
    `.more-link` after a note) gets that height from padding, not from a taller line.
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished or inactive) and `is-wait` (waiting
    for a decision or still running). A row whose thing has no state (a person on Members) is `is-plain`: no
@@ -287,7 +311,9 @@ Every page follows these, so the same kind of thing looks and behaves the same e
     empty state linking to where to fix it instead of an enabled submit.
 11. **Secret inputs** (a password input in `.with-button`) get a Reveal/Hide toggle from app.js. It is switched
     off while the field is empty, on as soon as something is typed or generated, and a field emptied while shown
-    is masked again.
+    is masked again. Every field that sets a new password has it: an entry's secret fields, a member's initial
+    password, Account's "New password" and "Repeat new password", and the first owner's Password. Fields that ask
+    for the current password do not.
 
 ## Additions to the ops design system
 
@@ -313,7 +339,7 @@ names in one mapping in `activity.blade.php`; the code stays as secondary text (
 the card leads with the readable name and its outcome, then the subject, then when and who). Date fields are text
 fields in ISO form, never the browser's date picker (its display format follows the device, not the data):
 `type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"`, with "UTC, YYYY-MM-DD" in the label; the server
-validates the date. No `inputmode="numeric"`: a phone's number pad may have no "-". app.js (`isoDate`) rewrites
+validates the date. An import that fails names the item by its place in the array ("Item 2: …"), never its values. No `inputmode="numeric"`: a phone's number pad may have no "-". app.js (`isoDate`) rewrites
 `YYYYMMDD`, `YYYY/MM/DD` and `YYYY.MM.DD` to `YYYY-MM-DD` when the field changes, loses the focus or its form is sent.
 
 

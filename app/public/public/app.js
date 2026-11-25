@@ -108,7 +108,8 @@ const fieldName = input => input.closest('.field, label')?.querySelector('label 
 // Two-step confirmation in place. The first press turns the button into its armed wording with a Cancel beside it and
 // the question as the note; go() runs on the second press. Returns the controls of one button's step.
 const armedText = text => 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
-const twoStep = (question, armed = armedText) => {
+// armedName: the armed control's accessible name, from what it was called before ("Leave this page: Members").
+const twoStep = (question, armed = armedText, armedName = name => 'Confirm: ' + name) => {
   let step = null;
   let armedAt = 0;
   const disarm = focus => {
@@ -140,7 +141,7 @@ const twoStep = (question, armed = armedText) => {
     button.before(box);
     box.append(note, button, cancel);
     button.textContent = armed(text);
-    button.setAttribute('aria-label', 'Confirm: ' + (label || text));
+    button.setAttribute('aria-label', armedName(label || text));
     button.classList.add('armed');
     step = { box, button, nodes, label };
     armedAt = Date.now();
@@ -450,10 +451,33 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   // What the held action is about (a request: agent, action, entry, project / environment, id), copied from the
   // <template data-held-summary> beside the held form. It is the held button's description.
   const heldWhat = box.querySelector('[data-held-what]');
+  // A template inside the form (Add a grant) describes the form itself: its marked parts are filled from the
+  // form's fields. data-held-value="<field>": the chosen option's text, or its data-<data-held-attr>, or the value
+  // (with data-held-unit, "1 day" / "3 days"); data-held-sign="<field>": the environment sign of the chosen
+  // option; data-held-check="<field>": data-on or data-off.
+  const fillWhat = (root, form) => {
+    const chosen = name => { const field = form.elements[name]; return field?.selectedOptions ? field.selectedOptions[0] : null; };
+    root.querySelectorAll('[data-held-value]').forEach(el => {
+      const option = chosen(el.dataset.heldValue);
+      const value = option ? (option.value ? (el.dataset.heldAttr ? option.dataset[el.dataset.heldAttr] : option.dataset.text || option.textContent.trim()) : '') : form.elements[el.dataset.heldValue]?.value.trim();
+      el.textContent = value ? value + (el.dataset.heldUnit ? ' ' + el.dataset.heldUnit + (value === '1' ? '' : 's') : '') : '\u2014';
+    });
+    root.querySelectorAll('[data-held-sign]').forEach(el => {
+      const option = chosen(el.dataset.heldSign);
+      if (!option?.value) { el.textContent = '\u2014'; return; }
+      el.className = ('sign ' + (option.dataset.sign || '')).trim();
+      el.textContent = option.dataset.env || '';
+      if (option.dataset.sign === 'prod' && (option.dataset.env || '').toLowerCase() !== 'production') { const spoken = document.createElement('span'); spoken.className = 'sr-only'; spoken.textContent = ' (production)'; el.append(spoken); }
+    });
+    root.querySelectorAll('[data-held-check]').forEach(el => { el.textContent = form.elements[el.dataset.heldCheck]?.checked ? el.dataset.on : el.dataset.off; });
+  };
   const showWhat = form => {
     if (!heldWhat) return;
-    const source = form?.parentElement?.querySelector(':scope > template[data-held-summary]');
-    heldWhat.replaceChildren(...(source ? [document.importNode(source.content, true)] : []));
+    const own = form?.querySelector(':scope > template[data-held-summary]');
+    const source = own || form?.parentElement?.querySelector(':scope > template[data-held-summary]');
+    const content = source ? document.importNode(source.content, true) : null;
+    if (own) fillWhat(content, form);
+    heldWhat.replaceChildren(...(content ? [content] : []));
     heldWhat.hidden = !source;
     // The summary is the held button's description only while it says something.
     if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');
@@ -501,7 +525,10 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   // The field that is part of the wording was changed while its action is held: the button says the new choice.
   document.addEventListener('change', event => {
     const held = state.held;
-    if (!held?.button?.dataset.heldField || !held.form.contains(event.target)) return;
+    if (!held || !held.form.contains(event.target)) return;
+    // A summary made from the form's fields (Add a grant) follows them.
+    if (held.form.querySelector(':scope > template[data-held-summary]')) showWhat(held.form);
+    if (!held.button?.dataset.heldField) return;
     held.name = heldName(held.form, held.button);
     showHeld(held.name, held.button);
   });
@@ -576,11 +603,12 @@ if (guard) {
   addEventListener('beforeunload', beforeLeave);
   const allowLeave = () => removeEventListener('beforeunload', beforeLeave);
   const steps = [];
-  const step = armed => { const made = twoStep(guard.dataset.leaveGuard, armed); steps.push(made); return made; };
+  const step = (armed, armedName) => { const made = twoStep(guard.dataset.leaveGuard, armed, armedName); steps.push(made); return made; };
   const only = keep => steps.forEach(other => { if (other !== keep) other.disarm(false); });
   document.querySelectorAll('a[href]:not(.skip)').forEach(link => {
     if (link.getAttribute('href').startsWith('#')) return;
-    const mine = step(() => 'Leave this page');
+    // The armed link reads "Leave this page"; its accessible name also says where it leads.
+    const mine = step(() => 'Leave this page', name => 'Leave this page: ' + name);
     link.addEventListener('click', event => {
       if (!guarding || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
       if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); else allowLeave(); return; }
@@ -980,6 +1008,30 @@ if (accountMenu && mainNav) {
   placeAccount();
   wide.addEventListener('change', placeAccount);
 }
+// A button row whose main button comes first on phones (the confirm page: the solid button, Cancel under it). CSS
+// shows it first (order); here it is also moved first in the document at that width, so the focus order is the order
+// seen. The focus stays where it was.
+document.querySelectorAll('[data-phone-first]').forEach(row => {
+  const main = row.querySelector(':scope > ' + row.dataset.phoneFirst);
+  if (!main) return;
+  const place = () => {
+    const first = !wide.matches;
+    if (first === (row.firstElementChild === main)) return;
+    const focused = row.contains(document.activeElement) ? document.activeElement : null;
+    if (first) row.prepend(main); else row.append(main);
+    focused?.focus({ preventScroll: true });
+  };
+  place();
+  wide.addEventListener('change', place);
+});
+// A link that leads to a form names the field to start in (data-focus: Account, "Confirm your password").
+document.querySelectorAll('a[data-focus]').forEach(link => link.addEventListener('click', event => {
+  const field = document.getElementById(link.dataset.focus);
+  if (!field || field.disabled || !field.checkVisibility?.()) return;
+  event.preventDefault();
+  field.scrollIntoView({ block: 'center' });
+  field.focus({ preventScroll: true });
+}));
 // Header menus are <details>: only one stays open, and a click outside or Escape closes it.
 const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {
@@ -1124,7 +1176,8 @@ if (summary) {
     // empty. The action is not held again, or the new password and Enter would send the form without it: the
     // focus goes to that secret field, which is filled in first.
     const unfilled = summary.hasAttribute('data-unfilled');
-    const cleared = unfilled ? [...form.elements].find(el => el.matches('input[type=password]') && el.name !== 'confirm_password' && usable(el) && el.value === '') : null;
+    // A site MFA code is such a field too (input[name=code]: never refilled).
+    const cleared = unfilled ? [...form.elements].find(el => el.matches('input[type=password], input[name=code]') && el.name !== 'confirm_password' && usable(el) && el.value === '') : null;
     if (!unfilled && button && !button.disabled && form.checkValidity()) wrongPassword.hold(form, button, message + '. Enter your current password again');
     else if (cleared) {
       say(message + '. Secret fields are not refilled: enter ' + fieldName(cleared) + ' again, then your current password.');

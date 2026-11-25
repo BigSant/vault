@@ -41,9 +41,6 @@ final class Workspace
         $archivedCount = (clone $query)->where('entries.state', 'archived')->count();
         $query->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active');
         $scopeCount = (clone $query)->count();
-        if ($r->query('state') === 'due') {
-            $query->where('entries.rotate_at', '<', now());
-        }
         foreach (['project' => 'projects.id', 'environment' => 'environments.id', 'type' => 'entries.type'] as $filter => $column) {
             if ($r->filled($filter)) {
                 $query->where($column, $r->query($filter));
@@ -56,13 +53,19 @@ final class Workspace
                 $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
             });
         }
+        // The rotation-due stat links to the list with the search and the project, environment and type filters kept,
+        // so its number is counted inside them: it is what the link will show.
+        $dueInView = $space && $r->query('state') !== 'archived' ? (clone $query)->whereNotNull('entries.rotate_at')->where('entries.rotate_at', '<', now())->count() : 0;
+        if ($r->query('state') === 'due') {
+            $query->where('entries.rotate_at', '<', now());
+        }
 
         $query->addSelect('environments.production');
         $active = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('projects.workspace_id', $id)->where('entries.state', 'active');
         $stats = $space ? [
             'active' => $active->count(),
-            'due' => (clone $active)->whereNotNull('entries.rotate_at')->where('entries.rotate_at', '<', now())->count(),
+            'due' => $dueInView,
             'production' => (clone $active)->where('environments.production', true)->count(),
             'used' => (clone $active)->whereExists(fn ($q) => $q->from('operations')->whereColumn('operations.entry_id', 'entries.id')->where('operations.state', 'succeeded')->where('operations.updated_at', '>=', now()->subDays(7)))->count(),
         ] : ['active' => 0, 'due' => 0, 'production' => 0, 'used' => 0];
@@ -260,12 +263,12 @@ final class Workspace
         $waitingCount = 0;
         if ($role === 'owner') {
             $query = $this->requestRows($space->id)->where('operations.entry_id', $id);
-            [$waiting, $finished] = $this->requestSections($query, 25);
+            [$waiting, $finished] = $this->requestSections($query, 10);
             $waitingCount = $waiting->count();
             $operations = $waiting->concat($finished);
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
                 ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get()->each(fn ($grant) => $this->grantStatus($grant));
-            $events = $this->entryEvents(DB::table('audit')->where('workspace_id', $space->id), $id)->orderByDesc('created_at')->orderByDesc('id')->limit(30)->get();
+            $events = $this->entryEvents(DB::table('audit')->where('workspace_id', $space->id), $id)->orderByDesc('created_at')->orderByDesc('id')->limit(10)->get();
             $this->resolveEvents($space->id, $events);
         }
 

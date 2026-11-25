@@ -10,7 +10,7 @@
         @if($confirmedUntil)
             <span class="chip ok">valid</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
         @else
-            <span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a>
+            <span class="chip muted">needed</span> <a href="#confirm" data-focus="account-confirm-password">Confirm your password</a>
         @endif
     </td></tr>
 </table>
@@ -25,7 +25,7 @@
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
         <input type="hidden" name="return" value="/account">
         <h3>Password confirmation<small>Valid for 5 minutes. Needed to reveal values and to change entries, access or setup.</small></h3>
-        <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
+        <label><span>Current password</span><input type="password" id="account-confirm-password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
         <div class="form-foot"><button class="go">Confirm</button></div>
     </form>
     <details class="fold password-fold"@if(session('error_form') === '/password') open @endif>
@@ -38,8 +38,9 @@
     @endunless
         {{-- With the fold open two "Current password" fields are on the page: this one says what it is for. --}}
         <label><span>Current password @unless($confirmedUntil)<small>to change it</small>@endunless</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
-        <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
-        <label><span>Repeat new password</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
+        {{-- New passwords can be checked before they are sent: app.js adds Reveal/Hide to a password input in .with-button. --}}
+        <div class="field"><label for="new-password"><span>New password</span></label><span class="with-button"><input id="new-password" name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></span></div>
+        <div class="field"><label for="new-password-repeat"><span>Repeat new password</span></label><span class="with-button"><input id="new-password-repeat" name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></span></div>
         <div class="form-foot"><p class="note">At least 14 characters. Signs out every session, this one too.</p><button>Change password and sign out</button></div>
     </form>
     @unless($confirmedUntil)

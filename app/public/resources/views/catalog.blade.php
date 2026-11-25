@@ -22,6 +22,10 @@
         ? trim(($projects->firstWhere('id', $activeEnv->project_id)?->name ?? '').' / '.$activeEnv->name, ' /')
         : null;
     $activeType = request()->filled('type') ? ($typeNames[request('type')] ?? request('type')) : null;
+    // The rotation-due number is counted inside the search and the project, environment and type filters, which its
+    // link keeps: while any of them is on, the label says so.
+    $dueScoped = request()->filled('q') || request()->filled('project') || request()->filled('environment') || request()->filled('type');
+    $dueLabel = $dueScoped ? 'rotation due in this view' : 'rotation due';
 @endphp
 <div class="head">
     <h1>Entries</h1>
@@ -36,7 +40,7 @@
 @unless($archived)
 <div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
-    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span>@if($dueOnly) <span class="stat-clear">Clear<span class="sr-only"> filter</span> ×</span>@endif</a>
+    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}{{ $dueScoped ? ' is-scoped' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? $dueLabel : $dueLabel.' →' }}</span>@if($dueOnly) <span class="stat-clear">Clear<span class="sr-only"> filter</span> ×</span>@endif</a>
     <div class="stat"><b>{{ $prodCount }}</b><span>in production</span></div>
     <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents, 7 days</span></div>
 </div>

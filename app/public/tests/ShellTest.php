@@ -163,7 +163,7 @@ final class ShellTest extends TestCase
         $this->get($this->base.'/requests')->assertOk()
             ->assertSeeInOrder(['Recent requests', '<a class="more-link" href="'.$this->base.'/audit?group=request">All request activity →</a>'], false);
         // Account, confirmation needed: chip and link only in the facts row; the card keeps its subtitle; no foot note; no Sign out section.
-        $this->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a>', false)
+        $this->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span> <a href="#confirm" data-focus="account-confirm-password">Confirm your password</a>', false)
             ->assertDontSee('to reveal values or change access')->assertDontSee('Reveals and access changes are written')
             ->assertSee('<h3>Password confirmation<small>Valid for 5 minutes.', false)->assertDontSee('<h2>Sign out</h2>', false)->assertSee('aria-label="Sign out of this session"', false);
         // No heading inside a summary, in any view.
@@ -176,7 +176,7 @@ final class ShellTest extends TestCase
         $this->assertSame(1, substr_count($entry, 'Viewers see entry details only.'));
         $this->assertStringNotContainsString('viewer role', $entry);
         // Phones: the values are one tap from the closed drawer, for a person who may reveal them.
-        $this->assertStringContainsString('@if($canEdit)<a class="jump-quick" href="#values">Secret values</a>@endif', $entry);
+        $this->assertStringContainsString('@if($canEdit)<a class="jump-quick" href="#values">Secret values <span aria-hidden="true">↓</span></a>@endif', $entry);
         $this->assertStringContainsString('Used by {{ $plural($used, \'entry\', \'entries\') }}, so it cannot be removed.', (string) file_get_contents(resource_path('views/types.blade.php')));
         $style = (string) file_get_contents(public_path('app.css'));
         $this->assertStringContainsString('.form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left', $style);
@@ -378,7 +378,7 @@ final class ShellTest extends TestCase
             ->assertSee('<button class="go" data-held-name="Add member: " data-held-field="name">Add member</button>', false)
             // The add form only points to that field; a field of its own exists without script alone.
             ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Password confirmation expired. <a class="more-link" href="#confirm-members-password" data-confirm-goto="confirm-members">Go to the password field <span aria-hidden="true">↑</span></a></span>', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
-            ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana">Save role</button>', false)
+            ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana\'s">Save role</button>', false)
             ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
             ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
             ->assertSee('<small>Add another owner before changing your role.</small>', false)
@@ -622,12 +622,68 @@ final class ShellTest extends TestCase
         $this->assertSame('', $end('<p>No heading</p>'));
     }
 
+    public function test_round_14_one_grant_card_shared_request_columns_and_small_copy(): void
+    {
+        $view = fn (string $name) => (string) file_get_contents(resource_path('views/'.$name.'.blade.php'));
+        $css = (string) file_get_contents(public_path('app.css'));
+        $js = (string) file_get_contents(public_path('app.js'));
+        // One grant card on phones: Grants and an entry's Agent access use the same cells and the same rules; the
+        // state chip is at the top right, out of the flow, as on Identities.
+        foreach (['grants' => $view('grants'), 'access' => $view('entry')] as $board => $source) {
+            foreach (['<td class="who" data-label="Agent">', '<td class="action" data-label="Action">', '<td class="approval" data-label="Approval">', '<td class="state" data-label="State">'] as $cell) {
+                $this->assertStringContainsString($cell, $source, $board.' '.$cell);
+            }
+            foreach (['tr{position:relative;align-items:center}', ' td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}', ' td.action{order:0;flex:0 1 auto;margin-right:84px}',
+                ' td.state{position:absolute;top:10px;right:12px}', ' td.approval{order:2;flex-basis:100%}'] as $rule) {
+                $this->assertStringContainsString('.board.'.$board.($rule[0] === ' ' ? '' : ' ').$rule, $css, $board.$rule);
+            }
+        }
+        // Requests: the two boards share the widths of their leading columns.
+        $this->assertStringContainsString('<th scope="col" class="c-who">Agent</th><th scope="col" class="c-action">Action</th>@empty($hideEntry)<th scope="col" class="c-entry">Entry</th>@endempty<th scope="col" class="c-state">State</th><th scope="col" class="c-when">Requested (UTC)</th>', $view('operations'));
+        foreach (['c-who{width:97px}', 'c-action{width:146px}', 'c-entry{width:166px}', 'c-state{width:203px}', 'c-when{width:200px}'] as $rule) {
+            $this->assertStringContainsString('.board.requests th.'.$rule, $css);
+        }
+        // Entries: four equal stat columns on desktop.
+        $this->assertStringContainsString('@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', $css);
+        // A viewer has no Secret values section.
+        $this->assertStringContainsString("@if(!\$isEditor)\n<p class=\"note\">Viewers see entry details only.</p>\n@else\n<h2 id=\"values\">Secret values</h2>\n@if(!isset(\$secret) && !\$canEdit)", $view('entry'));
+        // Grants: the add form describes itself for the held button.
+        $grants = $view('grants');
+        foreach (['<template data-held-summary><b class="name" data-held-value="machine_id"></b> may run <code data-held-value="action"></code>', 'data-held-value="entry_id" data-held-attr="entry"', 'data-held-sign="entry_id"',
+            'valid for <span data-held-value="days" data-held-unit="day"></span>', 'data-held-check="approval" data-on="asks every time" data-off="runs without asking"', 'Require owner approval for every run',
+            'data-entry="{{ $e->name }}" data-project="{{ $e->project }}" data-env="{{ $e->environment }}"'] as $part) {
+            $this->assertStringContainsString($part, $grants);
+        }
+        $this->assertStringNotContainsString('Ask me before every run', $grants);
+        $this->assertStringContainsString("const own = form?.querySelector(':scope > template[data-held-summary]');", $js);
+        // Small copy and behaviour.
+        $this->assertStringContainsString("name => 'Leave this page: ' + name", $js);
+        $this->assertStringContainsString("el.matches('input[type=password], input[name=code]')", $js);
+        $this->assertStringContainsString("document.querySelectorAll('a[data-focus]')", $js);
+        $this->assertStringContainsString('<div class="controls" data-phone-first=".action-name"><a class="btn" href="{{ $return }}">Cancel</a>', $view('confirm'));
+        $this->assertSame(2, substr_count($view('confirm'), 'data-phone-first=".action-name"'));
+        $this->assertStringContainsString('.form-foot .controls>.action-name{order:-1}', $css);
+        $this->assertStringContainsString('Viewers see entry details.', $view('members'));
+        $this->assertStringNotContainsString('metadata', $view('members'));
+        $this->assertSame(2, substr_count($view('types'), '>+ Add a field</button>'));
+        $this->assertStringContainsString('aria-label="Add an environment to the template">+ Add an environment</button>', $view('structure'));
+        $this->assertStringContainsString('placeholder="e.g. qa" aria-label="Additional environment name"', $view('structure'));
+        $this->assertSame(2, substr_count($view('account'), '<span class="with-button"><input id="new-password'));
+        // Straight apostrophes in every text of the UI.
+        foreach (glob(resource_path('views/*.blade.php')) as $file) {
+            $this->assertStringNotContainsString('’', (string) file_get_contents($file), basename($file));
+        }
+        $this->assertStringNotContainsString('’', $js);
+    }
+
     public function test_requests_refresh_in_place_regions_and_round_11_wording(): void
     {
         // Setup mode: the activation code comes first.
         $this->get('/login')->assertOk()->assertSeeInOrder(['<span>Activation code</span>', '<span>Name</span>', '<span>Email</span>', '<span>Password</span>'], false)
             // The note under the activation code is that field's description.
-            ->assertSeeInOrder(['<div class="field"><label for="bootstrap-code">', 'id="bootstrap-code"', 'aria-describedby="bootstrap-code-hint"></div>', '<p class="note" id="bootstrap-code-hint">'], false);
+            ->assertSeeInOrder(['<div class="field"><label for="bootstrap-code">', 'id="bootstrap-code"', 'aria-describedby="bootstrap-code-hint"></div>', '<p class="note" id="bootstrap-code-hint">'], false)
+            // The new password can be checked before it is sent: app.js adds Reveal/Hide to a password input in .with-button.
+            ->assertSee('<div class="field"><label for="setup-password"><span>Password</span></label><span class="with-button"><input id="setup-password" type="password" name="password" required minlength="14"', false);
         $this->signIn('owner');
         // The request sections sit in regions app.js replaces in place. The button and the time of the last check sit beside the
         // waiting heading, outside every region; without script the button is a plain link.

@@ -219,7 +219,7 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 /* Facts tables and short two-column lists are as wide as a form card (--card); boards end at --wide. */
 .facts{width:100%;max-width:var(--card);border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
 .capped{max-width:var(--card)}
-.facts th{width:16em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
+.facts th{width:18em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
 .facts td{padding:9px 14px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere}
 .facts tr:last-child th,.facts tr:last-child td{border-bottom:none}
 .box{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:12px 16px}
@@ -370,7 +370,9 @@ details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .jump-links{gap:0 18px;padding:0 12px 8px}
 /* Beside the closed drawer: one tap to the values. The open drawer lists the same link, so this one goes. */
 nav.subnav:has(>.jump-quick){flex-wrap:nowrap;align-items:flex-start;gap:8px}
-nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap}
+nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap;text-decoration:none;color:var(--ink)}
+nav.subnav>a.jump-quick:hover{border-color:var(--amber);color:var(--amber)}
+nav.subnav>a.jump-quick span{margin-left:6px;color:var(--amber)}
 nav.subnav>details.jump[open]+a.jump-quick{display:none}
 }
 @media (min-width:901px){nav.subnav>a.jump-quick{display:none}}
@@ -472,7 +474,17 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
    field, which needs eight digits and no more (its label may run on above the button). The field has one width
    wherever the board is a table: on Requests, and on an entry page, where the cell would have room for more. */
 .board.requests td.entry{min-width:12.8em}
-.board.requests form.mfa label{flex:0 0 11.5em;min-width:0}
+.board.requests form.mfa label{flex:0 0 9em;min-width:0}
+/* "Requests waiting for you" and "Recent requests" are two boards with the same leading columns: Agent, Action,
+   Entry, State and Requested have one width each, so a column starts at the same place in both, and the last
+   column (Decision or Finished) takes what is left. The widths are what the fullest cell needs: a nine-letter
+   agent name, a sixteen-letter action and entry name, "waiting for approval" with its lamp, "Expires" with its
+   date. Longer data widens its own board only. */
+.board.requests th.c-who{width:97px}
+.board.requests th.c-action{width:146px}
+.board.requests th.c-entry{width:166px}
+.board.requests th.c-state{width:203px}
+.board.requests th.c-when{width:200px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .nobreak{white-space:nowrap}
@@ -492,6 +504,11 @@ label.indent{margin-left:min(14em,30%)}
 .form-foot:has(.action-name) .controls{flex:0 1 auto;min-width:0;max-width:100%}
 .form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4}
 button.action-name .name{font-weight:400}
+/* Phones: the solid button first, Cancel under it, both at the right edge. */
+@media (max-width:900px){
+.form-foot:has(.action-name) .controls{flex-direction:column;align-items:flex-end;flex-wrap:nowrap}
+.form-foot .controls>.action-name{order:-1}
+}
 /* A button in a row with a field (Members Save, Continue sign-in, Generate) is as tall as the field on wide screens. */
 @media (min-width:901px){
 :is(.controls,.inline,.with-button,.toolbar):has(>:is(input:not([type=hidden]),select),>label>:is(input,select))>:is(button,.btn){min-height:36px}
@@ -743,12 +760,21 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
 /* Entry page: versions and agent access */
 .board.compact-board td.act{margin-left:0}
 .board.versions td.act:not(:has(button)){display:none}
-.board.access td.state{order:-1;margin-left:auto}.board.access td.end{order:-2;margin-left:0}.board.access td:first-child{order:-3}
+/* Agent access is the grant card of Grants without the entry line and without Revoke: agent and action, the state
+   at the top right; approval; the end date. (Grants states the same card below, for its own breakpoint.) */
+.board.access tr{position:relative;align-items:center}
+.board.access td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
+.board.access td.action{order:0;flex:0 1 auto;margin-right:84px}
+.board.access td.state{position:absolute;top:10px;right:12px}
+.board.access td.approval{order:2;flex-basis:100%}
+.board.access td.when{order:4;flex-basis:100%}
 }
 
 /* entries area */
 .entry-search label.grow{flex:1;min-width:0}.entry-search button{width:auto}
 @media (min-width:901px){.toolbar label.grow{min-width:15rem}}
+/* Desktop: the four stats are four equal columns across the strip. */
+@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 24px}}
 /* A stat that filters the list (rotation due). */
 .stat-link{display:block;color:inherit;text-decoration:none;border-radius:3px}
 .stat-link:hover{text-decoration:none}
@@ -814,6 +840,8 @@ form.action details.import-ref{background:var(--panel-2)}
 .entry-stats:has(>.stat-link.is-on)>.stat:first-child{width:calc(42% - 6px)}
 .entry-stats>.stat-link.is-on{width:calc(58% - 6px);white-space:nowrap}
 .entry-stats>.stat-link.is-on>span:first-of-type{margin-right:0}
+/* "rotation due in this view" is too long for one line with "Clear ×": the label wraps, "Clear ×" stays whole. */
+.entry-stats>.stat-link.is-on.is-scoped{white-space:normal}
 .entry-stats>.stat:nth-child(n+3){display:inline;font-size:12px;color:var(--dim)}
 .entry-stats>.stat:nth-child(n+3) b{display:inline;margin-right:.5em;font:700 12px/1.5 var(--mono);color:var(--ink)}
 .entry-stats>.stat:nth-child(n+3) span{letter-spacing:0;text-transform:none}
@@ -931,16 +959,17 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
-/* Grants: agent and action, the entry, approval and state, then the end date with Revoke at the right. Every line
-   is a flex line of its own, so a long action code on the first line never decides how much room the date has
-   beside Revoke on the last: "Expires" and its date stay on one line. */
-.board.grants tr{align-items:center}
-.board.grants td.who{order:0;flex:1 1 auto}
-.board.grants td.action{order:0;flex:0 1 auto;margin-left:auto}
+/* The grant card, one everywhere (Grants here; an entry's Agent access states it again at 900 px): line 1 the agent
+   and the action together, with the state chip at the top right, where Identities has it; line 2 the entry with
+   its project / environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right.
+   The chip is out of the flow (84 px are kept free for it on the first line), so a long name or action wraps
+   under it and never pushes it down. Every line is a flex line of its own. */
+.board.grants tr{position:relative;align-items:center}
+.board.grants td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
+.board.grants td.action{order:0;flex:0 1 auto;margin-right:84px}
+.board.grants td.state{position:absolute;top:10px;right:12px}
 .board.grants td.entry{order:1;flex-basis:100%}
-.board.grants td.approval{order:2;flex:1 1 auto}
-.board.grants td.state{order:2;flex:none;margin-left:auto}
-.board.grants tr::before{content:"";order:3;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.grants td.approval{order:2;flex-basis:100%}
 .board.grants td.when{order:4;flex:1 1 0}
 .board.grants td:last-child{order:4;flex:none;margin-left:auto}
 .board.grants td:last-child .controls{margin-top:0}

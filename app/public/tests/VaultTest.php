@@ -386,6 +386,45 @@ final class VaultTest extends TestCase
         return $row['id'];
     }
 
+    public function test_round_14_due_count_in_view_entry_page_caps_and_import_item_errors(): void
+    {
+        $entry = $this->entry();
+        $other = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Other due', 'alias' => 'other-due',
+            'type' => 'api_key', 'secret' => '{"token":"test"}']);
+        DB::table('entries')->whereIn('id', [$entry, $other])->update(['rotate_at' => '2020-11-01 12:00:00']);
+        // No filter: the workspace's number, the plain label.
+        $this->get('/')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 2 && $stats['active'] === 2)
+            ->assertSee('<b>2</b><span>rotation due →</span>', false)->assertDontSeeText('in this view');
+        // Search or a filter on: the number is counted inside them (what the link will show), and the label says so.
+        $this->get('/?q=Other')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 1 && $stats['active'] === 2)
+            ->assertSee('is-scoped', false)->assertSee('<b>1</b><span>rotation due in this view →</span>', false);
+        $this->get('/?q=Other&state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 1)
+            ->assertSee('<b>1</b><span>rotation due in this view</span>', false)->assertSeeText('Showing 1 of 2 entries');
+        $this->get('/?type=missing')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 0);
+        // The state filter alone is the stat's own filter: the number and the label stay.
+        $this->get('/?state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 2)->assertSee('<b>2</b><span>rotation due</span>', false);
+
+        // The entry page lists the last 10 events and the last 10 finished requests; the links lead to the rest.
+        foreach (range(1, 14) as $i) {
+            DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => $this->owner->id, 'event' => 'entry.reveal', 'subject' => $entry, 'outcome' => 'ok', 'created_at' => now()->subMinutes($i)]);
+        }
+        $page = $this->get('/entries/'.$entry)->assertOk()->assertViewHas('events', fn ($events) => $events->count() === 10)
+            ->assertSeeText('The last 10 events for this entry and its requests.')->assertSeeText('All activity for this entry →')
+            ->assertSee('<h2 id="requests">Recent requests</h2>', false)->assertSeeText('Request activity for this entry →');
+        $this->assertStringContainsString('requestSections($query, 10)', (string) file_get_contents(app_path('Http/Workspace.php')));
+
+        // Import: an error names the failing item by its place in the array, never its values.
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $good = ['environment_id' => $this->environment, 'name' => 'Imported', 'alias' => 'imported', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}'];
+        $this->get($url)->assertOk();
+        $this->post($url, ['import' => json_encode([$good, ['name' => 'No environment', 'alias' => 'x', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}']])])
+            ->assertStatus(303)->assertSessionHas('form_errors', fn ($errors) => count($errors['import']) >= 1 && str_starts_with($errors['import'][0], 'Item 2: ')
+                && ! str_contains(json_encode($errors), 'synthetic-value'));
+        $this->assertSame(0, DB::table('entries')->where('name', 'Imported')->count());
+        $this->post($url, ['import' => json_encode([$good, 'text'])])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['import'] === ['Item 2 is not an entry object. Paste a JSON array of 1 to 50 entry objects.']);
+    }
+
     public function test_grant_approval_and_due_filter(): void
     {
         $entry = $this->entry();
@@ -561,7 +600,7 @@ final class VaultTest extends TestCase
         $cases = [
             ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter an initial password for a new user.'],
             ['import', ['import' => '{'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
-            ['import', ['import' => '[[]]'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
+            ['import', ['import' => '[[]]'], 'import', 'Item 1 is not an entry object. Paste a JSON array of 1 to 50 entry objects.'],
         ];
         foreach ($cases as [$page, $input, $field, $message]) {
             $url = $base.'/'.$page;

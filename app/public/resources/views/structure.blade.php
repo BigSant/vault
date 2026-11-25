@@ -131,10 +131,10 @@
             @php $rowName = $env['name'] !== '' ? $env['name'] : 'row '.$loop->iteration; @endphp
             <tr><td data-label=""><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> <span class="phone-only">Production</span></label></td></tr>
         @endforeach
-            <tr data-row-template><td data-label=""><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="Add an environment" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
+            <tr data-row-template><td data-label=""><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="e.g. qa" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
         </tbody>
     </table>
     @include('confirm-inline', ['verb' => 'save this template', 'shared' => 'confirm-template', 'primary' => 'confirm-setup', 'primaryShown' => true, 'fallback' => true])
-    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Environment</button><button data-held-name="Save environment template">Save template</button></div></div>
+    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows" aria-label="Add an environment to the template">+ Add an environment</button><button data-held-name="Save environment template">Save template</button></div></div>
 </form>
 @endsection

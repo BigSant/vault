@@ -32,7 +32,7 @@
 @endphp
 <div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add an entry type</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
-<p class="note">An entry type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
+<p class="note">An entry type defines an entry's encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 
 {{-- One password block for the page, above the entry types: every form below names it (data-confirm-from), so an
      expired confirmation asks here and holds the action under its name ("Save entry type Login"). The add form
@@ -99,7 +99,7 @@
                     </tbody>
                 </table></div>
                 <div class="form-foot"><p class="note">An empty last row is ignored.</p>
-                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Field</button><button aria-label="Save entry type {{ $type->name }}" data-held-name="Save entry type {{ $type->name }}" data-held-lead="Save entry type " data-held-data="{{ $type->name }}">Save entry type</button></div></div>
+                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Add a field</button><button aria-label="Save entry type {{ $type->name }}" data-held-name="Save entry type {{ $type->name }}" data-held-lead="Save entry type " data-held-data="{{ $type->name }}">Save entry type</button></div></div>
             </form>
             @if($used === 0)
                 <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type “{{ $type->name }}”?" data-confirm-from="confirm-types">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}" data-held-name="Remove entry type {{ $type->name }}" data-held-lead="Remove entry type " data-held-data="{{ $type->name }}">Remove entry type</button></form>
@@ -142,6 +142,6 @@
         @else
             @include('confirm-inline', ['verb' => 'add this entry type', 'shared' => 'confirm-add-type', 'primary' => 'confirm-types', 'primaryShown' => true, 'fallback' => true])
         @endif
-        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new" aria-label="Add a field to the new entry type">+ Field</button><button class="go" data-held-name="Add entry type " data-held-field="name">Add entry type</button></div></div>
+        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new" aria-label="Add a field to the new entry type">+ Add a field</button><button class="go" data-held-name="Add entry type " data-held-field="name">Add entry type</button></div></div>
     </form>
 @endsection

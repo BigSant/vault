@@ -11,7 +11,7 @@
      (as on Requests), named by every row form with data-confirm-from. A row action pressed after the confirmation
      expired is held there under a button that names it: "Change Dana's role to Editor" (data-held-field adds the
      role chosen in that row, which stays chosen) or "Remove Dana"; data-held-data marks the person's name, which
-     keeps its case. It is the page's one confirmation state and one password field: "Add a member" names it too
+     keeps its case (with its "'s" in the role change). It is the page's one confirmation state and one password field: "Add a member" names it too
      (held as "Add member: Dana") and only points to it when the confirmation has expired. --}}
 @include('confirm-inline', ['verb' => 'change members', 'ask' => 'Enter your current password, then save a role, remove a member or add a member below.', 'shared' => 'confirm-members'])
 <div class="scroll"><table class="board compact-board members">
@@ -22,7 +22,7 @@
         @else<form class="controls" method="post" action="/workspaces/{{ $space->id }}/members" data-confirm-from="confirm-members">@csrf
             <input type="hidden" name="form" value="row:{{ $m->id }}">
             <input type="hidden" name="name" value="{{ $m->name }}"><input type="hidden" name="email" value="{{ $m->email }}">
-            <select name="role" aria-label="Role for {{ $m->name }}">@foreach($roles as $role)<option value="{{ $role }}" @selected($role === ($failedForm === 'row:'.$m->id ? old('role') : $m->role))>{{ ucfirst($role) }}</option>@endforeach</select><button aria-label="Save role for {{ $m->name }}" data-held-name="Change {{ $m->name }}'s role to " data-held-field="role" data-held-lead="Change " data-held-data="{{ $m->name }}">Save role</button>
+            <select name="role" aria-label="Role for {{ $m->name }}">@foreach($roles as $role)<option value="{{ $role }}" @selected($role === ($failedForm === 'row:'.$m->id ? old('role') : $m->role))>{{ ucfirst($role) }}</option>@endforeach</select><button aria-label="Save role for {{ $m->name }}" data-held-name="Change {{ $m->name }}'s role to " data-held-field="role" data-held-lead="Change " data-held-data="{{ $m->name }}'s">Save role</button>
         </form>@endif</td>
         <td data-label="">@if($m->id != auth()->id())<form method="post" action="/workspaces/{{ $space->id }}/members" data-confirm="Remove {{ $m->name }} from this workspace?" data-confirm-from="confirm-members">@csrf
             <input type="hidden" name="form" value="remove:{{ $m->id }}">
@@ -30,7 +30,7 @@
             <button class="stop" aria-label="Remove {{ $m->name }}" name="role" value="remove" data-held-name="Remove {{ $m->name }}" data-held-lead="Remove " data-held-data="{{ $m->name }}">Remove</button>
         </form>@endif</td></tr>@endforeach</tbody>
 </table></div>
-<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants, approve agent requests, and see workspace activity.</p>
+<p class="note">Viewers see entry details. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants, approve agent requests, and see workspace activity.</p>
 <h2 id="add-member">Add a member</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members" data-confirm-from="confirm-members">@csrf
         <input type="hidden" name="form" value="add">

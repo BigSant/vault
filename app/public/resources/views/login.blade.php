@@ -12,7 +12,12 @@
         <label><span>Name</span><input name="name" required maxlength="100" autocomplete="name"></label>
     @endif
     <label><span>Email</span><input type="email" name="email" required autocomplete="username"></label>
-    <label><span>Password</span><input type="password" name="password" required minlength="{{ $setup ? 14 : 1 }}" maxlength="200" autocomplete="{{ $setup ? 'new-password' : 'current-password' }}"></label>
+    @if($setup)
+        {{-- A new password can be checked before it is sent (app.js adds Reveal/Hide). --}}
+        <div class="field"><label for="setup-password"><span>Password</span></label><span class="with-button"><input id="setup-password" type="password" name="password" required minlength="14" maxlength="200" autocomplete="new-password"></span></div>
+    @else
+    <label><span>Password</span><input type="password" name="password" required minlength="1" maxlength="200" autocomplete="current-password"></label>
+    @endif
     <div class="form-foot"><p class="note">{{ $setup ? 'At least 14 characters.' : '' }}</p><button class="go">{{ $setup ? 'Create account' : 'Continue' }}</button></div>
 </form>
 @endsection

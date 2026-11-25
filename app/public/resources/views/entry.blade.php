@@ -56,7 +56,7 @@
         </div>
     </details>
     {{-- Phones, while the drawer is closed: the values are one tap away for a person who may reveal them. --}}
-    @if($canEdit)<a class="jump-quick" href="#values">Secret values</a>@endif
+    @if($canEdit)<a class="jump-quick" href="#values">Secret values <span aria-hidden="true">↓</span></a>@endif
 </nav>
 @endif
 {{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading.
@@ -75,11 +75,14 @@
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
     <tr><th scope="row">Rotation reminder (UTC)</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
-
+{{-- A viewer has no Secret values section: what the role sees is one note under the details. --}}
+@if(!$isEditor)
+<p class="note">Viewers see entry details only.</p>
+@else
 <h2 id="values">Secret values</h2>
 @if(!isset($secret) && !$canEdit)
     {{-- Nothing can be done here: a plain note, not an action card. --}}
-    <p class="note">@if(!$isEditor)Viewers see entry details only.@else Secret values cannot be revealed while this entry is {{ $entry->state }}.@endif</p>
+    <p class="note">Secret values cannot be revealed while this entry is {{ $entry->state }}.</p>
 @else
 {{-- Production shows as the card's own hazard edge, so the warning is exactly as wide as the values. --}}
 <div class="card solo{{ $environment->production && $canEdit ? ' danger' : '' }}">
@@ -134,6 +137,7 @@
         </div>
     @endif
 </div>
+@endif
 @endif
 
 <h2 id="versions">Versions</h2>
@@ -207,9 +211,9 @@
              (why it is not the grant's own date) and expires_at (the grant's own date). Shown by the end-date partial, as on Grants. --}}
         @php $gState = $grant->state; @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
-            <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
-            <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
+            <td class="who" data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
+            <td class="action" data-label="Action"><code>{{ $grant->action }}</code></td>
+            <td class="approval" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
@@ -219,9 +223,10 @@
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
+{{-- The entry page lists the last 10 finished requests and the last 10 events; the links lead to all of them. --}}
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">Request activity for this entry →</a></p>
 <h2 id="activity">Activity</h2>
-<p class="note">The last 30 events for this entry and its requests.</p>
+<p class="note">The last 10 events for this entry and its requests.</p>
 @include('activity', ['events' => $events, 'hideSubject' => $entry->id])
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}">All activity for this entry →</a></p>
 @endif
