@@ -9,7 +9,14 @@ const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(se
   if (el.id) document.getElementById(el.id + '-copy-note')?.remove();
 });
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
-if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again. Copy is off until you reveal them again.'); }, 30000);
+// An older version on screen (data-version) is named in everything that is said and shown after the hide; the note
+// above the values (data-hidden-note) changes from "hide again after 30 seconds" to what happened.
+if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => {
+  const version = document.querySelector('[data-secret][data-version]')?.dataset.version;
+  hideSecrets('[data-secret]:not([data-keep])');
+  document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
+  say(version ? 'Version ' + version + ' values hidden again. Copy is off until you reveal version ' + version + ' again.' : 'Secret values hidden again. Copy is off until you reveal them again.');
+}, 30000);
 // The enrollment QR encodes the same key, so it goes too.
 addEventListener('pagehide', () => { hideSecrets(); document.querySelectorAll('.totp-qr').forEach(img => img.remove()); });
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
@@ -171,35 +178,117 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
   row.querySelector('input:not([type=hidden]):not([type=checkbox])')?.focus();
   say('Row ' + number + ' added.');
 }));
-// Inline password confirmation: the block is in every long sensitive form, hidden while the confirmation has more
-// than 4 minutes left. It appears when the time comes, when the tab is looked at again, and at the latest on submit.
+// Inline password confirmation (confirm-inline). While the confirmation is valid the block is the line "Confirmed
+// until HH:MM UTC." and its field is hidden and switched off. When it has expired (the server's clock decides;
+// data-now turns it into an offset from this device's clock) the field is shown and required: on a page left open,
+// when the tab is looked at again, and at the latest on submit. 5 seconds early, so a submit never arrives late.
+// A block inside a form guards that form. A shared block (.shared: Reveal on the entry page, the decisions of the
+// waiting requests) stands outside its forms; they name it with data-confirm-from, and its password is copied into
+// the form that is sent. A submit that needs the password and has none is held: the focus moves to the field, and
+// Enter there sends the held form (or the block's default form, data-confirm-default).
+const confirmBoxes = new Map();
 document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box => {
   const input = box.querySelector('input[type=password]');
   if (!input) return;
-  // The server's clock decides; data-now turns it into an offset from this device's clock.
+  const shared = box.classList.contains('shared');
   const skew = box.dataset.now ? Number(box.dataset.now) * 1000 - Date.now() : 0;
   const until = Number(box.dataset.confirmedUntil) * 1000;
+  const verb = box.dataset.verb || 'continue';
+  // With script the shared field works, so the line asks for the password instead of pointing at the confirm page.
+  box.querySelectorAll('[data-script-text]').forEach(el => { el.textContent = el.dataset.scriptText; });
+  let shown = null;
   const check = () => {
-    const left = until - (Date.now() + skew);
-    if (left >= 240000) return false;
-    const expired = left <= 0;
-    const appeared = box.hidden;
-    box.hidden = false;
-    input.disabled = false;
+    const expired = until - (Date.now() + skew) <= 5000;
+    if (expired === shown) return expired;
+    const first = shown === null;
+    shown = expired;
+    input.disabled = !expired;
     input.required = expired;
+    box.classList.toggle('is-needed', expired);
     box.querySelectorAll('[data-when]').forEach(el => { el.hidden = (el.dataset.when === 'expired') !== expired; });
-    if (appeared) say(expired ? 'Your password confirmation has expired. Enter your current password in this form.' : 'Your password confirmation ends soon. Enter your current password in this form.');
+    if (!first && expired && !box.closest('[hidden]')) say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
     return expired;
   };
   check();
-  setInterval(check, 15000);
+  setInterval(check, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
-  box.closest('form')?.addEventListener('submit', event => {
-    if (!check() || input.value) return;
+  // Neither a typed password nor a copy of it stays in a page that is left or restored.
+  addEventListener('pagehide', () => { input.value = ''; document.querySelectorAll('input[type=hidden][data-confirm-copy]').forEach(copy => copy.remove()); });
+  if (!shared) {
+    box.closest('form')?.addEventListener('submit', event => {
+      if (!check() || input.value) return;
+      event.preventDefault();
+      input.focus();
+      say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
+    });
+    return;
+  }
+  const hint = box.querySelector('[data-pending]');
+  const state = { box, input, check, held: null };
+  // The held form may have been replaced by a refresh: the same action (and button) is looked up again.
+  const heldForm = () => {
+    const held = state.held;
+    if (held && !held.form.isConnected) {
+      const form = [...document.querySelectorAll('form[data-confirm-from="' + box.id + '"]')].find(candidate => candidate.getAttribute('action') === held.action && [...candidate.elements].every(el => el.type !== 'hidden' || el.name !== 'version' || el.value === held.version));
+      const button = form && [...form.querySelectorAll('button:not([type=button])')].find(candidate => candidate.value === held.value);
+      state.held = form && button && !button.disabled ? { ...held, form, button } : null;
+    }
+    return state.held;
+  };
+  state.hold = (form, button) => {
+    const name = button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action';
+    state.held = { form, button, name, action: form.getAttribute('action'), value: button?.value || '', version: form.elements.version?.value };
+    if (hint) { hint.textContent = 'Then press Enter to go on with: ' + name + '.'; hint.hidden = false; }
+    box.scrollIntoView({ block: 'center' });
+    input.focus({ preventScroll: true });
+    say('Your password confirmation has expired. Enter your current password, then press Enter to go on with: ' + name + '.');
+  };
+  state.release = () => { state.held = null; if (hint) { hint.hidden = true; hint.textContent = ''; } };
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !input.value) return;
     event.preventDefault();
-    input.focus();
-    say('Your password confirmation has expired. Enter your current password to continue.');
+    const held = heldForm();
+    const form = held?.form || document.querySelector('form[data-confirm-from="' + box.id + '"][data-confirm-default]');
+    if (!form) { state.release(); say('Password entered. Now press the action you want.'); return; }
+    const button = held?.button || form.querySelector('button:not([type=button])');
+    if (button?.disabled) { state.release(); say('That action is no longer available.'); return; }
+    form.requestSubmit(button || undefined);
   });
+  confirmBoxes.set(box.id, state);
+});
+// The forms may arrive with a refresh, so one listener on the page serves them all.
+document.addEventListener('submit', event => {
+  const form = event.target instanceof HTMLFormElement && event.target.matches('form[data-confirm-from]') ? event.target : null;
+  const state = form && confirmBoxes.get(form.dataset.confirmFrom);
+  if (!state || event.defaultPrevented) return;
+  form.querySelectorAll('input[type=hidden][data-confirm-copy]').forEach(copy => copy.remove());
+  if (!state.check()) return;
+  if (!state.input.value) {
+    event.preventDefault();
+    state.hold(form, event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])'));
+    return;
+  }
+  const copy = document.createElement('input');
+  copy.type = 'hidden';
+  copy.name = 'confirm_password';
+  copy.value = state.input.value;
+  copy.setAttribute('data-confirm-copy', '');
+  form.append(copy);
+  state.release();
+});
+// A link that leaves a page whose content cannot be shown again (the one-time token) asks first, in the same two
+// steps: data-confirm-leave is the question, data-confirm-armed the second press's wording. Without script it is a
+// plain link.
+document.querySelectorAll('a[data-confirm-leave]').forEach(link => {
+  const step = twoStep(link.dataset.confirmLeave, () => link.dataset.confirmArmed || 'Leave this page');
+  link.addEventListener('click', event => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
+    if (step.armed()) { if (step.tooSoon()) event.preventDefault(); return; }
+    event.preventDefault();
+    step.arm(link);
+  });
+  link.parentElement?.addEventListener('keydown', event => { if (event.key === 'Escape' && step.armed()) { event.stopPropagation(); step.disarm(true); } });
+  addEventListener('pageshow', event => { if (event.persisted) step.disarm(false); });
 });
 // Destructive actions confirm in place, in two steps (twoStep above): the form's data-confirm question is the note
 // and the second press sends the form.
@@ -359,7 +448,8 @@ if (refreshUrl) {
   // that holds the focus stays until the focus has left it.
   const showWith = () => document.querySelectorAll('[data-shown-with]').forEach(el => {
     const region = document.querySelector('[data-refresh="' + el.dataset.shownWith + '"]');
-    const empty = !region?.children.length;
+    // data-shown-rows (the decisions' password block): only waiting rows count, not the "nothing waits" text.
+    const empty = el.hasAttribute('data-shown-rows') ? !waitingRows(region || undefined).some(row => !row.dataset.late) : !region?.children.length;
     if (!empty || !el.contains(document.activeElement)) el.hidden = empty;
   });
   let due = Date.now() + 30000;

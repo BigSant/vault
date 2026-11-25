@@ -169,7 +169,8 @@ final class VaultTest extends TestCase
     {
         $url = '/workspaces/'.$this->workspace.'/import';
         $this->get($url)->assertOk()->assertViewHas('environments', fn ($rows) => $rows->contains('id', $this->environment))
-            ->assertViewHas('types', fn ($rows) => $rows->contains('key', 'api_key'));
+            ->assertViewHas('types', fn ($rows) => $rows->contains('key', 'api_key'))
+            ->assertSee('"environment_id": "'.$this->environment.'"', false);
         DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
         $this->get($url)->assertOk();
         $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
@@ -472,8 +473,8 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
-            ->assertSee('<label for="first-password"><span>First password <small>new user only</small></span></label>', false)
-            ->assertSee('aria-label="Generate first password"', false)
+            ->assertSee('<label for="first-password"><span>Initial password <small>Leave blank for an existing account</small></span></label>', false)
+            ->assertSee('aria-label="Generate initial password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
         $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);
         $this->get($url)->assertSee('aria-label="Role for Owner"', false)->assertDontSeeText('Add another owner');
@@ -490,7 +491,7 @@ final class VaultTest extends TestCase
     {
         $base = '/workspaces/'.$this->workspace;
         $cases = [
-            ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter a first password for a new user.'],
+            ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter an initial password for a new user.'],
             ['import', ['import' => '{'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
             ['import', ['import' => '[[]]'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
         ];
@@ -509,7 +510,7 @@ final class VaultTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
                 'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
         }
-        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertDontSee('class="filter-status"', false)->assertSeeText('Page 1 of 1');
+        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertDontSee('class="filter-status"', false)->assertDontSeeText('Page 1 of 1');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
             ->assertOk()->assertSeeText('Showing 1 of 4 events')->assertSeeText('Outcome: Denied')

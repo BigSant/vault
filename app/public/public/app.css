@@ -318,7 +318,7 @@ nav.subnav a:hover{color:var(--amber);text-decoration-color:var(--amber)}
 @media (max-width:900px){
 nav.subnav{gap:0 18px}
 nav.subnav .subnav-label{flex-basis:100%}
-nav.subnav a,nav.subnav a:hover{min-height:36px}
+nav.subnav a,nav.subnav a:hover{min-height:40px}
 }
 /* Jump links of a long page with many sections (the entry page): <details class="jump" data-wide-open
    data-wide-static>. Wide screens: app.js keeps it open and it reads as the label and one line of links. Phones: a
@@ -346,6 +346,7 @@ details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .entry-page .board td.name{min-width:0}
 .board.requests td.action :is(code,.rid){white-space:nowrap;overflow-wrap:normal}
 }
+.board.requests .rid{color:var(--faint)}
 
 /* Sign-in */
 main.login{max-width:520px;margin:0 auto;padding:10vh 16px 24px}
@@ -528,9 +529,20 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .card details.fold .form-foot{align-items:center}
 /* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
 @media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}details.fold>summary:has(.fold-act) .fold-name{flex-basis:100%}.fold-act{margin-left:auto}}
-/* Password field inside a long form; hidden until the confirmation is about to end (app.js reveals it). */
-.confirm-inline{margin-top:14px;padding-top:14px;border-top:1px dashed var(--rule)}
-.confirm-inline .note{margin:0 0 8px}
+/* Password confirmation inside the page (confirm-inline). Valid: one quiet line, "Confirmed until HH:MM UTC.".
+   Expired (.is-needed, set by the server or app.js): the legend, the reason and the field under a dashed rule.
+   .shared stands outside the forms it serves: above the form foot of the Secret values card, and as a panel of
+   its own above the waiting requests. */
+.confirm-inline{margin-top:14px}
+.confirm-inline .note{margin:0;font-size:12px;color:var(--faint)}
+.confirm-inline.is-needed{padding-top:14px;border-top:1px dashed var(--rule)}
+.confirm-inline.is-needed .note{margin:0 0 8px;font-size:13px;color:var(--dim)}
+.confirm-inline .pending{display:block;margin-top:4px;color:var(--ink)}
+.confirm-inline.shared{margin:0 0 12px;scroll-margin-top:16px}
+.confirm-inline.shared label{margin-bottom:0}
+.card>.confirm-inline.shared.is-needed{margin-top:14px}
+:not(.card)>.confirm-inline.shared{max-width:var(--card);margin-bottom:10px}
+:not(.card)>.confirm-inline.shared.is-needed{padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px}
 /* Error page inside the signed-in shell. The status code is a chip on a line of its own under the h1. */
 .error-page{max-width:var(--card)}
 .error-status{margin:-8px 0 14px}
@@ -654,7 +666,10 @@ details.import-ref>.inner .scroll{margin:0}
 .board.entries td.name{display:contents}
 .board.entries td.name>a{order:0}
 .board.entries td.name>small:not(.entry-tags),.board.entries td.name>.chip{order:0}
-.board.entries td.name .entry-tags{order:4;flex-basis:auto}
+.board.entries td.name .entry-tags{order:4;flex-basis:100%}
+/* The card has no other control, so the name link covers it: the whole card is the tap target. */
+.board.entries tr{position:relative}
+.board.entries td.name>a::after{content:"";position:absolute;inset:0}
 .board.entries tr::before{content:"";flex-basis:100%;order:1;height:0;margin-bottom:-4px}
 .board.entries td.name small{margin-top:2px}
 .board.entries td.proj{order:2;color:var(--dim)}
@@ -739,8 +754,11 @@ details.import-ref>.inner .scroll{margin:0}
 .board.requests td.who{order:0}.board.requests td.action{order:1;flex:1 1 40%}.board.requests td.entry{order:2;flex-basis:100%}
 .board.requests td.state{order:3;flex-basis:100%}.board.requests td.when{order:4;flex-basis:100%}.board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
-.board.requests td.action small.rid{display:none}
-.board.requests td:is(.when,.decision) small.rid{display:block;margin-top:6px;color:var(--faint)}
+/* The request id is a line of its own under "<agent> requests <action>", from the card's left edge. */
+.board.requests td.action{display:contents}
+.board.requests td.action>*{order:1}
+.board.requests td.action>code{margin-right:auto}
+.board.requests td.action small.rid{flex-basis:100%;margin-left:0;white-space:nowrap}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
 .board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
 .board.grants [data-label="Agent"]{grid-area:1/1}
@@ -807,4 +825,15 @@ details.type-fold .list.edit td:is(.req,.remove){order:2;flex:0 1 auto;width:aut
 details.type-fold .list.edit td.remove{margin-left:auto}
 .card details.env-add>summary{min-height:40px}
 .list.edit td[data-label=""]::before{content:none}
+}
+
+/* Phone tap targets: everything that is pressed is at least 40 px high. Links in running text keep their line. */
+@media (max-width:900px){
+.back{display:inline-flex;align-items:center;min-height:40px;margin-bottom:4px}
+.filter-status a{display:inline-flex;align-items:center;min-height:40px}
+.board td a:not(.btn){display:inline-flex;align-items:center;min-height:40px;max-width:100%}
+.board.entries td.name>a{min-height:0;display:inline}
+label.check{min-height:40px;align-items:center}
+details>summary{min-height:40px}
+details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add)>summary{padding-top:11px;padding-bottom:11px}
 }

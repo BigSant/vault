@@ -146,6 +146,13 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    summary read from the session's `form_errors`; only non-secret fields are refilled with `old()`. Views use
    `session('form_errors')`, not `$errors` (sessions are JSON, so the error bag does not survive).
 4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
+   While the confirmation is valid the block is the line "Confirmed until HH:MM UTC."; the password field appears
+   only when it is required. **Time-critical actions** never go to the confirm page while script runs: Reveal
+   (current and per version) and the waiting requests' Allow once / Deny / Continue sign-in use one shared block
+   each (`'shared' => 'confirm-reveal'` in the Secret values card, `'confirm-decide'` above the waiting board);
+   their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
+   submit without the password is held, the focus moves to the field, and Enter there sends it. Without script
+   the confirm page is the fallback.
 5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` drawer
    (open on desktop, closed on phone) holding a `.toolbar` with labelled selects and one **Apply** button. When a
    filter is set, a `.filter-status` line says "Showing N of M", shows one chip per active filter and holds the
@@ -168,7 +175,7 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 
 Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request), `nav.subnav` (quiet in-page jump
 links labelled "On this page"; on the entry page they sit in a `details.jump` that is a closed drawer on phones), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
-label), `.confirm-inline` (password field inside a long form), the compact phone card for boards, `.card.solo`
+label), `.confirm-inline` (password confirmation in the page: a line while valid, a field when required; `.shared` outside its forms), the compact phone card for boards, `.card.solo`
 (a capped standalone card), `.confirm-step` (inline two-step confirmation that replaces `confirm()` for every
 `data-confirm` form) and `.field-error` (message under an invalid field: placed after the field's `<label>`, never
 inside it, and tied to the field with `aria-describedby`, so the accessible name is the same before and after a
@@ -185,3 +192,5 @@ the card leads with the readable name and the subject). Date fields carry "UTC" 
 ## Known gaps
 
 - A workspace cannot be renamed or deleted from the web UI yet.
+- Account changes only the sign-in password. A person's name and email, and re-enrolment of the authenticator
+  (a lost or replaced device), are not in Account: they are operator recovery only.

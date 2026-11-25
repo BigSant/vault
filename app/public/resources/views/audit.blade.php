@@ -26,7 +26,7 @@
 </p>
 @endif
 @include('activity', ['events' => $events, 'filtered' => $filterCount > 0])
-@if(!$filterCount || $events->hasPages())
+@if($events->hasPages())
 <div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>
 @endif
 @endsection

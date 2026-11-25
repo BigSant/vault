@@ -180,6 +180,53 @@ final class ShellTest extends TestCase
         $this->assertSame(2, DB::table('projects')->count());
     }
 
+    public function test_inline_confirmation_is_a_line_while_valid_and_a_field_only_when_required(): void
+    {
+        // Valid: "Confirmed until HH:MM UTC.", the field hidden and switched off. (The view composer sets $confirmedUntil.)
+        $this->signIn('owner', time() - 100);
+        $until = time() + 200;
+        $valid = $this->get($this->base.'/structure')->assertOk()->getContent();
+        $block = substr($valid, (int) strpos($valid, '<div class="confirm-inline"'), 900);
+        $this->assertMatchesRegularExpression('/Confirmed until <span class="nobreak">('.gmdate('H:i', $until).'|'.gmdate('H:i', $until + 2).') UTC<\/span>\./', $block);
+        $this->assertStringContainsString('<label data-when="expired"  hidden >', $block);
+        $this->assertMatchesRegularExpression('/name="confirm_password"[^>]* disabled >/', $block);
+        $this->assertStringNotContainsString('is-needed', $valid);
+        // Expired inside a form: the field is the form's own and required, with or without script.
+        $expired = $this->withSession(['confirmed_at' => time() - 301])->get($this->base.'/structure')->assertOk()->getContent();
+        $this->assertStringContainsString('class="confirm-inline is-needed"', $expired);
+        $this->assertMatchesRegularExpression('/name="confirm_password"[^>]* required >/', $expired);
+        session()->forget('confirmed_at');
+        $this->view('confirm-inline', ['verb' => 'save'])
+            ->assertSee('class="confirm-inline is-needed"', false)->assertSee('Enter your current password to save.')
+            ->assertSee('autocomplete="current-password"', false)->assertSee(' required ', false)->assertDontSee(' disabled ', false);
+        // Expired and shared: without script the field could not be sent, so the confirm page is named as the fallback.
+        $this->view('confirm-inline', ['confirmedUntil' => null, 'verb' => 'decide', 'shared' => 'confirm-decide'])
+            ->assertSee('id="confirm-decide"', false)->assertSee('You will be asked for your password first.')
+            ->assertSee('data-script-text="Your password confirmation has expired. Enter your current password to decide."', false)
+            ->assertSee('id="confirm-decide-password"', false)->assertSee(' disabled ', false)->assertDontSee(' required ', false);
+    }
+
+    public function test_a_waiting_request_is_decided_with_the_inline_password_and_shows_its_id_before_the_controls(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->waitingRequest();
+        $id = (string) DB::table('operations')->value('id');
+        $rid = substr($id, 0, 8);
+        $row = (object) ['id' => $id, 'state' => 'pending', 'agent' => 'agent', 'action' => 'test.http', 'entry' => 'Shop key', 'entry_id' => 'e1', 'project' => 'shop',
+            'environment' => 'stage', 'production' => false, 'expires_at' => now()->addHour(), 'created_at' => now(), 'updated_at' => now()];
+        $page = $this->view('operations', ['operations' => collect([$row, (object) (['id' => 'ffffffff-2'] + (array) $row)]), 'mode' => 'waiting', 'workspace' => $this->workspace,
+            'refreshUrl' => $this->base.'/requests', 'confirmedUntil' => null]);
+        // One shared password block above the waiting board, outside the refreshed region; the id sits with the
+        // action, before the controls, and ends each decision's accessible name, so twins can be told apart.
+        $page->assertSeeInOrder(['id="confirm-decide"', 'data-refresh="waiting"', 'Request '.$rid.'</small>', 'data-confirm-from="confirm-decide"',
+            ', request '.$rid.'">Allow once</button>', ', request '.$rid.'">Deny</button>', 'Request ffffffff</small>', ', request ffffffff">Allow once</button>'], false);
+        $this->assertSame(1, substr_count((string) $page, 'id="confirm-decide"'));
+        // An expired confirmation with the password in the same POST decides at once: no confirm page.
+        $this->post($this->base.'/operations/'.$id.'/decision', ['decision' => 'deny', 'confirm_password' => self::PASSWORD])->assertRedirect();
+        $this->assertSame('revoked', DB::table('operations')->where('id', $id)->value('state'));
+        $this->assertStringNotContainsString('confirm_password', json_encode(session()->all()));
+    }
+
     public function test_wrong_confirm_password_answers_403_with_the_confirm_form_and_is_never_flashed(): void
     {
         $this->signIn('owner', $stale = time() - 301);
@@ -440,7 +487,9 @@ final class ShellTest extends TestCase
         $this->get('/nothing-here')->assertNotFound()->assertSeeInOrder(['<h1>Not found</h1>', '<p class="error-status"><span class="chip bad">Error 404</span></p>'], false);
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
-            ->assertSeeInOrder(['<div class="head"><h1>Agents</h1><a class="btn" href="'.$this->base.'/agents#add-agent">+ Add an agent</a></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false);
+            ->assertSeeInOrder(['<div class="head"><h1>Agents</h1></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false)
+            // Leaving loses the token: no second way out in the head row, and "Add a grant" asks first.
+            ->assertDontSee('+ Add an agent')->assertSee('data-confirm-leave="Token copied?" data-confirm-armed="Leave this page">Add a grant</a>', false);
         $operations = (string) file_get_contents(resource_path('views/operations.blade.php'));
         $this->assertStringContainsString('<th scope="col">Finished (UTC)</th>', $operations);
         $this->assertStringContainsString('data-label="Finished (UTC)"', $operations);

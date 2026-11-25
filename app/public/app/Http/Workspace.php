@@ -475,7 +475,7 @@ final class Workspace
                     throw ValidationException::withMessages(['email' => 'Choose an existing member to remove.']);
                 }
                 if (empty($d['password'])) {
-                    throw ValidationException::withMessages(['password' => 'Enter a first password for a new user.']);
+                    throw ValidationException::withMessages(['password' => 'Enter an initial password for a new user.']);
                 }
                 $id = (string) Str::uuid();
                 $this->secrets->write('auth/'.$id, ['totp' => TOTP::generate()->getSecret()], 0);

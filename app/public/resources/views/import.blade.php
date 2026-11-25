@@ -18,6 +18,23 @@
 @else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
     <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret_fields":{"token":"..."}}]'></textarea></label>
+    <details class="import-ref capped">
+        <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
+        <div class="inner">
+            <div class="scroll"><table class="list import-ids">
+                <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
+                <tbody>
+                @foreach($environments as $env)
+                    <tr>
+                        <td class="env-name"><span>{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</span></td>
+                        <td class="env-id"><span class="controls"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></span></td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table></div>
+        </div>
+    </details>
+    <p><a href="#type-keys">Type and field keys</a></p>
     @include('confirm-inline', ['verb' => 'import'])
     <div class="form-foot">
         <p class="note">The import text is never logged and is not refilled after an error.</p>
@@ -45,7 +62,7 @@
 <div class="block-label">Example</div>
 <pre class="cmd capped">[
   {
-    "environment_id": "00000000-0000-0000-0000-000000000000",
+    "environment_id": "{{ $environments->first()->id ?? '00000000-0000-0000-0000-000000000000' }}",
     "name": "Billing API",
     "alias": "billing-api-prod",
     "type": "api_key",
@@ -57,34 +74,13 @@
   }
 ]</pre>
 
-<details class="import-ref capped" data-wide-open>
-    <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
-    <div class="inner">
-        @if($environments->isEmpty())
-            <p class="note">No environment IDs available yet.</p>
-        @else
-            <div class="scroll"><table class="list import-ids">
-                <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
-                <tbody>
-                @foreach($environments as $env)
-                    <tr>
-                        <td class="env-name"><span>{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</span></td>
-                        <td class="env-id"><span class="controls"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></span></td>
-                    </tr>
-                @endforeach
-                </tbody>
-            </table></div>
-        @endif
-    </div>
-</details>
-
 <details class="import-ref capped">
     <summary>Type keys <span class="muted">({{ $types->count() }})</span></summary>
     <div class="inner">
         @if($types->isEmpty())
             <p class="note">No entry types yet. Manage types in <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</p>
         @else
-            <div class="scroll"><table class="list import-types">
+            <div id="type-keys" class="scroll"><table class="list import-types">
                 <thead><tr><th scope="col">Type key</th><th scope="col">Name</th><th scope="col">Required fields</th></tr></thead>
                 <tbody>
                 @foreach($types as $t)

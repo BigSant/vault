@@ -13,6 +13,11 @@
     $current = (int) $entry->version;
     $dash = fn ($v) => $v === null || $v === '' ? '—' : $v;
     $shownCurrent = isset($secret) && (! $shownVersion || $shownVersion === $current);
+    // An older version is on screen: every text about hiding and revealing again names it.
+    $shownOlder = isset($secret) && $shownVersion && $shownVersion !== $current ? (int) $shownVersion : null;
+    $hiddenText = $shownOlder ? 'Hidden. Reveal version '.$shownOlder.' again to see it.' : 'Hidden. Reveal again to see it.';
+    $hiddenNote = $shownOlder ? 'Version '.$shownOlder.' values are hidden again. Reveal version '.$shownOlder.' again to see them.'
+        : 'Current version '.$current.' values are hidden again. Reveal again to see them.';
     $day = fn ($value) => substr(str_replace('T', ' ', (string) $value), 0, 16);
     $waitingCount = isset($waitingCount) ? (int) $waitingCount : ($isOwner
         ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
@@ -78,9 +83,9 @@
     @isset($secret)
         @if($shownVersion && $shownVersion !== $current)
             <div class="callout warn"><p>Showing an <b>older version {{ $shownVersion }}</b> (current is {{ $current }}). Fields marked <span class="chip warn">differs</span> are not the same as now.</p></div>
-            <p class="note">Version {{ $shownVersion }}. Values hide again after 30 seconds.</p>
+            <p class="note" data-hidden-note="{{ $hiddenNote }}">Version {{ $shownVersion }}. Values hide again after 30 seconds.</p>
         @else
-            <p class="note">Current version {{ $current }}. Values hide again after 30 seconds.</p>
+            <p class="note" data-hidden-note="{{ $hiddenNote }}">Current version {{ $current }}. Values hide again after 30 seconds.</p>
         @endif
         @foreach($secret as $field => $value)
             <div class="secret-row">
@@ -88,7 +93,7 @@
                     @if(!isset($labels[$field]))<span class="chip muted">no longer in type</span>@endif
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
                 </div>
-                <pre data-secret class="secret" id="secret-{{ $loop->index }}">{{ $value }}</pre>
+                <pre data-secret data-hidden-text="{{ $hiddenText }}"@if($shownOlder) data-version="{{ $shownOlder }}"@endif class="secret" id="secret-{{ $loop->index }}">{{ $value }}</pre>
                 <div class="controls"><button type="button" data-copy="secret-{{ $loop->index }}" aria-label="Copy {{ $label($field) }}">Copy</button></div>
             </div>
         @endforeach
@@ -99,9 +104,20 @@
         <p class="note">Values are not sent to this page until you reveal them.</p>
     @endisset
     @if($canEdit)
+        {{-- One password field for every Reveal on this page (here and per version): an expired confirmation asks
+             here, in place, and never sends a reveal to the confirm page. --}}
+        @include('confirm-inline', ['verb' => 'reveal', 'shared' => 'confirm-reveal'])
         <div class="form-foot">
-            <p class="note">Every reveal goes to the activity log. You may be asked to confirm your password first. Older versions are under Versions.</p>
-            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf @if($shownCurrent)<button aria-label="Reveal again: current values of {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
+            <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
+            {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice. --}}
+            <div class="controls">
+                @if($shownOlder)
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<button aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button></form>
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf<input type="hidden" name="version" value="{{ $shownOlder }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button class="go" aria-label="Reveal version {{ $shownOlder }} again: values of {{ $entry->name }}">Reveal version {{ $shownOlder }} again</button></form>
+                @else
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf @if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif @if($shownCurrent)<button aria-label="Reveal again: current values of {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
+                @endif
+            </div>
         </div>
     @endif
 </div>
@@ -144,7 +160,7 @@
             @if($canEdit)
             <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
                     @if($h['version'] !== $current)
                         <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
                     @endif
