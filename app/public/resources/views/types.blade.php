@@ -30,7 +30,7 @@
         }
     }
 @endphp
-<h1>Setup</h1>
+<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add a type</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
 <p class="note">A type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 

@@ -7,7 +7,7 @@
 @endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Edit entry' : 'Add an entry' }}</h1>
-<p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
+<p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form, and every save creates a new version.@endif</p>
 @if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
 <div class="empty capped">
     @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
@@ -52,6 +52,7 @@
 
     <fieldset>
         <legend>Secret values</legend>
+        @if($entry)<p class="note">Leave a secret value blank to keep its current value.</p>@endif
         @unless($entry)<p class="note" data-types="" @if($initialType !== null) hidden @endif>Choose a type above to see its fields.</p>@endunless
         @foreach($types as $t)
             @php $activeType = $t->key === $initialType; @endphp

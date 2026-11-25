@@ -80,10 +80,15 @@ final class ShellTest extends TestCase
         $this->signIn('editor');
         $this->get($this->base.'/structure')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false);
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false)
+            // The add form is reached from the head row, as on Members; the tabs follow it directly, with no jump links.
+            ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>'."\n".'<nav class="tabs"', false)
+            ->assertSee('<h2 id="add-project">', false)->assertDontSee('On this page');
         $this->get($this->base.'/types')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false);
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false)
+            ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add a type</a></div>'."\n".'<nav class="tabs"', false)
+            ->assertSee('<h2 id="add-type">', false);
         $this->get('/')->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="page">Entries</a>', false);
     }
 
@@ -379,6 +384,8 @@ final class ShellTest extends TestCase
             $end('<a>Back</a><div class="head"><div><div class="title-row"><h1 class="name">A</h1><a>Edit</a></div><p>sub</p></div></div><div>next</div>'));
         $this->assertSame("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>",
             $end("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>\n<h2>Projects</h2>"));
+        $this->assertSame("<div class=\"head\"><h1>Setup</h1><a class=\"btn\" href=\"#add-project\">+ Add a project</a></div>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>",
+            $end("<div class=\"head\"><h1>Setup</h1><a class=\"btn\" href=\"#add-project\">+ Add a project</a></div>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<h2>Projects</h2>"));
         $this->assertSame('', $end('<p>No heading</p>'));
     }
 

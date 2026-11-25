@@ -15,16 +15,16 @@
         <button>Apply</button>
     </form>
 </details>
+@if($filterCount)
 <p class="filter-status">Showing {{ $events->total() }} of {{ $total ?? $events->total() }} {{ Str::plural('event', $total ?? $events->total()) }}
-    @if($total !== null)
     @if(request('group'))<span class="chip filter">Event group: {{ ucfirst(request('group')) }}</span>@endif
     @if(request('actor'))<span class="chip filter">Actor: {{ $actorOptions[request('actor')] ?? request('actor') }}</span>@endif
     @foreach(['outcome' => 'Outcome', 'from' => 'From', 'to' => 'To'] as $key => $label)
         @if(request($key))<span class="chip filter">{{ $label }}: {{ $key === 'outcome' ? ($outcomeLabels[request($key)] ?? request($key)) : request($key) }}</span>@endif
     @endforeach
     <a href="/workspaces/{{ $space->id }}/audit">Clear filters</a>
-    @endif
 </p>
+@endif
 @include('activity', ['events' => $events, 'filtered' => $filterCount > 0])
 @if(!$filterCount || $events->hasPages())
 <div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>

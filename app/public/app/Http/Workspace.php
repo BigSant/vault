@@ -354,7 +354,8 @@ final class Workspace
     {
         $states = ['pending', 'requires_user_action'];
         $now = now();
-        $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)->get();
+        $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)
+            ->reorder('operations.expires_at')->orderBy('operations.created_at')->orderBy('operations.id')->get();
         $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit($historyLimit)->get();
 
         $revoked = $history->where('state', 'revoked')->pluck('id');

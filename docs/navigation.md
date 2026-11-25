@@ -28,7 +28,8 @@ Use these words in every UI text. Code names may differ.
   buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **Expires (UTC)**.
   **rotation due**. Password fields are labelled **Current password**.
 - Roles are shown as neutral `chip role`, never with state colours.
-- A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it.
+- A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it. A page with an add
+  form further down puts one quiet "+ Add a/an X" button in the head row beside the h1, jumping to the form's h2.
 
 ## Header (every signed-in page)
 

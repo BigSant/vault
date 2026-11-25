@@ -20,6 +20,7 @@
             <button class="stop" aria-label="Remove {{ $m->name }}" name="role" value="remove">Remove</button>
         </form>@endif</td></tr>@endforeach</tbody>
 </table></div>
+<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 <h2 id="add-member">Add a member</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
         <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>
@@ -27,7 +28,6 @@
         <div class="field"><label for="first-password"><span>First password <small>new user only</small></span></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate first password">Generate</button></span></div>
         <label><span>Role</span><select name="role">@foreach($roles as $role)<option value="{{ $role }}" @selected(old('role', 'viewer') === $role)>{{ ucfirst($role) }}</option>@endforeach</select></label>
         @include('confirm-inline', ['verb' => 'add this member'])
-        <div class="form-foot"><p class="note">Hand the password over privately. MFA is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>
+        <div class="form-foot"><p class="note">Hand the password over privately. The authenticator code is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>
     </form>
-<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 @endsection

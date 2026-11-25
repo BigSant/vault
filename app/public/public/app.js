@@ -35,7 +35,8 @@ document.querySelectorAll('[data-copy]').forEach(button => button.addEventListen
       note = document.createElement('p');
       note.className = 'note copy-note';
       note.id = el.id + '-copy-note';
-      (button.closest('.controls') || button).after(note);
+      // In a form foot the note goes under the whole row, so the note and buttons of the foot keep their places.
+      (button.closest('.form-foot') || button.closest('.controls') || button).after(note);
     }
     note.textContent = text;
     say(text);

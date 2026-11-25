@@ -40,8 +40,8 @@
                 <tbody>
                 @foreach($environments as $env)
                     <tr>
-                        <td class="env-name">{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</td>
-                        <td class="env-id"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></td>
+                        <td class="env-name"><span>{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</span></td>
+                        <td class="env-id"><span class="controls"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></span></td>
                     </tr>
                 @endforeach
                 </tbody>

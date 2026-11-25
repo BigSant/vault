@@ -122,7 +122,7 @@
                         $others = array_filter(['added' => $f['other_added'] ?? 0, 'changed' => $f['other_changed'] ?? 0, 'removed' => $f['other_removed'] ?? 0]);
                     @endphp
                     @if($h['event'] === 'create')
-                        <div><b>Created:</b> {{ implode(', ', array_map($label, $f['added'] ?? [])) ?: '—' }}</div>
+                        <div><b>Added:</b> {{ implode(', ', array_map($label, $f['added'] ?? [])) ?: '—' }}</div>
                     @else
                         @if($h['event'] === 'restore')<div><span class="chip steel">restored</span> from version {{ $c['restored_from'] }}</div>@endif
                         @if(!empty($f['changed']))<div><b>Changed:</b> {{ implode(', ', array_map($label, $f['changed'])) }}</div>@endif
@@ -176,7 +176,7 @@
             <td data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
             <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)">@if($gRevoked)<span class="nobreak">Revoked {{ $day($gRevoked) }} UTC</span>@if($grant->expiry_reason) <span class="nobreak">· {{ $grant->expiry_reason }}</span>@endif @else<small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) <span class="nobreak">· {{ $grant->expiry_reason }}</span>@endif @if($gEnds !== (string) $grant->expires_at)<small class="wrap">Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif @endif</td>
+            <td class="when" data-label="Expires (UTC)">@if($gRevoked)Revoked <span class="nobreak">{{ $day($gRevoked) }} UTC</span>@if($grant->expiry_reason) <small class="wrap">{{ $grant->expiry_reason }}</small>@endif @else<small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) <small class="wrap">{{ $grant->expiry_reason }}</small>@endif @if($gEnds !== (string) $grant->expires_at)<small class="wrap">Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif @endif</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach

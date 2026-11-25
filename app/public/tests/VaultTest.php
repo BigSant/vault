@@ -150,16 +150,16 @@ final class VaultTest extends TestCase
         foreach (['pending', 'requires_user_action', ...array_fill(0, 51, 'succeeded')] as $index => $state) {
             $rows[] = ['id' => (string) Str::uuid(), 'entry_id' => $entry, 'machine_id' => $machine, 'grant_id' => $grant,
                 'request_id' => 'request-'.$index, 'action' => 'test.http', 'version' => 1, 'state' => $state,
-                'expires_at' => now()->addDay(), 'created_at' => now()->subMinutes(60 - $index)];
+                'expires_at' => now()->addHours($index + 1), 'created_at' => now()->subMinutes(60 - $index)];
         }
         DB::table('operations')->insert($rows);
         $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
-            ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[1]['id'], $rows[0]['id']])
+            ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']])
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
-            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'test.http', 'Private name', 'stage', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent requests'])
+            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'test.http', 'Private name', 'stage', 'Allow once', 'needs MFA code', 'Continue sign-in', 'Recent requests'])
             ->assertDontSee($rows[2]['id']);
         $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
-            ->assertSee($rows[0]['id'])->assertSee($rows[1]['id']);
+            ->assertViewHas('operations', fn ($ops) => $ops->take(2)->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']]);
     }
 
     public function test_secret_stays_in_backend_and_is_not_prefilled_or_listed(): void
@@ -474,7 +474,7 @@ final class VaultTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
                 'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
         }
-        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertSeeText('4 events')->assertSeeText('Page 1 of 1');
+        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertDontSee('class="filter-status"', false)->assertSeeText('Page 1 of 1');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
             ->assertOk()->assertSeeText('Showing 1 of 4 events')->assertSeeText('Outcome: Denied')

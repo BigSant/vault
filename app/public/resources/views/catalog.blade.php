@@ -33,11 +33,12 @@
     @endif
 </div>
 @if($space)
-<div class="stats">
+<div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <div class="stat secondary"><b>{{ $prodCount }}</b><span>production</span></div>
     <div class="stat secondary"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
+    <small class="entry-stats-summary">{{ $prodCount }} production · {{ $usedRecent }} used by agents in 7 days</small>
 </div>
 
 <form method="get">
@@ -102,7 +103,7 @@
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
             <td class="when updated" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
-            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">· Last used</small> {{ substr($e->last_used_at, 0, 16) }} UTC @else — @endif</td>
+            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">Last used</small> {{ substr($e->last_used_at, 0, 16) }} UTC @else — @endif</td>
         </tr>
     @endforeach
     </tbody>

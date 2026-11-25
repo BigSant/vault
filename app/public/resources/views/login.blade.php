@@ -4,7 +4,7 @@
 @section('content')
 <form class="action" method="post" action="{{ $setup ? '/setup' : '/login' }}">@csrf
     <h1>{{ $setup ? 'Create the first owner' : 'Sign in' }}</h1>
-    <p class="note">{{ $setup ? 'The next step turns on two-factor authentication.' : 'Then confirm with a code from your authenticator app.' }}</p>
+    <p class="note">{{ $setup ? 'The next step sets up your authenticator code.' : 'Then confirm with a code from your authenticator app.' }}</p>
     @if($setup)
         <label><span>Activation code</span><input type="password" name="bootstrap_code" required autocomplete="off"></label>
         <p class="note">The code is in the private <code>bootstrap.code</code> file created during install. Type it here only, never into a chat.</p>

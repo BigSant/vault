@@ -21,13 +21,8 @@
     }
     $nextTemplateIdx = count($templateRows);
 @endphp
-<h1>Setup</h1>
+<div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
-<nav class="subnav" aria-label="On this page">
-    <span class="subnav-label" aria-hidden="true">On this page</span>
-    <a href="#add-project">Add a project</a>
-    <a href="#template">Environment template</a>
-</nav>
 
 <h2 class="setup-first">Environments by project</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>

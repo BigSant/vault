@@ -1,9 +1,8 @@
 @extends('layout')
 @section('title', 'Identities')
 @section('content')
-<h1>Agents</h1>
+<div class="head"><h1>Agents</h1><a class="btn" href="#add-agent">+ Add an agent</a></div>
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
-<a class="btn" href="#add-agent">+ Add an agent</a>
 
 @if($machines->isEmpty())
     <div class="empty">No agent identities yet. Add one below.</div>
