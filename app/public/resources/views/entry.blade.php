@@ -55,6 +55,8 @@
             @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
         </div>
     </details>
+    {{-- Phones, while the drawer is closed: the values are one tap away for a person who may reveal them. --}}
+    @if($canEdit)<a class="jump-quick" href="#values">Secret values</a>@endif
 </nav>
 @endif
 {{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading.
@@ -71,13 +73,13 @@
     <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
     <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
-    <tr><th scope="row">Rotation reminder</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
+    <tr><th scope="row">Rotation reminder (UTC)</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
 
 <h2 id="values">Secret values</h2>
 @if(!isset($secret) && !$canEdit)
     {{-- Nothing can be done here: a plain note, not an action card. --}}
-    <p class="note">@if(!$isEditor)Your viewer role sees entry metadata only. Secret values cannot be revealed.@else Secret values cannot be revealed while this entry is {{ $entry->state }}.@endif</p>
+    <p class="note">@if(!$isEditor)Viewers see entry details only.@else Secret values cannot be revealed while this entry is {{ $entry->state }}.@endif</p>
 @else
 {{-- Production shows as the card's own hazard edge, so the warning is exactly as wide as the values. --}}
 <div class="card solo{{ $environment->production && $canEdit ? ' danger' : '' }}">
@@ -135,7 +137,7 @@
 @endif
 
 <h2 id="versions">Versions</h2>
-<p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when. Secret values are hidden from the viewer role.@endif</p>
+<p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when.@endif</p>
 <div class="scroll"><table class="board compact-board versions">
     <thead><tr><th scope="col">Version</th><th scope="col">Saved (UTC)</th><th scope="col">By</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"><span class="sr-only">Actions</span></th>@endif</tr></thead>
     <tbody>

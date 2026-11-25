@@ -103,6 +103,9 @@
             </form>
             @if($used === 0)
                 <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type “{{ $type->name }}”?" data-confirm-from="confirm-types">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}" data-held-name="Remove entry type {{ $type->name }}" data-held-lead="Remove entry type " data-held-data="{{ $type->name }}">Remove entry type</button></form>
+            @else
+                {{-- As on Projects: why there is no Remove. --}}
+                <p class="note fold-foot">Used by {{ $plural($used, 'entry', 'entries') }}, so it cannot be removed.</p>
             @endif
         </div>
     </details>

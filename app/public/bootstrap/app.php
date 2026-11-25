@@ -65,7 +65,9 @@ return Application::configure(basePath: dirname(__DIR__))
                         // the plain form_errors array instead.
                         // error_unfilled: something was typed into a secret field, so the summary says it is not refilled.
                         $typed = fn ($value) => is_array($value) ? array_filter($value, fn ($v) => is_string($v) && $v !== '') !== [] : is_string($value) && $value !== '';
-                        $secrets = array_filter($r->except(['_token']), fn ($value, $key) => (in_array($key, $secretInputs, true)
+                        // The shared password field is not a form value: a wrong confirm_password alone must not say secrets
+                        // were dropped, or the held action could never be retried.
+                        $secrets = array_filter($r->except(['_token', 'confirm_password']), fn ($value, $key) => (in_array($key, $secretInputs, true)
                             || preg_match('/secret|password|token|code|import/i', (string) $key)) && $typed($value), ARRAY_FILTER_USE_BOTH) !== [];
 
                         return redirect(Account::returnPath($r), 303)->withErrors($error->errors())->withInput($old)->with(['form_errors' => array_slice($error->errors(), 0, 8, true), 'error_form' => $r->getPathInfo(), 'error_unfilled' => $secrets]);

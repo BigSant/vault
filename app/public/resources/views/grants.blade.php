@@ -5,6 +5,12 @@
 @include('tabs', ['area' => 'agents', 'current' => 'grants', 'space' => $space])
 
 @php $filterCount = (int) (bool) $agent + (int) (bool) $entry; @endphp
+{{-- Revoke never goes to the confirm page while script runs: one shared password block, as on Members. It stands
+     above the filter bar, so the bar, its status line and the board stay together. "Add a grant" names it too and
+     only points to it when the confirmation has expired. --}}
+@unless($grants->isEmpty())
+@include('confirm-inline', ['verb' => 'change grants', 'ask' => 'Enter your current password, then revoke or add a grant below.', 'shared' => 'confirm-grants'])
+@endunless
 <details class="filters" data-wide-open>
     <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
     <form class="toolbar" method="get">
@@ -32,9 +38,6 @@
         @endunless
     </div>
 @else
-{{-- Revoke never goes to the confirm page while script runs: one shared password block above the board, as on
-     Members. "Add a grant" names it too and only points to it when the confirmation has expired. --}}
-@include('confirm-inline', ['verb' => 'change grants', 'ask' => 'Enter your current password, then revoke or add a grant below.', 'shared' => 'confirm-grants'])
 <div class="scroll"><table class="board compact-board grants">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>

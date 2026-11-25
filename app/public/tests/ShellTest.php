@@ -139,6 +139,58 @@ final class ShellTest extends TestCase
         $this->get($this->base.'/audit')->assertOk()->assertSee('href="/?workspace='.$second.'"', false)->assertDontSee('/workspaces/'.$second.'/audit');
     }
 
+    public function test_a_wrong_confirm_password_alone_does_not_say_secret_fields_were_dropped(): void
+    {
+        // The shared password field is no form value: a wrong one on a form without secret fields leaves the summary
+        // without "not refilled" and without data-unfilled, so app.js holds the action again for the next password.
+        $this->signIn('owner', time() - 301);
+        $this->get($this->base.'/structure')->assertOk();
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure', 'confirm_password' => 'wrong-password'])->assertStatus(303)
+            ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.'])->assertSessionHas('error_unfilled', false);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('<li data-field="confirm_password">Current password is not right.</li>', false)
+            ->assertDontSee('Secret fields are not refilled.')->assertDontSee('data-unfilled', false);
+        // A secret field typed beside it still says so.
+        $this->get($this->base.'/members')->assertOk();
+        $this->post($this->base.'/members', ['name' => 'New Person', 'email' => 'new@example.test', 'password' => 'a-long-initial-password', 'role' => 'viewer', 'confirm_password' => 'wrong-password'])
+            ->assertStatus(303)->assertSessionHas('error_unfilled', true);
+        $this->get($this->base.'/members')->assertOk()->assertSee('Secret fields are not refilled.')->assertSee('data-unfilled', false);
+    }
+
+    public function test_round_13_structure_and_wording(): void
+    {
+        $this->signIn('owner', time() - 301);
+        // Requests: the history ends with the way to the whole log.
+        $this->get($this->base.'/requests')->assertOk()
+            ->assertSeeInOrder(['Recent requests', '<a class="more-link" href="'.$this->base.'/audit?group=request">All request activity →</a>'], false);
+        // Account, confirmation needed: chip and link only in the facts row; the card keeps its subtitle; no foot note; no Sign out section.
+        $this->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a>', false)
+            ->assertDontSee('to reveal values or change access')->assertDontSee('Reveals and access changes are written')
+            ->assertSee('<h3>Password confirmation<small>Valid for 5 minutes.', false)->assertDontSee('<h2>Sign out</h2>', false)->assertSee('aria-label="Sign out of this session"', false);
+        // No heading inside a summary, in any view.
+        foreach (glob(resource_path('views/*.blade.php')) as $view) {
+            $this->assertDoesNotMatchRegularExpression('~<summary[^>]*>(?:(?!</summary>).)*<h[1-6]~s', (string) file_get_contents($view), basename($view));
+        }
+        $entry = (string) file_get_contents(resource_path('views/entry.blade.php'));
+        $this->assertStringContainsString('<th scope="row">Rotation reminder (UTC)</th>', $entry);
+        // A viewer is told once what the role sees.
+        $this->assertSame(1, substr_count($entry, 'Viewers see entry details only.'));
+        $this->assertStringNotContainsString('viewer role', $entry);
+        // Phones: the values are one tap from the closed drawer, for a person who may reveal them.
+        $this->assertStringContainsString('@if($canEdit)<a class="jump-quick" href="#values">Secret values</a>@endif', $entry);
+        $this->assertStringContainsString('Used by {{ $plural($used, \'entry\', \'entries\') }}, so it cannot be removed.', (string) file_get_contents(resource_path('views/types.blade.php')));
+        $style = (string) file_get_contents(public_path('app.css'));
+        $this->assertStringContainsString('.form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left', $style);
+        $this->assertStringContainsString('.import-example pre.cmd{white-space:pre-wrap;overflow-wrap:anywhere', $style);
+        $this->assertStringContainsString('nav.subnav>details.jump[open]+a.jump-quick{display:none}', $style);
+        // Grants: the shared password block stands above the filter bar, so bar, status line and board stay together.
+        $grants = (string) file_get_contents(resource_path('views/grants.blade.php'));
+        $this->assertLessThan(strpos($grants, '<details class="filters"'), strpos($grants, "'shared' => 'confirm-grants'"));
+        // Hiding values moves the focus only from a control that goes: Hide values, or a Copy of these values.
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("const losesFocus = hideNow.includes(active) || (active?.matches?.('[data-copy]') && secrets.some(el => el.id && el.id === active.dataset.copy));", $script);
+        $this->assertStringContainsString('if (manual || losesFocus) again[0]?.focus();', $script);
+    }
+
     public function test_account_page_shows_identity_confirmation_state_and_forms(): void
     {
         $this->signIn('viewer');
@@ -325,7 +377,7 @@ final class ShellTest extends TestCase
             ->assertSee('/members" data-confirm-from="confirm-members">', false)
             ->assertSee('<button class="go" data-held-name="Add member: " data-held-field="name">Add member</button>', false)
             // The add form only points to that field; a field of its own exists without script alone.
-            ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Password confirmation expired — <a class="more-link" href="#confirm-members-password" data-confirm-goto="confirm-members">enter it above <span aria-hidden="true">↑</span></a></span>', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
+            ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Password confirmation expired. <a class="more-link" href="#confirm-members-password" data-confirm-goto="confirm-members">Go to the password field <span aria-hidden="true">↑</span></a></span>', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
             ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana">Save role</button>', false)
             ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
             ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
@@ -613,7 +665,8 @@ final class ShellTest extends TestCase
         $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button aria-label="Sign out of this session">Sign out</button>', false)
             // Changing the password is no destructive action: the plain button, like Sign out.
             ->assertSee('<button>Change password and sign out</button>', false)
-            ->assertSee('<form class="action quiet" method="post" action="/logout">', false)
+            // Sign out is no section: one plain button in the head row beside the h1.
+            ->assertSee('<div class="head"><h1>Account</h1><form method="post" action="/logout">', false)->assertDontSee('<h2>Sign out</h2>', false)
             ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
         // The footer line belongs to the Entries pages and the Agents area only.
         $foot = '<p class="foot">Secret values stay in the vault. Agents only get action results.</p>';
@@ -684,7 +737,7 @@ final class ShellTest extends TestCase
         // While a confirmation is needed the page shows one password field at rest: changing the password is a closed fold.
         $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()
             ->assertSeeInOrder(['<h2 id="security">Security</h2>', '<form class="action" id="confirm" method="post" action="/confirm">', '<details class="fold password-fold">',
-                '<summary><h3 class="fold-name">Change sign-in password</h3><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>',
+                '<summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>',
                 '<form method="post" action="/password">', '</details>', '<h2>Workspaces</h2>'], false);
         // A field error follows the label and is the field's description, never part of its name; Requests and Grants are cards below 1180 px.
         $script = (string) file_get_contents(public_path('app.js'));
@@ -724,8 +777,8 @@ final class ShellTest extends TestCase
         $deferred = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => true]);
         $deferred->assertSee('class="confirm-inline shared is-deferred is-quiet" id="confirm-reveal"  data-primary="confirm-decide"', false)
             ->assertSee('<span data-when="valid"  hidden >Password confirmed until', false)
-            ->assertSee('<span data-when="deferred" hidden>Password confirmation expired — <a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">enter it above <span aria-hidden="true">↑</span></a></span>', false)
-            ->assertDontSee('Go to the password field');
+            ->assertSee('<span data-when="deferred" hidden>Password confirmation expired. <a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">Go to the password field <span aria-hidden="true">↑</span></a></span>', false)
+            ->assertDontSee('enter it above');
         // Nothing waits: the Reveal block is the one that says it.
         $alone = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => false]);
         $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Password confirmed until', false);

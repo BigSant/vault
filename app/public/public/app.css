@@ -368,7 +368,12 @@ details.jump>summary{display:flex;align-items:center;gap:8px;min-height:40px;pad
 details.jump>summary::before{content:"\25B8";color:var(--amber);flex:none}
 details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .jump-links{gap:0 18px;padding:0 12px 8px}
+/* Beside the closed drawer: one tap to the values. The open drawer lists the same link, so this one goes. */
+nav.subnav:has(>.jump-quick){flex-wrap:nowrap;align-items:flex-start;gap:8px}
+nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap}
+nav.subnav>details.jump[open]+a.jump-quick{display:none}
 }
+@media (min-width:901px){nav.subnav>a.jump-quick{display:none}}
 /* Entry page: boards end at --wide like everywhere; facts, cards and the archive forms keep --card. */
 .entry-page>:is(.head,nav.subnav)+h2,.entry-page>.waiting-first:has(>.section-head[hidden])+h2{margin-top:18px}
 .entry-page>.deck{max-width:var(--card)}
@@ -481,6 +486,12 @@ h3.gap{margin-top:22px;padding-top:14px;border-top:1px dashed var(--rule)}
 label.indent{margin-left:min(14em,30%)}
 @media (max-width:900px){label.indent{margin-left:0}}
 .form-foot button,.form-foot .btn{white-space:nowrap}
+/* A button that names its action with data (the confirm page: "Confirm: Reveal <entry name>"): the label wraps
+   inside the card and is never cut; the data is in normal weight, so the verb and the name read as two parts.
+   display:block: the label is running text (a button is a flex box, which would set its parts side by side). */
+.form-foot:has(.action-name) .controls{flex:0 1 auto;min-width:0;max-width:100%}
+.form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4}
+button.action-name .name{font-weight:400}
 /* A button in a row with a field (Members Save, Continue sign-in, Generate) is as tall as the field on wide screens. */
 @media (min-width:901px){
 :is(.controls,.inline,.with-button,.toolbar):has(>:is(input:not([type=hidden]),select),>label>:is(input,select))>:is(button,.btn){min-height:36px}
@@ -540,6 +551,7 @@ details.fold[open]{border-top:2px solid var(--amber)}
 details.fold:target{border-color:var(--amber)}
 .fold-name{font-weight:700;font-size:14px;margin-right:auto;overflow-wrap:anywhere}
 .fold-foot{display:flex;justify-content:flex-end;margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--rule)}
+p.fold-foot{display:block}
 /* Input with a button beside it; the button may also sit next to the whole label. */
 .with-button>input,.with-button>label{flex:1;min-width:0}
 .with-button>label{margin:0}
@@ -613,11 +625,9 @@ form.action>.confirm-inline.shared{margin:14px 0 0}
 .error-page{max-width:var(--card)}
 .error-status{margin:-8px 0 14px;color:var(--dim);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 /* Account, while a confirmation is needed: "Change sign-in password" is a closed fold, so the page shows one
-   password field at rest. Its name is the card's h3, inside the summary. */
-details.fold>summary>h3.fold-name{margin:0 auto 0 0}
+   password field at rest. Its name looks like the card's h3 (.legend); a summary holds no heading. */
+details.fold>summary>.legend.fold-name{width:auto;margin:0 auto 0 0}
 details.password-fold>.inner>form{margin:0}
-/* A plain box around a form that is no task of the page (Account: Sign out): no amber top. */
-form.action.quiet{border-top:1px solid var(--rule)}
 /* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
    form that was sent, focuses it and links the messages to their fields. Its focus ring is red like the callout. */
 .error-summary{max-width:var(--card);scroll-margin-top:16px}
@@ -775,8 +785,8 @@ details.import-ref>.inner .scroll{margin:0}
 form.action label+details.import-ref{margin-top:12px}
 form.action details.import-ref{background:var(--panel-2)}
 .import-example{max-width:var(--card);margin:0 0 14px}
-/* The example's lines are never broken (an environment ID stays whole): the block scrolls sideways instead. */
-.import-example pre.cmd{white-space:pre;overflow-wrap:normal;font-size:12px}
+/* The example's long lines wrap and an environment ID may break: no value is clipped and nothing scrolls sideways. */
+.import-example pre.cmd{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
 /* Import: the form and the Format reference are two columns of a deck where both fit; each starts with its h2.
    "Format ↓" in the intro is for the stacked page only: two columns need 1052 px, plus the page padding. */
 .import-deck>section>:last-child{margin-bottom:0}

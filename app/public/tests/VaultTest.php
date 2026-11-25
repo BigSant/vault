@@ -325,14 +325,16 @@ final class VaultTest extends TestCase
         $subjects = [
             ['member.change', $this->owner->id, 'Owner'], ['workspace.create', $this->workspace, 'Test'],
             ['project.rename', DB::table('projects')->value('id'), 'Test project'], ['environment.update', $this->environment, 'stage'],
-            ['type.save', $type->id, 'API key'], ['type.save', $type->key, 'API key'], ['type.delete', $missing, 'removed item'],
+            ['type.save', $type->id, 'API key'], ['type.save', $type->key, 'API key'], ['type.delete', $missing, null],
             ['entry.create', $entry, 'Private name'], ['machine.create', $machine, 'ai-os'],
             ['grants.revoke', $grant, 'Private name'], ['operation.request', $op, 'Private name'],
         ];
         foreach ($subjects as [$event, $id]) {
             app(\App\Vault\Access::class)->audit($this->workspace, $event, $id);
         }
-        $events = $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->viewData('events')->keyBy('subject');
+        // A subject that no longer resolves has no label: the partial prints a muted "removed item", never the id.
+        $page = $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertSee('<span class="muted">removed item</span>', false)->assertDontSee($missing);
+        $events = $page->viewData('events')->keyBy('subject');
         foreach ($subjects as [, $id, $label]) {
             $this->assertSame($label, $events[$id]->subject_label);
         }
@@ -606,14 +608,14 @@ final class VaultTest extends TestCase
         ] as [$path, $fields, $verb, $name]) {
             // The action is named once, by the solid button ("Confirm: <action>"); the verb has no colon of its own.
             $this->post($path, $fields)->assertForbidden()->assertDontSeeText('Action to confirm')
-                ->assertSee('<button class="go">Confirm: '.$verb.' <span class="name">'.$name.'</span></button>', false)
+                ->assertSee('<button class="go action-name">Confirm: '.$verb.' <span class="name">'.$name.'</span></button>', false)
                 ->assertSeeInOrder(['<div class="callout warn" id="confirm-status" role="status">', '<div class="form-foot"><p class="note">The confirmation is valid for 5 minutes.</p>'], false);
         }
         $this->post("/entries/$entry/unarchive")->assertForbidden()
             ->assertSee('Confirm: Restore <span class="name">Private name</span> from archive</button>', false);
-        $this->post("$base/grants")->assertForbidden()->assertSee('<button class="go">Confirm and continue</button>', false);
+        $this->post("$base/grants")->assertForbidden()->assertSee('<button class="go action-name">Confirm and continue</button>', false);
         $ready = $this->post('/confirm', ['pending' => session('pending_action.nonce'), 'current_password' => 'Synthetic-password-123!'])->assertOk();
-        $this->assertMatchesRegularExpression('~<button class="go">\s*Continue\s*</button>~', $ready->getContent());
+        $this->assertMatchesRegularExpression('~<button class="go action-name">\s*Continue\s*</button>~', $ready->getContent());
     }
 
     public function test_activity_filters_by_outcome_and_inclusive_dates(): void

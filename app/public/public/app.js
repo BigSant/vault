@@ -26,7 +26,8 @@ const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(se
 // above the values (data-hidden-note) changes from "hide again after 30 seconds" to what happened.
 // "Hide values" ([data-hide-values], shown by script while values are on screen) does the same at once, on demand:
 // every revealed field is concealed, its Copy is switched off, it is said, and the focus moves to the button that
-// reveals the values again. The button goes with the values, also when the 30 seconds end first.
+// reveals the values again. The button goes with the values, also when the 30 seconds end first: then the focus
+// moves only if it stood on "Hide values" or on a Copy of these values.
 if (document.querySelector('[data-secret]:not([data-keep])')) {
   const hideNow = [...document.querySelectorAll('[data-hide-values]')];
   let concealed = false;
@@ -35,6 +36,11 @@ if (document.querySelector('[data-secret]:not([data-keep])')) {
     concealed = true;
     clearTimeout(timer);
     const version = document.querySelector('[data-secret][data-version]')?.dataset.version;
+    // Looked at before anything changes: the focus moves only when it stands on a control that is about to go, a
+    // Copy of one of these values (switched off below) or "Hide values" (hidden below). Anywhere else it stays.
+    const secrets = [...document.querySelectorAll('[data-secret]:not([data-keep])')];
+    const active = document.activeElement;
+    const losesFocus = hideNow.includes(active) || (active?.matches?.('[data-copy]') && secrets.some(el => el.id && el.id === active.dataset.copy));
     hideSecrets('[data-secret]:not([data-keep])');
     document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
     // With the values gone, revealing them again is the page's main action: its button turns solid.
@@ -44,10 +50,11 @@ if (document.querySelector('[data-secret]:not([data-keep])')) {
     again.forEach(button => { if (holding) button.dataset.heldGo = '1'; else button.classList.add('go'); });
     // A password block that only points to the page's one field keeps its card's button plain: it looks again.
     document.dispatchEvent(new Event('vault:solid'));
-    // The focus never stays on a button that is gone: it moves to the way back to the values.
-    const focused = manual || hideNow.includes(document.activeElement);
+    // The focus never stays on a button that is gone or switched off: it moves to the button that reveals the same
+    // values again ("Reveal again", or "Reveal version N again" under an older version). A press of "Hide values"
+    // counts also where a click does not focus the button.
     hideNow.forEach(button => { button.hidden = true; });
-    if (focused) again[0]?.focus();
+    if (manual || losesFocus) again[0]?.focus();
     const tail = version ? 'Copy is off until you reveal version ' + version + ' again.' : 'Copy is off until you reveal them again.';
     say((version ? 'Version ' + version + ' values hidden' : 'Secret values hidden') + (manual ? '. ' : ' again. ') + tail);
   };

@@ -91,8 +91,12 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   both ways; do not reopen it. While the rotation-due filter is on, its stat is underlined and says "Clear ×".
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table), secret values (reveal; while values are on screen a plain "Hide values" button
-  conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again";
-  the values hide by themselves after 30 seconds either way), versions, agent access (owners; read-only grants with a link to Grants
+  conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again"
+  ("Reveal version N again" under an older version); the values hide by themselves after 30 seconds either way, and
+  then the focus moves to that button only when it stood on a Copy of these values or on "Hide values", and stays
+  where it is otherwise). On phones, where the jump links are a closed drawer, a person who may reveal gets
+  "Secret values" as a link beside the drawer: one tap to the values, while waiting requests stay the first
+  section (the open drawer lists the link itself, versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
   Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
   ("Request activity for this entry →", "All activity for this entry →").
@@ -102,7 +106,7 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   rows; typed values stay in the fields that still exist, and every "Clear the current … value" box
   (`clear-<type>-<key>`) keeps its state, checked or not. The status line says what was kept and what was not.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
-  reference (field table, example) stand side by side; below that they stack and "Format ↓" in the intro jumps
+  reference (field table, example; the example's long lines wrap and an environment ID may break, so no value is clipped) stand side by side; below that they stack and "Format ↓" in the intro jumps
   to the reference. The form column is the wider one (1.5 : 1), so an environment ID and its "Copy ID" share one
   line. The form's Environment IDs and Type keys folds open from the links in the Format table, also
   on a second press after one was closed by hand.
@@ -123,7 +127,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   ("Automatic check paused · …" after 15 idle minutes; the status keeps to the one verb, check)
   and the time does not advance,
   here and on an owner's entry page; the button works without script. A request that expires while it holds the
-  focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry.
+  focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry. After
+  the history a `.more-link` "All request activity →" leads to the workspace log (`/audit?group=request`).
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
@@ -134,7 +139,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   departure confirmed in the page (the second press of an armed link or of Sign out) remove it. The visible
   warning stays. An armed header mark is a button like the armed nav links, not the wordmark.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
-  and the "Add a grant" form (pre-selected from the filter).
+  and the "Add a grant" form (pre-selected from the filter). The shared password block (`confirm-grants`) stands
+  above the filter bar, so the bar, its status line and the board stay together.
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)
@@ -167,14 +173,18 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 ### Account (any signed-in user)
 
-- `/account` — who you are, the password confirmation state, "Security" (the confirm form while a confirmation
-  is needed, and change password; the h2 is the same in both states; while a confirmation is needed "Change
-  sign-in password" is a closed `details.fold`, so the page shows one password field at rest), the
-  workspaces you belong to with your role in each, sign out (a plain box, no amber top).
+- `/account` — who you are and "Sign out" as a plain button in the head row beside the h1 (no section of its
+  own), the password confirmation state (while needed the facts row is the chip and the link "Confirm your
+  password", nothing more; what it is for is said once, by the card's subtitle), "Security" (the confirm form
+  while a confirmation is needed, and change password; the h2 is the same in both states; while a confirmation is
+  needed "Change sign-in password" is a closed `details.fold`, so the page shows one password field at rest; a
+  `<summary>` never holds a heading, the fold's name is a span with the h3 look), the workspaces you belong to
+  with your role in each.
 - `/confirm?return=/path` — confirm your password (keeps the signed-in header). The page says what happened once
   (the callout "Nothing was changed. …"), has one sentence about the 5-minute validity in the form foot, and names
   a stopped action once, in its solid button: "Confirm: Reveal <name>" ("Confirm and continue" when the action
-  has no known name), then "Reveal <name>" after the password, both in a right-aligned `.form-foot`. Action labels
+  has no known name), then "Reveal <name>" after the password, both in a right-aligned `.form-foot`. That button
+  (`.action-name`) wraps inside the card however long the label is, and the name is in normal weight beside the bold verb. Action labels
   carry no colon of their own ("Allow once shop.admin-login on …"). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
@@ -217,11 +227,11 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    and Archive entry on the entry page; every form of Setup › Projects (`'confirm-setup'` above the project
    cards); every form of Setup › Entry types (`'confirm-types'` above the folds: Save entry type, Remove entry
    type, Add entry type; no fold has a block of its own); Revoke and the add form on Identities
-   (`'confirm-agents'`) and Grants (`'confirm-grants'`), above the board. A form card on such a page (Add a
+   (`'confirm-agents'`, above the board) and Grants (`'confirm-grants'`, above the filter bar). A form card on such a page (Add a
    member, Add an agent, Add a grant, Add a project, the environment template, Add an entry type) holds a
    deferred block (`'primary' => '<id>'`, `'fallback' => true`): nothing while valid, a pointer to the one field
    when expired, and a field of its own only in `<noscript>`. The pointer is one line under a dashed rule,
-   "Password confirmation expired — enter it above ↑" (the link puts the focus in that field), and while it
+   "Password confirmation expired. Go to the password field ↑" (the link puts the focus in that field), and while it
    shows, the solid button of its own form or card ("Add member", "Reveal current") is plain: nothing on the page
    is solid until an action is held. A block is not deferred while its own field holds the focus or something
    typed (the entry page, when a request arrives under a person who is typing); it is looked at again on focusout. A page whose list is still empty has no shared

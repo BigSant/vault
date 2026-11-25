@@ -1,7 +1,8 @@
 @extends('layout')
 @section('title', 'Account')
 @section('content')
-<h1>Account</h1>
+{{-- Sign out is no section of the page: one plain button in the head row, beside the h1. --}}
+<div class="head"><h1>Account</h1><form method="post" action="/logout">@csrf<button aria-label="Sign out of this session">Sign out</button></form></div>
 <table class="facts">
     <tr><th scope="row">Name</th><td>{{ $user->name }}</td></tr>
     <tr><th scope="row">Email</th><td>{{ $user->email }}</td></tr>
@@ -9,14 +10,15 @@
         @if($confirmedUntil)
             <span class="chip ok">valid</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
         @else
-            <span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a> to reveal values or change access.
+            <span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a>
         @endif
     </td></tr>
 </table>
 
 {{-- The heading stays "Security" whatever the confirmation state; each card names itself with an h3.
      While a confirmation is needed the page shows one password field at rest: "Change sign-in password" is then a
-     closed fold beside the confirm form (open again when its form came back with an error). --}}
+     closed fold beside the confirm form (open again when its form came back with an error). A summary holds no
+     heading: the fold's name is a span that looks like the card h3 it stands for. --}}
 <h2 id="security">Security</h2>
 <div class="deck">
     @unless($confirmedUntil)
@@ -24,10 +26,10 @@
         <input type="hidden" name="return" value="/account">
         <h3>Password confirmation<small>Valid for 5 minutes. Needed to reveal values and to change entries, access or setup.</small></h3>
         <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
-        <div class="form-foot"><p class="note">Reveals and access changes are written to the activity log.</p><button class="go">Confirm</button></div>
+        <div class="form-foot"><button class="go">Confirm</button></div>
     </form>
     <details class="fold password-fold"@if(session('error_form') === '/password') open @endif>
-        <summary><h3 class="fold-name">Change sign-in password</h3><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>
+        <summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>
         <div class="inner">
     <form method="post" action="/password">@csrf
     @else
@@ -61,9 +63,4 @@
 <p class="note"><a class="more-link" href="/workspaces/new">Add a workspace</a> to keep another set of projects, entries, members and agents apart.</p>
 @endif
 
-<h2>Sign out</h2>
-{{-- A plain box, not a form card with the amber top: the note on the left, the plain button on the right. --}}
-<form class="action quiet" method="post" action="/logout">@csrf
-    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button aria-label="Sign out of this session">Sign out</button></div>
-</form>
 @endsection

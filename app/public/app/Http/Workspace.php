@@ -674,7 +674,7 @@ final class Workspace
             $event->actor_label = $names[$event->actor] ?? $event->actor_kind;
             $entry = $related[$event->subject] ?? $event->subject;
             $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject)
-                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null) ?? 'removed item';
+                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null);
             $event->subject_url = $entryNames->has($entry) ? '/entries/'.$entry
                 : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject : null);
         }
