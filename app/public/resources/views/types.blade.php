@@ -137,7 +137,7 @@
         @if($types->isEmpty())
             @include('confirm-inline', ['verb' => 'add this entry type'])
         @else
-            @include('confirm-inline', ['verb' => 'add this entry type', 'shared' => 'confirm-add-type', 'primary' => 'confirm-types', 'primaryShown' => true, 'primaryWhere' => 'above the entry types', 'fallback' => true])
+            @include('confirm-inline', ['verb' => 'add this entry type', 'shared' => 'confirm-add-type', 'primary' => 'confirm-types', 'primaryShown' => true, 'fallback' => true])
         @endif
         <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new" aria-label="Add a field to the new entry type">+ Field</button><button class="go" data-held-name="Add entry type " data-held-field="name">Add entry type</button></div></div>
     </form>

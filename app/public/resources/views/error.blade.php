@@ -28,7 +28,7 @@
             401 => 'Check your sign-in details or the authenticator code.',
             403 => 'Your role in this workspace does not allow it, or the code you entered was wrong.',
             404 => 'This page does not exist, or is not available to you.',
-            409 => 'It changed meanwhile, or it is still in use. Reload and try again.',
+            409 => 'It changed meanwhile, or it is still in use. Nothing was changed.',
             419 => 'The session expired. Nothing was saved.',
             422 => 'Check required fields, value formats and password length.',
             429 => 'Wait a minute, then try again.',
@@ -39,7 +39,7 @@
     {{-- One recovery instruction, in the order it is done; its first step is the button below. --}}
     @if($status === 419)<p class="note">Sign in again, then open the form and fill it in again. Secret fields are not refilled.</p>
     @elseif($status === 422)<p class="note">{{ $returnPath ? 'Go back to the previous page to correct the form.' : ($signIn ? 'Sign in, then open the form again to correct it.' : 'Go back to entries, then open the form again to correct it.') }} Secret fields are not refilled.</p>
-    @elseif($status === 409)<p class="note">{{ $returnPath ? 'Go back to the previous page to see the current state.' : ($signIn ? 'Sign in to see the current state.' : 'Go back to entries to see the current state.') }} Nothing was changed.</p>@endif
+    @elseif($status === 409)<p class="note">{{ $returnPath ? 'Go back to the previous page to see the current state, then try again.' : ($signIn ? 'Sign in to see the current state, then try again.' : 'Go back to entries to see the current state, then try again.') }}</p>@endif
     <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : ($returnPath ?? $home) }}">{{ $signIn ? 'Sign in' : ($returnPath ? 'Back to previous page' : 'Back to entries') }}</a></div>
 </div>
 @endsection

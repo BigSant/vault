@@ -14,7 +14,9 @@
     </td></tr>
 </table>
 
-{{-- The heading stays "Security" whatever the confirmation state; each card names itself with an h3. --}}
+{{-- The heading stays "Security" whatever the confirmation state; each card names itself with an h3.
+     While a confirmation is needed the page shows one password field at rest: "Change sign-in password" is then a
+     closed fold beside the confirm form (open again when its form came back with an error). --}}
 <h2 id="security">Security</h2>
 <div class="deck">
     @unless($confirmedUntil)
@@ -24,15 +26,24 @@
         <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
         <div class="form-foot"><p class="note">Reveals and access changes are written to the activity log.</p><button class="go">Confirm</button></div>
     </form>
-    @endunless
+    <details class="fold password-fold"@if(session('error_form') === '/password') open @endif>
+        <summary><h3 class="fold-name">Change sign-in password</h3><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>
+        <div class="inner">
+    <form method="post" action="/password">@csrf
+    @else
     <form class="action" method="post" action="/password">@csrf
         <h3>Change sign-in password</h3>
-        {{-- Two "Current password" fields stand side by side while the confirmation is needed: this one says what it is for. --}}
+    @endunless
+        {{-- With the fold open two "Current password" fields are on the page: this one says what it is for. --}}
         <label><span>Current password @unless($confirmedUntil)<small>to change it</small>@endunless</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
         <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
         <label><span>Repeat new password</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
         <div class="form-foot"><p class="note">At least 14 characters. Signs out every session, this one too.</p><button>Change password and sign out</button></div>
     </form>
+    @unless($confirmedUntil)
+        </div>
+    </details>
+    @endunless
 </div>
 
 <h2>Workspaces</h2>

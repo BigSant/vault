@@ -4,4 +4,4 @@
         : (in_array($o, ['denied', 'failed', 'rejected', 'error', 'refused', 'invalid'], true) ? 'bad'
         : (in_array($o, ['pending', 'requires_user_action'], true) ? 'warn' : (in_array($o, ['running'], true) ? 'run' : 'muted')));
     if (! empty($quiet) && $kind === 'ok') { $kind = 'muted'; }
-@endphp<span class="chip {{ $kind }}">{{ ['pending' => 'waiting for approval', 'requires_user_action' => 'needs MFA code'][$o] ?? str_replace('_', ' ', $o) }}</span>
+@endphp<span class="chip {{ $kind }}">{{ ['pending' => 'waiting for approval', 'requires_user_action' => 'needs MFA code', 'revoked' => 'cancelled'][$o] ?? str_replace('_', ' ', $o) }}</span>

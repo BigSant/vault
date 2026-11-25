@@ -42,6 +42,8 @@ if (document.querySelector('[data-secret]:not([data-keep])')) {
     const holding = document.querySelector('.confirm-inline [data-held-row]:not([hidden])');
     const again = [...document.querySelectorAll('[data-go-when-hidden]')];
     again.forEach(button => { if (holding) button.dataset.heldGo = '1'; else button.classList.add('go'); });
+    // A password block that only points to the page's one field keeps its card's button plain: it looks again.
+    document.dispatchEvent(new Event('vault:solid'));
     // The focus never stays on a button that is gone: it moves to the way back to the values.
     const focused = manual || hideNow.includes(document.activeElement);
     hideNow.forEach(button => { button.hidden = true; });
@@ -336,7 +338,11 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // page names the waiting requests' block) is deferred while that one is on screen: it shows nothing while the
 // confirmation is valid and, once it has expired, a line pointing to the one password field, which then serves this
 // block's forms too. A block marked data-quiet-valid (Members, above the rows) shows nothing while the confirmation
-// is valid, because a form on the same page states it.
+// is valid, because a form on the same page states it. A block is not deferred while its own field holds the focus
+// or something typed (the primary block may appear under a person who is typing here); it is looked at again when
+// the field loses the focus. While a deferred block points to the one field, the solid button of its own form or
+// card ("Add member", "Reveal current") is plain: nothing on the page is solid until the password is there
+// (data-deferred-go marks it, and it is solid again when the pointer goes).
 // The held button's wording: the pressed button's data-held-name, plus the chosen option of the form field named by
 // data-held-field ("Change Dana's role to " + "Editor"; a change of that field while held changes the wording).
 // Data in it keeps its case: what follows ": ", the data-held-data text after data-held-lead ("Change " + "Dana"),
@@ -358,9 +364,22 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   const quietValid = box.hasAttribute('data-quiet-valid');
   let shown = null;
   let wasExpired = null;
+  const own = primary ? box.closest('form, .card') : null;
+  const plainOwn = pointing => {
+    if (!own) return;
+    own.querySelectorAll(':is(button, .btn):is(.go, [data-held-go], [data-deferred-go]):not([data-held])').forEach(button => {
+      if (pointing) { button.classList.remove('go'); button.dataset.deferredGo = '1'; return; }
+      if (!button.dataset.deferredGo) return;
+      delete button.dataset.deferredGo;
+      // While an action is held, the held button stays the only solid one; the release makes this one solid.
+      if (!button.dataset.heldGo) button.classList.add('go');
+    });
+  };
   const check = () => {
     const expired = until - (Date.now() + skew) <= 5000;
-    const deferred = Boolean(primary && !primary.hidden);
+    const busy = !input.disabled && !input.closest('[hidden]') && (document.activeElement === input || input.value !== '');
+    const deferred = Boolean(primary && !primary.hidden) && !busy;
+    plainOwn(deferred && expired);
     const key = expired + '/' + deferred;
     if (key === shown) return expired;
     shown = key;
@@ -380,7 +399,11 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     return expired;
   };
   check();
-  if (primary) new MutationObserver(check).observe(primary, { attributes: true, attributeFilter: ['hidden'] });
+  if (primary) {
+    new MutationObserver(check).observe(primary, { attributes: true, attributeFilter: ['hidden'] });
+    // The field was left, or emptied: the block may be deferred now.
+    input.addEventListener('focusout', () => setTimeout(check, 0));
+  }
   // The pointer of a deferred block leads to the one field and puts the focus in it.
   box.querySelectorAll('a[data-confirm-goto]').forEach(link => link.addEventListener('click', event => {
     const field = document.getElementById(link.dataset.confirmGoto)?.querySelector('input[type=password]');
@@ -391,6 +414,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   }));
   setInterval(check, 5000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  document.addEventListener('vault:solid', check);
   // Neither a typed password nor a copy of it stays in a page that is left or restored.
   addEventListener('pagehide', () => { input.value = ''; document.querySelectorAll('input[type=hidden][data-confirm-copy]').forEach(copy => copy.remove()); });
   if (!shared) {
@@ -403,7 +427,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     return;
   }
   const hint = box.querySelector('[data-pending]');
-  const state = { box, input, check, held: null, primary: box.dataset.primary || null };
+  const state = { box, input, check, held: null, primary: box.dataset.primary || null, deferred: () => box.classList.contains('is-deferred') };
   // The held form may have been replaced by a refresh: the same action (and button) is looked up again.
   const heldForm = () => {
     const held = state.held;
@@ -429,7 +453,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   };
   const solid = on => {
     if (on) document.querySelectorAll('main :is(button, .btn).go:not([data-held])').forEach(button => { button.classList.remove('go'); button.dataset.heldGo = '1'; });
-    else document.querySelectorAll('main [data-held-go]').forEach(button => { button.classList.add('go'); delete button.dataset.heldGo; });
+    else document.querySelectorAll('main [data-held-go]').forEach(button => { if (!button.dataset.deferredGo) button.classList.add('go'); delete button.dataset.heldGo; });
   };
   const line = text => { if (hint) { hint.textContent = text; hint.hidden = !text; } };
   const showHeld = (name, button) => {
@@ -511,8 +535,9 @@ document.addEventListener('submit', event => {
   let state = form && confirmBoxes.get(form.dataset.confirmFrom);
   if (!state || event.defaultPrevented) return;
   // A deferred block's forms use the one password field that is on screen.
+  state.check();
   const first = state.primary && confirmBoxes.get(state.primary);
-  if (first && !first.box.hidden) state = first;
+  if (first && !first.box.hidden && state.deferred()) state = first;
   form.querySelectorAll('input[type=hidden][data-confirm-copy]').forEach(copy => copy.remove());
   if (!state.check()) return;
   if (!state.input.value) {
@@ -533,9 +558,16 @@ document.addEventListener('submit', event => {
 // page, and Sign out, asks it first in the same two steps. A copy that worked lifts the guard, and so does "I've
 // saved it" ([data-leave-clear]) for a token that was selected and copied by hand. Without script the links are
 // plain links.
+// The ways out that are not links of the page (Back, reload, closing the tab) get the browser's own "Leave site?"
+// question from a beforeunload handler. It is registered only while the token is unsaved, and taken away by a copy
+// that worked, by "I've saved it", and by a departure the person confirmed in the page (the second press of an
+// armed link or of Sign out), so nobody is asked twice.
 const guard = document.querySelector('[data-leave-guard]');
 if (guard) {
   let guarding = true;
+  const beforeLeave = event => { event.preventDefault(); event.returnValue = ''; };
+  addEventListener('beforeunload', beforeLeave);
+  const allowLeave = () => removeEventListener('beforeunload', beforeLeave);
   const steps = [];
   const step = armed => { const made = twoStep(guard.dataset.leaveGuard, armed); steps.push(made); return made; };
   const only = keep => steps.forEach(other => { if (other !== keep) other.disarm(false); });
@@ -544,7 +576,7 @@ if (guard) {
     const mine = step(() => 'Leave this page');
     link.addEventListener('click', event => {
       if (!guarding || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
-      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); return; }
+      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); else allowLeave(); return; }
       event.preventDefault();
       only(mine);
       mine.arm(link);
@@ -555,7 +587,7 @@ if (guard) {
     const mine = step(armedText);
     form.addEventListener('submit', event => {
       if (!guarding || event.defaultPrevented) return;
-      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); return; }
+      if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); else allowLeave(); return; }
       const button = event.submitter instanceof HTMLButtonElement ? event.submitter : submitters(form)[0];
       if (!button) return;
       event.preventDefault();
@@ -567,7 +599,7 @@ if (guard) {
   addEventListener('keydown', event => { if (event.key !== 'Escape') return; const open = steps.find(made => made.armed()); if (open) { event.stopPropagation(); open.disarm(true); } }, true);
   addEventListener('pageshow', event => { if (event.persisted) only(null); });
   const saved = [...guard.querySelectorAll('[data-leave-clear]')];
-  const lift = () => { guarding = false; only(null); saved.forEach(button => { button.hidden = true; }); };
+  const lift = () => { guarding = false; allowLeave(); only(null); saved.forEach(button => { button.hidden = true; }); };
   saved.forEach(button => {
     button.hidden = false;
     button.addEventListener('click', () => {
@@ -680,9 +712,9 @@ tableRoles();
 // a row that holds the focus or a started input is left as it is, and its siblings are updated, added and removed
 // around it, so a new request shows up while the owner types a code into another one. The waiting heading counts
 // the rows shown. What changed is said in the live region; "Refresh requests" beside the waiting heading does the
-// same on demand, and "Queue checked HH:MM UTC" next to it says when the page last matched the server. A round
-// that failed, or a row in use that no longer matches the server, reads "Last updated HH:MM UTC · refresh delayed":
-// the time does not advance.
+// same on demand, and "Checked HH:MM UTC" next to it says when the page last matched the server. A round
+// that failed, or a row in use that no longer matches the server, reads "Check delayed · last checked HH:MM UTC":
+// the time does not advance. The status uses the one verb, check.
 const regions = () => [...document.querySelectorAll('[data-refresh]')];
 const refreshUrl = regions().map(region => region.dataset.refreshUrl).find(Boolean);
 if (refreshUrl) {
@@ -739,8 +771,8 @@ if (refreshUrl) {
   const clock = () => new Date(Date.now() + clockSkew).toISOString().slice(11, 16);
   // When the page last matched the server: the time the server printed, then every round that went through.
   let last = stamp?.textContent.match(/\d\d:\d\d/)?.[0] || clock();
-  const checked = () => 'Queue checked ' + (last = clock()) + ' UTC';
-  const delayed = (why = 'refresh delayed') => 'Last updated ' + last + ' UTC \u00B7 ' + why;
+  const checked = () => 'Checked ' + (last = clock()) + ' UTC';
+  const delayed = (why = 'Check delayed') => why + ' \u00B7 last checked ' + last + ' UTC';
   // One board, row by row. The rows in use stay where they are (moving a row would drop its focus); every other row
   // is taken from the fresh page and put before or after them in the fresh order. Returns null when no row is in
   // use (the region is then replaced whole), else how many kept rows no longer match the server: gone from this
@@ -798,7 +830,7 @@ if (refreshUrl) {
   ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
   const refresh = async manual => {
     // Stopped for want of a press: the status says so instead of standing still without a word.
-    if (!manual && !running && !document.hidden && Date.now() - used > 900000) status(delayed('automatic refresh paused'));
+    if (!manual && !running && !document.hidden && Date.now() - used > 900000) status(delayed('Automatic check paused'));
     if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;
     running = true;
     due = Date.now() + 30000;
@@ -841,7 +873,7 @@ if (refreshUrl) {
       status((text ? text + ' ' : manual && !skipped ? 'Up to date. ' : '') + (skipped ? delayed() : checked()));
     } catch {
       // No connection or a server error: the next round tries again, and the time of the last good round stays.
-      if (manual) { status('Could not refresh. Check the connection and try again. ' + delayed()); say('Could not refresh requests.'); }
+      if (manual) { status('No answer from the server: try again. ' + delayed()); say('Could not check for requests.'); }
       else status(delayed());
     } finally { running = false; }
   };
@@ -921,6 +953,26 @@ bars.forEach(bar => {
   bar.addEventListener('toggle', () => { if (!wide.matches) bar.dataset.phone = bar.open ? 'open' : 'closed'; });
 });
 wide.addEventListener('change', () => bars.forEach(syncBar));
+// Header focus order. On wide screens the header is one row: mark, workspace switcher, nav, account menu, which
+// is the order of the source. On phones (the 900 px layout) the account menu shares the first row with the
+// switcher and the nav is the second row, so the account menu is moved before the nav in the document there: Tab
+// and a screen reader follow what is seen at both widths. An open menu stays open and the focus stays where it was.
+const topBar = document.querySelector('header.top');
+const accountMenu = topBar?.querySelector(':scope > details.menu.account');
+const mainNav = topBar?.querySelector(':scope > nav.nav');
+if (accountMenu && mainNav) {
+  const placeAccount = () => {
+    const first = !wide.matches;
+    if (first === (accountMenu.nextElementSibling === mainNav)) return;
+    const focused = accountMenu.contains(document.activeElement) ? document.activeElement : null;
+    const open = accountMenu.open;
+    if (first) mainNav.before(accountMenu); else topBar.append(accountMenu);
+    accountMenu.open = open;
+    focused?.focus({ preventScroll: true });
+  };
+  placeAccount();
+  wide.addEventListener('change', placeAccount);
+}
 // Header menus are <details>: only one stays open, and a click outside or Escape closes it.
 const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {
@@ -987,7 +1039,7 @@ if (summary) {
   const sharedBlock = candidate => {
     let state = candidate?.dataset.confirmFrom ? confirmBoxes.get(candidate.dataset.confirmFrom) : null;
     const first = state?.primary && confirmBoxes.get(state.primary);
-    if (first && !first.box.hidden) state = first;
+    if (first && !first.box.hidden && state.deferred()) state = first;
     return state && !state.input.disabled && !state.input.closest('[hidden]') ? state : null;
   };
   const fieldOf = (candidate, key) => findIn(candidate, key) || (key === 'confirm_password' ? sharedBlock(candidate)?.input || null : null);

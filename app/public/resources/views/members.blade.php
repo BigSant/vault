@@ -39,7 +39,7 @@
         {{-- The hint is the field's description (aria-describedby), not part of its name. --}}
         <div class="field"><div class="field-name"><label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small></div><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password" aria-describedby="first-password-hint"><button type="button" data-generate="first-password" aria-label="Generate initial password">Generate</button></span></div>
         <label><span>Role</span><select name="role">@foreach($roles as $role)<option value="{{ $role }}" @selected(($failedForm === 'add' ? old('role', 'viewer') : 'viewer') === $role)>{{ ucfirst($role) }}</option>@endforeach</select></label>
-        @include('confirm-inline', ['verb' => 'add this member', 'shared' => 'confirm-add-member', 'primary' => 'confirm-members', 'primaryShown' => true, 'primaryWhere' => 'above the members', 'fallback' => true])
+        @include('confirm-inline', ['verb' => 'add this member', 'shared' => 'confirm-add-member', 'primary' => 'confirm-members', 'primaryShown' => true, 'fallback' => true])
         <div class="form-foot"><p class="note">Hand the password over privately. The authenticator code is set up at the first sign-in. An existing account's password is not changed.</p><button class="go" data-held-name="Add member: " data-held-field="name">Add member</button></div>
     </form>
 @endsection

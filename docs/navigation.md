@@ -30,10 +30,12 @@ Use these words in every UI text. Code names may differ.
 - **Password confirmation** — the one name for the 5-minute confirmation before sensitive actions (Account row,
   the confirm page, the inline field). Not "identity", not "sensitive actions".
 - **Sign out** — not "Lock". Create actions in the signed-in UI: headings and links "Add a/an X", submit
-  buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **Expires (UTC)**.
+  buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **End date (UTC)** as the column head for agent and grant end dates (rows say Expires, Expired or Revoked).
   **rotation due**. Password fields are labelled **Current password**.
 - End dates of agents and grants read **Expires**, **Expired** or **Revoked**, then the date and UTC, then the
   reason on a line of its own. One partial (`end-date`) prints them on Identities, Grants and an entry's Agent access.
+  The Identities column head reads "End date (UTC)", because its rows hold all three; each row keeps its own label.
+- A request that ended without an owner's decision reads **cancelled**, never "revoked" (the `outcome` partial maps it).
 - Roles are shown as neutral `chip role`, never with state colours.
 - A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it. A page with an add
   form further down puts one quiet "+ Add a/an X" button in the head row beside the h1, jumping to the form's h2.
@@ -66,6 +68,12 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
   derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
 - **Account menu** (`<details>` under the user's name): Account → `GET /account`, Sign out (POST `/logout`).
+- **Focus order is the order seen.** Wide screens: mark, workspace switcher, nav, account menu (the order of the
+  source). At 900 px and below the rows are [mark, workspace switcher, account menu] and [nav], and app.js moves
+  the account menu before the nav in the document, so Tab and Shift+Tab follow the rows (checked with real keys at
+  390 and 1280; an open menu and the focus survive a resize across the breakpoint). Not CSS `reading-flow`: in
+  Chrome it drops the menus' summaries from the Tab order of the grid. Without script the phone order is the
+  source order.
 - **One right edge.** On desktop the header's contents start and end where the page's do: the bar is full width,
   its contents are capped at `--wide` and left-aligned like `main`, so the account menu ends where the boards end
   (checked at 1280 and 1920).
@@ -95,7 +103,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   (`clear-<type>-<key>`) keeps its state, checked or not. The status line says what was kept and what was not.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
   reference (field table, example) stand side by side; below that they stack and "Format ↓" in the intro jumps
-  to the reference. The form's Environment IDs and Type keys folds open from the links in the Format table, also
+  to the reference. The form column is the wider one (1.5 : 1), so an environment ID and its "Copy ID" share one
+  line. The form's Environment IDs and Type keys folds open from the links in the Format table, also
   on a second press after one was closed by hand.
 
 ### Agents (owner)
@@ -109,8 +118,9 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   `[data-refresh]` regions (the request sections, the waiting heading and the header nav count). A request board is
   merged row by row (rows match by `data-request`): only the row that holds the focus or a started input is left
   as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading
-  is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). "Refresh requests" and "Queue checked HH:MM UTC" sit beside the waiting heading; when a round
-  fails, or a row in use no longer matches the server, the status reads "Last updated HH:MM UTC · refresh delayed"
+  is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). "Refresh requests" and "Checked HH:MM UTC" sit beside the waiting heading; when a round
+  fails, or a row in use no longer matches the server, the status reads "Check delayed · last checked HH:MM UTC"
+  ("Automatic check paused · …" after 15 idle minutes; the status keeps to the one verb, check)
   and the time does not advance,
   here and on an owner's entry page; the button works without script. A request that expires while it holds the
   focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry.
@@ -119,6 +129,10 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
   copied, every link out of that page (header, tabs, both next steps) and Sign out asks "Token copied?" in the
   two-step pattern; a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
+  The ways out that are not links of the page (Back, reload, closing the tab) get the browser's own question from
+  a `beforeunload` handler, registered only while the token is unsaved: a copy that worked, "I've saved it" and a
+  departure confirmed in the page (the second press of an armed link or of Sign out) remove it. The visible
+  warning stays. An armed header mark is a button like the armed nav links, not the wordmark.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
   and the "Add a grant" form (pre-selected from the filter).
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
@@ -154,9 +168,14 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 ### Account (any signed-in user)
 
 - `/account` — who you are, the password confirmation state, "Security" (the confirm form while a confirmation
-  is needed, and change password; the h2 is the same in both states), the
+  is needed, and change password; the h2 is the same in both states; while a confirmation is needed "Change
+  sign-in password" is a closed `details.fold`, so the page shows one password field at rest), the
   workspaces you belong to with your role in each, sign out (a plain box, no amber top).
-- `/confirm?return=/path` — confirm your password (keeps the signed-in header). A sensitive POST without a fresh confirmation throws
+- `/confirm?return=/path` — confirm your password (keeps the signed-in header). The page says what happened once
+  (the callout "Nothing was changed. …"), has one sentence about the 5-minute validity in the form foot, and names
+  a stopped action once, in its solid button: "Confirm: Reveal <name>" ("Confirm and continue" when the action
+  has no known name), then "Reveal <name>" after the password, both in a right-aligned `.form-foot`. Action labels
+  carry no colon of their own ("Allow once shop.admin-login on …"). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
   `Referrer-Policy: no-referrer` hides the Referer, the return path falls back to the last page shown (kept in the
@@ -201,10 +220,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    (`'confirm-agents'`) and Grants (`'confirm-grants'`), above the board. A form card on such a page (Add a
    member, Add an agent, Add a grant, Add a project, the environment template, Add an entry type) holds a
    deferred block (`'primary' => '<id>'`, `'fallback' => true`): nothing while valid, a pointer to the one field
-   when expired, and a field of its own only in `<noscript>`. A page whose list is still empty has no shared
+   when expired, and a field of its own only in `<noscript>`. The pointer is one line under a dashed rule,
+   "Password confirmation expired — enter it above ↑" (the link puts the focus in that field), and while it
+   shows, the solid button of its own form or card ("Add member", "Reveal current") is plain: nothing on the page
+   is solid until an action is held. A block is not deferred while its own field holds the focus or something
+   typed (the entry page, when a request arrives under a person who is typing); it is looked at again on focusout. A page whose list is still empty has no shared
    block (no agents, no grants, no entry types): its add form then holds an ordinary block with its own field.
    Everything else goes to the confirm page, which
-   offers "Continue: <action>" after the password, so no action has to be repeated;
+   offers the action again after the password ("Confirm: <action>", then "<action>"), so no action has to be repeated;
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
    submit without the password is held and stays visible: the focus moves to the field and a button under it names
    the held action ("Allow once: shop.admin-login, request 1a2b3c4d"); that button, or Enter in the field, sends
@@ -229,13 +252,16 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    when expired, and its forms use that password.
 5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` holding a
    `.toolbar` with labelled selects and one **Apply** button. On desktop it is always open and no toggle (its
-   summary is not shown); on phone it is a closed drawer. When a filter is set, a `.filter-status` line says
+   summary is not shown) and ends where the board under it ends: on Entries the search field takes the room, on
+   Grants and Activity Apply stands at the right edge. On phone it is a closed drawer. When a filter is set, a `.filter-status` line says
    "Showing N of M" with the only **Clear filters** link beside it (`.filter-count`), then one `.chip.filter`
    per active filter.
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
    inline label: "Requested …", "Finished …", "Expires …", "Expired …", "Revoked …" (`small.k`; `.k.keep` also shows
    on desktop where no column head names the value; the Requests history head reads "Finished (UTC)"). Approval
-   reads "asks every time" or "runs without asking". Requests and Grants need the whole `--wide` for their
+   reads "asks every time" or "runs without asking". A date's "UTC" is a `small.k` wherever a column head already
+   says it (also after a waiting request's "Expires …"): it shows on cards only. The site MFA field of a waiting
+   request has one width wherever the board is a table (Requests and the entry page). Requests and Grants need the whole `--wide` for their
    columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
    never behind a sideways scroll. Every other board switches at 900 px. A request card reads: agent "requests"
    action ("requested" in the history, where the row is finished); entry · project / environment; "Request 1a2b3c4d" with the state at the right; the times; the controls.

@@ -325,7 +325,7 @@ final class ShellTest extends TestCase
             ->assertSee('/members" data-confirm-from="confirm-members">', false)
             ->assertSee('<button class="go" data-held-name="Add member: " data-held-field="name">Add member</button>', false)
             // The add form only points to that field; a field of its own exists without script alone.
-            ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Go to the password field</a> above the members, enter your current password, then add this member.', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
+            ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Password confirmation expired — <a class="more-link" href="#confirm-members-password" data-confirm-goto="confirm-members">enter it above <span aria-hidden="true">↑</span></a></span>', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
             ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana">Save role</button>', false)
             ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
             ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
@@ -581,7 +581,7 @@ final class ShellTest extends TestCase
         // waiting heading, outside every region; without script the button is a plain link.
         $this->get($this->base.'/requests')->assertOk()
             ->assertSeeInOrder(['<div class="section-head">', '<h2 id="waiting" data-refresh="waiting-title">',
-                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', 'Queue checked ', ' UTC</span>',
+                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', '>Checked ', ' UTC</span>',
                 '<div data-refresh="waiting" data-refresh-url="'.$this->base.'/requests">', '<div data-refresh="history" data-refresh-url="'.$this->base.'/requests">', '<h2 id="history">'], false)
             ->assertDontSee('>Refresh</a>', false);
         // Polling does not stop while the queue is empty; a hidden tab pauses. An expired row keeps the focus on its status.
@@ -593,7 +593,10 @@ final class ShellTest extends TestCase
         // shown. A round that failed or left a stale row behind does not advance the time.
         $this->assertStringContainsString("const kept = [...region.querySelectorAll('table.requests tbody tr[data-request]')]", $script);
         $this->assertStringContainsString('body.insertBefore(document.adoptNode(row), kept[at] || null);', $script);
-        $this->assertStringContainsString("'Last updated ' + last + ' UTC \\u00B7 ' + why", $script);
+        // The status keeps to one verb: "Checked HH:MM UTC", "Check delayed · last checked HH:MM UTC".
+        $this->assertStringContainsString("const delayed = (why = 'Check delayed') => why + ' \\u00B7 last checked ' + last + ' UTC';", $script);
+        $this->assertStringNotContainsString('Queue checked', $script);
+        $this->assertStringNotContainsString('Last updated', $script);
         $this->assertStringContainsString('else status(delayed());', $script);
         $this->assertStringNotContainsString('if (inUse(region)) { skipped = true; return; }', $script);
         $this->get($this->base.'/structure')->assertOk()->assertDontSee('<h2>Projects', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
@@ -629,8 +632,32 @@ final class ShellTest extends TestCase
         $this->view('error', ['status' => 422, 'shell' => true, 'returnPath' => '/workspaces/w/types'])
             ->assertSeeInOrder(['Go back to the previous page to correct the form.', '<a class="btn" href="/workspaces/w/types">Back to previous page</a>'], false);
         $this->view('error', ['status' => 409, 'shell' => true, 'returnPath' => null])
-            ->assertSeeInOrder(['Go back to entries to see the current state. Nothing was changed.', '>Back to entries</a>'], false)->assertDontSee('previous page');
+            ->assertSeeInOrder(['It changed meanwhile, or it is still in use. Nothing was changed.', 'Go back to entries to see the current state, then try again.', '>Back to entries</a>'], false)
+            ->assertDontSee('previous page')->assertDontSee('Reload');
+        $this->view('error', ['status' => 409, 'shell' => true, 'returnPath' => '/workspaces/w/types'])
+            ->assertSeeInOrder(['Go back to the previous page to see the current state, then try again.', '>Back to previous page</a>'], false)->assertDontSee('Reload');
         $this->view('error', ['status' => 404, 'shell' => true, 'returnPath' => '/x'])->assertSee('>Back to entries</a>', false);
+        // Round 14: the token page asks before Back, reload or closing the tab while the token is unsaved, and stops asking
+        // after a copy, "I've saved it" or a departure confirmed in the page. The header's focus order follows its rows on phones.
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("addEventListener('beforeunload', beforeLeave);", $script);
+        $this->assertStringContainsString("const lift = () => { guarding = false; allowLeave(); only(null);", $script);
+        $this->assertSame(2, substr_count($script, 'if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); else allowLeave(); return; }'));
+        $this->assertStringContainsString('if (first) mainNav.before(accountMenu); else topBar.append(accountMenu);', $script);
+        $this->get('/')->assertOk()->assertSeeInOrder(['<details class="menu space">', '<nav class="nav" aria-label="Main"', '<details class="menu account">'], false);
+        $css = (string) file_get_contents(public_path('app.css'));
+        $this->assertStringContainsString('main>details.filters[data-wide-open] .toolbar>button:last-child{margin-left:auto}', $css);
+        $this->assertStringContainsString('.confirm-inline.is-deferred:not(.is-quiet){padding-top:12px;border-top:1px dashed var(--rule)}', $css);
+        $this->assertStringContainsString('.confirm-step .mark.armed{', $css);
+        $this->assertStringNotContainsString('reading-flow:', $css);
+        // Small copy: the Identities head, a request without an owner decision, fields that left the type, the template rows.
+        $this->assertStringContainsString('<th scope="col">End date (UTC)</th>', (string) file_get_contents(resource_path('views/agents.blade.php')));
+        $this->view('outcome', ['outcome' => 'revoked'])->assertSee('>cancelled</span>', false);
+        $this->assertStringContainsString("{{ \$n }} {{ \$what }} {{ \$n === 1 ? 'field is' : 'fields are' }} no longer in the type", (string) file_get_contents(resource_path('views/entry.blade.php')));
+        $this->assertStringNotContainsString('Read-only summary', (string) file_get_contents(resource_path('views/entry.blade.php')));
+        $this->get($this->base.'/structure')->assertOk()->assertDontSee('<td data-label="Environment">', false)->assertSee('aria-label="Additional environment name"', false);
+        $this->assertStringContainsString('<button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button>', (string) file_get_contents(resource_path('views/grants.blade.php')));
+        $this->assertStringContainsString('<span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden>', (string) file_get_contents(resource_path('views/operations.blade.php')));
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
             ->assertSeeInOrder(['<div class="head"><h1>Agents</h1></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false)
@@ -652,9 +679,13 @@ final class ShellTest extends TestCase
             $this->assertStringContainsString('<span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span>', (string) file_get_contents(resource_path('views/'.$view.'.blade.php')));
         }
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])->assertSee('Leaving this page loses the token.');
-        foreach ([time(), time() - 301] as $confirmedAt) {
-            $this->withSession(['confirmed_at' => $confirmedAt])->get('/account')->assertOk()->assertSeeInOrder(['<h2 id="security">Security</h2>', '<h3>Change sign-in password</h3>'], false);
-        }
+        $this->withSession(['confirmed_at' => time()])->get('/account')->assertOk()->assertSeeInOrder(['<h2 id="security">Security</h2>', '<h3>Change sign-in password</h3>'], false)
+            ->assertDontSee('password-fold', false);
+        // While a confirmation is needed the page shows one password field at rest: changing the password is a closed fold.
+        $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()
+            ->assertSeeInOrder(['<h2 id="security">Security</h2>', '<form class="action" id="confirm" method="post" action="/confirm">', '<details class="fold password-fold">',
+                '<summary><h3 class="fold-name">Change sign-in password</h3><span class="fold-act"><span class="when-closed">Open</span><span class="when-open">Close</span></span></summary>',
+                '<form method="post" action="/password">', '</details>', '<h2>Workspaces</h2>'], false);
         // A field error follows the label and is the field's description, never part of its name; Requests and Grants are cards below 1180 px.
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString('anchor.after(note)', $script);
@@ -693,12 +724,17 @@ final class ShellTest extends TestCase
         $deferred = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => true]);
         $deferred->assertSee('class="confirm-inline shared is-deferred is-quiet" id="confirm-reveal"  data-primary="confirm-decide"', false)
             ->assertSee('<span data-when="valid"  hidden >Password confirmed until', false)
-            ->assertSee('<a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">Go to the password field</a> above the waiting requests', false);
+            ->assertSee('<span data-when="deferred" hidden>Password confirmation expired — <a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">enter it above <span aria-hidden="true">↑</span></a></span>', false)
+            ->assertDontSee('Go to the password field');
         // Nothing waits: the Reveal block is the one that says it.
         $alone = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => false]);
         $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Password confirmed until', false);
         $script = (string) file_get_contents(public_path('app.js'));
-        $this->assertStringContainsString('if (first && !first.box.hidden) state = first;', $script);
+        // A deferred block's forms use the primary field; a block whose own field is in use is not deferred.
+        $this->assertStringContainsString('if (first && !first.box.hidden && state.deferred()) state = first;', $script);
+        $this->assertStringContainsString("const busy = !input.disabled && !input.closest('[hidden]') && (document.activeElement === input || input.value !== '');", $script);
+        // While it points to the one field, its own card's solid button is plain.
+        $this->assertStringContainsString('plainOwn(deferred && expired);', $script);
     }
 
     public function test_stylesheet_has_no_selector_keyed_on_label_text_and_views_use_no_undefined_class(): void

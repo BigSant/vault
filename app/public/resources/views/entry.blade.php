@@ -164,7 +164,7 @@
                             <div><b>{{ $metaNames[$key] ?? $key }}:</b> “{{ $dash($before) }}” → “{{ $dash($after) }}”</div>
                         @endforeach
                     @endif
-                    @foreach($others as $what => $n)<div class="muted">{{ $what === 'added' ? 'Added' : ucfirst($what) }}: {{ $n }} {{ $n === 1 ? 'field' : 'fields' }} no longer in the type</div>@endforeach
+                    @foreach($others as $what => $n)<div class="muted">{{ $n }} {{ $what }} {{ $n === 1 ? 'field is' : 'fields are' }} no longer in the type</div>@endforeach
                     @if($h['event'] !== 'create' && empty($f['changed']) && empty($f['added']) && empty($f['removed']) && empty($c['meta']) && !$others)<span class="muted">No value changes</span>@endif
                 @endif
             </div></td>
@@ -198,7 +198,7 @@
     <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></div>
 @else
 <div class="scroll"><table class="board compact-board access">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th></tr></thead>
     <tbody>
     @foreach($grants as $grant)
         {{-- The controller sets state, effective_expires_at (the earlier of the grant's and the agent's end), expiry_reason
@@ -208,13 +208,13 @@
             <td data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
             <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
+            <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach
     </tbody>
 </table></div>
-<p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">Request activity for this entry →</a></p>

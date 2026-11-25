@@ -598,18 +598,20 @@ final class VaultTest extends TestCase
         $this->withSession(['confirmed_at' => time() - 301]);
         foreach ([
             ["$base/grants", ['entry_id' => $entry, 'machine_id' => $machine, 'action' => 'test.http'], 'Add grant', 'test.http for ai-os on Private name'],
-            [$decision, ['decision' => 'approve'], 'Allow once:', 'test.http on Private name'],
-            [$decision, ['decision' => 'deny'], 'Deny:', 'test.http on Private name'],
+            [$decision, ['decision' => 'approve'], 'Allow once', 'test.http on Private name'],
+            [$decision, ['decision' => 'deny'], 'Deny', 'test.http on Private name'],
             ["$base/types", ['name' => 'Mixed Case'], 'Save entry type', 'Mixed Case'],
             ["$base/types/api_key/delete", [], 'Remove entry type', DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'api_key')->value('name')],
             ["/entries/$entry/destroy", [], 'Destroy', 'Private name'],
         ] as [$path, $fields, $verb, $name]) {
-            $this->post($path, $fields)->assertForbidden()->assertSeeText('Action to confirm')
-                ->assertSee($verb.' <span class="name">'.$name.'</span>', false);
+            // The action is named once, by the solid button ("Confirm: <action>"); the verb has no colon of its own.
+            $this->post($path, $fields)->assertForbidden()->assertDontSeeText('Action to confirm')
+                ->assertSee('<button class="go">Confirm: '.$verb.' <span class="name">'.$name.'</span></button>', false)
+                ->assertSeeInOrder(['<div class="callout warn" id="confirm-status" role="status">', '<div class="form-foot"><p class="note">The confirmation is valid for 5 minutes.</p>'], false);
         }
         $this->post("/entries/$entry/unarchive")->assertForbidden()
-            ->assertSee('Restore <span class="name">Private name</span> from archive', false);
-        $this->post("$base/grants")->assertForbidden()->assertSeeText('the action you started');
+            ->assertSee('Confirm: Restore <span class="name">Private name</span> from archive</button>', false);
+        $this->post("$base/grants")->assertForbidden()->assertSee('<button class="go">Confirm and continue</button>', false);
         $ready = $this->post('/confirm', ['pending' => session('pending_action.nonce'), 'current_password' => 'Synthetic-password-123!'])->assertOk();
         $this->assertMatchesRegularExpression('~<button class="go">\s*Continue\s*</button>~', $ready->getContent());
     }

@@ -12,7 +12,7 @@
                   never the page: <div data-refresh="waiting|history" data-refresh-url="…">, and the waiting heading
                   is a region of its own ("waiting-title"). Beside that heading, outside every region so that it
                   keeps the focus through a refresh, sit "Refresh requests" (a plain link without script) and
-                  "Queue checked HH:MM UTC". The waiting heading is always "Requests waiting for you"; the number of waiting
+                  "Checked HH:MM UTC". The waiting heading is always "Requests waiting for you"; the number of waiting
                   rows is a chip beside it (.chip.warn, as in the header nav), which app.js keeps equal to the rows shown.
      $quietEmpty  the waiting section shows nothing while nothing waits (the entry page): its heading row is hidden
                   and its region is empty, so new requests have a place to appear. data-shown-with="waiting" lets
@@ -71,7 +71,7 @@
 @else
 <div class="section-head"@if($quietEmpty) data-shown-with="waiting"@if($rows->isEmpty()) hidden @endif @endif>
     <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}@if($n > 0 && $title === $waitingHeading) <span class="chip warn" data-waiting-count>{{ $n }}<span class="sr-only"> waiting</span></span>@endif</h2>
-    @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Queue checked {{ gmdate('H:i') }} UTC</span></p>@endif
+    @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Checked {{ gmdate('H:i') }} UTC</span></p>@endif
 </div>
 @include('confirm-inline', ['verb' => 'decide', 'ask' => $confirmAsk ?? 'Enter your current password, then choose a request action below.', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
 @if($reload)<div data-refresh="waiting" data-refresh-url="{{ $reload }}">@endif
@@ -99,7 +99,7 @@
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
-            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> <span class="nobreak">{{ $time($o->created_at) }} <small class="k">UTC</small></span>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} UTC</span> <span class="left" hidden></span></span>@endunless</td>
+            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> <span class="nobreak">{{ $time($o->created_at) }} <small class="k">UTC</small></span>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden></span></span>@endunless</td>
             @if($finished)
             <td class="when" data-label="Finished (UTC)">@if($state === 'expired' && ($o->expires_at ?? null))<small class="k keep">Expired</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span>@elseif(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> <span class="nobreak">{{ $time($o->updated_at) }} <small class="k">UTC</small></span>@endif</td>
             @else

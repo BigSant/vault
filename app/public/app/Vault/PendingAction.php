@@ -96,7 +96,7 @@ final class PendingAction
                 ->whereIn('operations.machine_id', $machines->select('id'))->where('operations.id', $id)
                 ->first(['operations.action', 'entries.name']);
             if ($op) {
-                return self::label($fields['decision'] === 'approve' ? 'Allow once:' : 'Deny:', "$op->action on $op->name");
+                return self::label($fields['decision'] === 'approve' ? 'Allow once' : 'Deny', "$op->action on $op->name");
             }
         }
         return self::label('Continue');

@@ -36,7 +36,7 @@
      Members. "Add a grant" names it too and only points to it when the confirmation has expired. --}}
 @include('confirm-inline', ['verb' => 'change grants', 'ask' => 'Enter your current password, then revoke or add a grant below.', 'shared' => 'confirm-grants'])
 <div class="scroll"><table class="board compact-board grants">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     @foreach($grants as $g)
         @php
@@ -50,7 +50,7 @@
             <td class="action end" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td class="approval" data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
+            <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
             <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?" data-confirm-from="confirm-grants">@csrf<button class="stop" aria-label="{{ $revoke }}" data-held-name="Revoke grant: {{ $g->action }} for {{ $machine->name }} on {{ $target->name }}">Revoke</button></form>@endif</td>
         </tr>
@@ -77,9 +77,9 @@
         @if($grants->isEmpty())
             @include('confirm-inline', ['verb' => 'grant this action'])
         @else
-            @include('confirm-inline', ['verb' => 'grant this action', 'shared' => 'confirm-add-grant', 'primary' => 'confirm-grants', 'primaryShown' => true, 'primaryWhere' => 'above the grants', 'fallback' => true])
+            @include('confirm-inline', ['verb' => 'grant this action', 'shared' => 'confirm-add-grant', 'primary' => 'confirm-grants', 'primaryShown' => true, 'fallback' => true])
         @endif
-        <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go">Add grant</button></div>
+        <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button></div>
     </form>
 @endif
 @endsection
