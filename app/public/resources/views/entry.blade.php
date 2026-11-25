@@ -70,14 +70,14 @@
 
 <h2 id="details">Details</h2>
 <table class="facts">
-    <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
+    <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted nobreak">— the name agents see</span></td></tr>
     <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
     <tr><th scope="row">Rotation reminder (UTC)</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
 {{-- A viewer has no Secret values section: what the role sees is one note under the details. --}}
 @if(!$isEditor)
-<p class="note">Viewers see entry details only.</p>
+<p class="note">Viewers see entry details and version history, not values.</p>
 @else
 <h2 id="values">Secret values</h2>
 @if(!isset($secret) && !$canEdit)
@@ -119,7 +119,9 @@
              Restore (Versions) and Archive entry name this block too, so they are held here like a reveal.
              While values are on screen, "Hide values" (first in the foot, script only) conceals them right away. --}}
         @include('confirm-inline', ['verb' => 'reveal, restore or archive', 'ask' => 'Enter your current password, then reveal values, restore a version or archive the entry.', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
-        <div class="form-foot">
+        {{-- Under an older version the foot holds three buttons: the note then stands above them (.stack), so the
+             buttons keep one row. --}}
+        <div class="form-foot{{ $shownOlder ? ' stack' : '' }}">
             <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
             {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice.
                  While values are on screen no Reveal is the solid button: "Reveal again" turns solid when app.js hides
@@ -167,7 +169,7 @@
                         @if(!empty($f['removed']))<div><b>Removed:</b> {{ implode(', ', array_map($label, $f['removed'])) }}</div>@endif
                         @if(!empty($c['carried']))<div><b>Kept from current:</b> {{ implode(', ', array_map($label, (array) $c['carried'])) }}</div>@endif
                         @foreach($c['meta'] ?? [] as $key => [$before, $after])
-                            <div><b>{{ $metaNames[$key] ?? $key }}:</b> “{{ $dash($before) }}” → “{{ $dash($after) }}”</div>
+                            <div><b>{{ $metaNames[$key] ?? $key }}:</b> "{{ $dash($before) }}" → "{{ $dash($after) }}"</div>
                         @endforeach
                     @endif
                     @foreach($others as $what => $n)<div class="muted">{{ $n }} {{ $what }} {{ $n === 1 ? 'field is' : 'fields are' }} no longer in the type</div>@endforeach
@@ -213,7 +215,7 @@
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td class="who" data-label="Agent"><b class="nobreak">{{ $grant->machine }}</b></td>
             <td class="action" data-label="Action"><code>{{ $grant->action }}</code></td>
-            <td class="approval" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
+            <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($grant->approval ? 'asks every time' : 'runs without asking') : ($grant->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>

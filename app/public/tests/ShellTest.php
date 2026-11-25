@@ -173,7 +173,7 @@ final class ShellTest extends TestCase
         $entry = (string) file_get_contents(resource_path('views/entry.blade.php'));
         $this->assertStringContainsString('<th scope="row">Rotation reminder (UTC)</th>', $entry);
         // A viewer is told once what the role sees.
-        $this->assertSame(1, substr_count($entry, 'Viewers see entry details only.'));
+        $this->assertSame(1, substr_count($entry, 'Viewers see entry details and version history, not values.'));
         $this->assertStringNotContainsString('viewer role', $entry);
         // Phones: the values are one tap from the closed drawer, for a person who may reveal them.
         $this->assertStringContainsString('@if($canEdit)<a class="jump-quick" href="#values">Secret values <span aria-hidden="true">↓</span></a>@endif', $entry);
@@ -605,7 +605,7 @@ final class ShellTest extends TestCase
         }
         $this->get($this->base.'/audit')->assertOk()
             ->assertSee('<span class="event-name">Agent requested <code>shop.admin-login</code></span> <small class="nobreak event-code">request.open</small>', false)
-            ->assertSee('<span class="event-name">Agent request</span>', false)->assertSee('<span class="event-name">Rotated entry values</span>', false)
+            ->assertSee('<span class="event-name">Agent request</span>', false)->assertSee('<span class="event-name">Saved new version</span>', false)
             ->assertSee('<span class="chip bad">denied</span>', false)->assertDontSee('<code class="nobreak event-code">', false)->assertDontSee('Agent requested an action');
     }
 
@@ -629,13 +629,13 @@ final class ShellTest extends TestCase
         $js = (string) file_get_contents(public_path('app.js'));
         $this->signIn('owner');
         $this->waitingRequest();
-        // "Pause automatic updates": a quiet aria-pressed toggle beside "Refresh requests", shown by script only.
+        // "Pause automatic checks": a quiet aria-pressed toggle after "Check now", shown by script only; the status comes last.
         $this->get($this->base.'/requests')->assertOk()
             ->assertSee('<title>Requests · Main space · Vault</title>', false)
-            ->assertSeeInOrder(['data-refresh-now>Refresh requests</a> <button type="button" class="quiet" data-refresh-pause aria-pressed="false" hidden>Pause automatic updates</button>', 'data-refresh-status'], false)
+            ->assertSeeInOrder(['data-refresh-now>Check now<span class="sr-only"> for requests</span></a> <button type="button" class="quiet" data-refresh-pause aria-pressed="false" hidden>Pause automatic checks</button> <span class="note refresh-status" data-refresh-status'], false)
             ->assertSee('<h2 id="waiting" data-refresh="waiting-title">', false);
         $this->assertStringContainsString('<table class="board compact-board requests" aria-labelledby="{{ $id }}"', $view('operations'));
-        foreach (["const pauseKey = 'vault.requests.paused';", 'if (!manual && paused) return;', "'Paused \\u00B7 last checked ' + last + ' UTC'", "'Resume automatic updates' : 'Pause automatic updates'",
+        foreach (["const pauseKey = 'vault.requests.paused';", 'if (!manual && paused) return;', "'Paused \\u00B7 last checked ' + last + ' UTC'", "'Resume automatic checks' : 'Pause automatic checks'",
             "button.setAttribute('aria-pressed', String(paused));", "try { paused = sessionStorage.getItem(pauseKey) === '1'; } catch {}",
             "'Request ' + held[0] + ' will update when you leave this row'"] as $line) {
             $this->assertStringContainsString($line, $js);
@@ -667,7 +667,7 @@ final class ShellTest extends TestCase
                 $this->assertDoesNotMatchRegularExpression('/[“”‘’]|&quot;/u', $prompt, $name);
             }
         }
-        $this->assertStringContainsString('<option value="">Choose a project / environment</option>', $view('entry-form'));
+        $this->assertStringContainsString('<option value="">Choose an environment</option>', $view('entry-form'));
         $this->assertStringContainsString('every entry is checked before any secret', $view('import'));
         $this->assertStringContainsString('<tr><td data-label="Environment"><input name="env_name[{{ $i }}]"', $view('structure'));
         $this->assertStringContainsString("@if(\$e->state === 'archived')<small><span class=\"chip muted\">archived</span></small>@elseif(\$due)<small><span class=\"chip warn\">rotation due</span>", $view('catalog'));
@@ -705,7 +705,7 @@ final class ShellTest extends TestCase
         // Entries: four equal stat columns on desktop.
         $this->assertStringContainsString('@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', $css);
         // A viewer has no Secret values section.
-        $this->assertStringContainsString("@if(!\$isEditor)\n<p class=\"note\">Viewers see entry details only.</p>\n@else\n<h2 id=\"values\">Secret values</h2>\n@if(!isset(\$secret) && !\$canEdit)", $view('entry'));
+        $this->assertStringContainsString("@if(!\$isEditor)\n<p class=\"note\">Viewers see entry details and version history, not values.</p>\n@else\n<h2 id=\"values\">Secret values</h2>\n@if(!isset(\$secret) && !\$canEdit)", $view('entry'));
         // Grants: the add form describes itself for the held button.
         $grants = $view('grants');
         foreach (['<template data-held-summary><b class="name" data-held-value="machine_id"></b> may run <code data-held-value="action"></code>', 'data-held-value="entry_id" data-held-attr="entry"', 'data-held-sign="entry_id"',
@@ -735,12 +735,12 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('’', $js);
     }
 
-    public function test_requests_refresh_in_place_regions_and_round_11_wording(): void
+    public function test_requests_refresh_in_place_regions_and_wording(): void
     {
         // Setup mode: the activation code comes first.
         $this->get('/login')->assertOk()->assertSeeInOrder(['<span>Activation code</span>', '<span>Name</span>', '<span>Email</span>', '<span>Password</span>'], false)
             // The note under the activation code is that field's description.
-            ->assertSeeInOrder(['<div class="field"><label for="bootstrap-code">', 'id="bootstrap-code"', 'aria-describedby="bootstrap-code-hint"></div>', '<p class="note" id="bootstrap-code-hint">'], false)
+            ->assertSeeInOrder(['<div class="field"><label for="bootstrap-code">', 'id="bootstrap-code"', 'aria-describedby="bootstrap-code-hint"><small class="hint" id="bootstrap-code-hint">', '</small></div>'], false)
             // The new password can be checked before it is sent: app.js adds Reveal/Hide to a password input in .with-button.
             ->assertSee('<div class="field"><label for="setup-password"><span>Password</span></label><span class="with-button"><input id="setup-password" type="password" name="password" required minlength="14"', false);
         $this->signIn('owner');
@@ -748,9 +748,9 @@ final class ShellTest extends TestCase
         // waiting heading, outside every region; without script the button is a plain link.
         $this->get($this->base.'/requests')->assertOk()
             ->assertSeeInOrder(['<div class="section-head">', '<h2 id="waiting" data-refresh="waiting-title">',
-                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', '>Checked ', ' UTC</span>',
+                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Check now<span class="sr-only"> for requests</span></a>', 'data-refresh-status', '>Checked ', ' UTC</span>',
                 '<div data-refresh="waiting" data-refresh-url="'.$this->base.'/requests">', '<div data-refresh="history" data-refresh-url="'.$this->base.'/requests">', '<h2 id="history">'], false)
-            ->assertDontSee('>Refresh</a>', false);
+            ->assertDontSee('Refresh requests')->assertDontSee('automatic updates');
         // Polling does not stop while the queue is empty; a hidden tab pauses. An expired row keeps the focus on its status.
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;', $script);
@@ -805,7 +805,7 @@ final class ShellTest extends TestCase
         $this->view('error', ['status' => 409, 'shell' => true, 'returnPath' => '/workspaces/w/types'])
             ->assertSeeInOrder(['Go back to the previous page to see the current state, then try again.', '>Back to previous page</a>'], false)->assertDontSee('Reload');
         $this->view('error', ['status' => 404, 'shell' => true, 'returnPath' => '/x'])->assertSee('>Back to entries</a>', false);
-        // Round 14: the token page asks before Back, reload or closing the tab while the token is unsaved, and stops asking
+        // The token page asks before Back, reload or closing the tab while the token is unsaved, and stops asking
         // after a copy, "I've saved it" or a departure confirmed in the page. The header's focus order follows its rows on phones.
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("addEventListener('beforeunload', beforeLeave);", $script);
@@ -963,8 +963,8 @@ final class ShellTest extends TestCase
         DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
         $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
         // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
-        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types (new tab)</a>', false)
-            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Edit entry types (new tab)</a>', '<button type="button" data-reload-types title=', ' hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
+        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>, then reload here.', false)
+            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Missing a type or field? ', 'Edit entry types in a new tab</a>', '<button type="button" data-reload-types hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             // The alias hint is the field's description, not part of its name.
             ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
@@ -999,7 +999,7 @@ final class ShellTest extends TestCase
         DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
         // The update form has the Setup detour too; its type is fixed, so the button reloads the fields.
         $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$entry)->assertOk()
-            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types (new tab)</a>', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
+            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
             // Each "Clear the current … value" box has an id of its type and field, so a reload can give it back its state.
             ->assertSee('<input type="checkbox" id="clear-ssh-passphrase" name="clear_fields[]" value="passphrase" data-optional', false)
             ->assertDontSee('id="clear-ssh-private_key"', false);
@@ -1025,5 +1025,48 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('input[type=date]', $css);
         $this->view('token', ['name' => 'deploy-bot', 'id' => 'm1', 'token' => 'synthetic-token', 'expiresAt' => now()->addDays(7), 'space' => (object) ['id' => $this->workspace, 'role' => 'owner']])
             ->assertSee('<span class="token-expiry"><span class="sep" aria-hidden="true">· </span>Expires <span class="nobreak">', false);
+    }
+
+    public function test_refresh_row_order_edges_and_wording(): void
+    {
+        $view = fn (string $name) => (string) file_get_contents(resource_path('views/'.$name.'.blade.php'));
+        $css = (string) file_get_contents(public_path('app.css'));
+        $js = (string) file_get_contents(public_path('app.js'));
+        // The refresh row reads left to right in the order of the document; nothing is reversed.
+        $this->assertStringNotContainsString('row-reverse', $css);
+        $this->assertStringContainsString('button.quiet{background:none;color:var(--dim);font-weight:600}', $css);
+        // One verb family: check.
+        foreach (['Refresh requests', 'automatic updates', 'Automatic updates'] as $old) {
+            $this->assertStringNotContainsString($old, $js);
+            $this->assertStringNotContainsString($old, $view('operations'));
+        }
+        $this->assertStringContainsString("say('Automatic checks paused. Check now still checks once.');", $js);
+        // Drawers and the quick jump link are controls: they carry the control edge.
+        $this->assertStringContainsString('@media (max-width:900px){details.filters{border-color:var(--edge)}', $css);
+        $this->assertStringContainsString('details.jump{background:var(--panel);border:1px solid var(--edge);border-radius:4px}', $css);
+        $this->assertMatchesRegularExpression('/a\.jump-quick:hover\{[^}]*border:1px solid var\(--edge\)/', $css);
+        // Account: one column at the card width in both states. Entries: fixed columns, named by the h1.
+        $this->assertStringContainsString('<div class="deck wide capped">', $view('account'));
+        $this->assertStringContainsString('.board.entries{table-layout:fixed}', $css);
+        $this->assertStringContainsString('<table class="board compact-board entries" aria-labelledby="page-title">', $view('catalog'));
+        // An inactive grant speaks in the past tense.
+        foreach (['grants', 'entry'] as $name) {
+            $this->assertStringContainsString("'previously asked every time' : 'previously ran without asking'", $view($name));
+        }
+        // The confirm page never names the workspace in its title, at whatever address it is rendered.
+        $this->signIn('owner', time() - 3600);
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure'])->assertForbidden()
+            ->assertSee('<title>Password confirmation · Vault</title>', false);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('<title>Projects · Main space · Vault</title>', false);
+        // The entry form says what to do about a missing type in words on the page, not in a title.
+        $this->assertStringNotContainsString('title="After saving', $view('entry-form'));
+        $this->assertSame(2, substr_count($view('entry-form'), 'Edit entry types in a new tab</a>, then reload here.'));
+        foreach (['entry', 'entry-form'] as $name) {
+            $this->assertDoesNotMatchRegularExpression('/[“”‘’]/u', $view($name), $name);
+        }
+        $this->assertStringContainsString('<span class="muted nobreak">— the name agents see</span>', $view('entry'));
+        $structure = (string) file_get_contents(app_path('Vault/Structure.php'));
+        $this->assertStringNotContainsString('Remove all entries', $structure);
+        $this->assertStringContainsString('Archive and destroy all entries in this project before removing it.', $structure);
     }
 }

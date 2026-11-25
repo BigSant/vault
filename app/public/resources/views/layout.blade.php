@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title','Vault')@if(($space ?? null) && ! request()->is('confirm') && ($titleSpace = $navSpaces->firstWhere('id', $navSpaceId))) · {{ $titleSpace->name }}@endif · Vault</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title','Vault')@if(($space ?? null) && ! $__env->hasSection('quiet-nav') && ($titleSpace = $navSpaces->firstWhere('id', $navSpaceId))) · {{ $titleSpace->name }}@endif · Vault</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head><body>
 <a class="skip" href="#content">Skip to content</a>
 @hasSection('bare')
 <main class="login" id="content" tabindex="-1"><a class="mark" href="/">VAULT<small>credential store</small></a>@yield('content')</main>

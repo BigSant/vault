@@ -101,7 +101,7 @@ final class Structure
             // Lock the environments before checking their entries to serialize concurrent inserts.
             DB::table('environments')->where('project_id', $project)->lockForUpdate()->chunkById(500, function ($environments) {
                 $this->clearDestroyedEntries($environments->pluck('id')->all(), 'project',
-                    'Remove all entries, including archived entries, before removing this project.');
+                    'Archive and destroy all entries in this project before removing it.');
             });
             DB::table('projects')->where('id', $project)->delete();
             $this->access->audit($workspace, 'project.delete', $project);
@@ -138,7 +138,7 @@ final class Structure
         DB::transaction(function () use ($workspace, $environment) {
             $this->environment($workspace, $environment);
             $this->clearDestroyedEntries([$environment], 'environment',
-                'Remove all entries, including archived entries, before removing this environment.');
+                'Archive and destroy all entries in this environment before removing it.');
             DB::table('environments')->where('id', $environment)->delete();
             $this->access->audit($workspace, 'environment.delete', $environment);
         });

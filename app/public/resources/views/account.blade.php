@@ -19,9 +19,10 @@
 {{-- The heading stays "Security" whatever the confirmation state; each card names itself with an h3.
      While a confirmation is needed the page shows one password field at rest: "Change sign-in password" is then a
      closed fold beside the confirm form (open again when its form came back with an error). A summary holds no
-     heading: the fold's name is a span that looks like the card h3 it stands for. --}}
+     heading: the fold's name is a span that looks like the card h3 it stands for. The deck is one column at the
+     card width in both states, so the page keeps one right edge. --}}
 <h2 id="security">Security</h2>
-<div class="deck">
+<div class="deck wide capped">
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
         <input type="hidden" name="return" value="/account">

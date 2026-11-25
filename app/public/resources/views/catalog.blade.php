@@ -28,7 +28,7 @@
     $dueLabel = $dueScoped ? 'rotation due in this view' : 'rotation due';
 @endphp
 <div class="head">
-    <h1>Entries</h1>
+    <h1 id="page-title">Entries</h1>
     @if($canEdit)
     <div class="controls">
         <a class="btn" href="/workspaces/{{ $space->id }}/import">Import</a>
@@ -96,7 +96,7 @@
         @endif
     </div>
 @else
-<div class="scroll"><table class="board compact-board entries">
+<div class="scroll"><table class="board compact-board entries" aria-labelledby="page-title">
     <thead><tr><th scope="col">Entry</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated (UTC)</th><th scope="col">Last used (UTC)</th></tr></thead>
     <tbody>
     @foreach($entries as $e)

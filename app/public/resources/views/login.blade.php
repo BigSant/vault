@@ -6,9 +6,8 @@
     <h1>{{ $setup ? 'Create the first owner' : 'Sign in' }}</h1>
     <p class="note">{{ $setup ? 'The next step sets up your authenticator code.' : 'Then confirm with a code from your authenticator app.' }}</p>
     @if($setup)
-        {{-- A .field, not a <label> around the input: the note under it is the field's description. --}}
-        <div class="field"><label for="bootstrap-code"><span>Activation code</span></label><input id="bootstrap-code" type="password" name="bootstrap_code" required autocomplete="off" aria-describedby="bootstrap-code-hint"></div>
-        <p class="note" id="bootstrap-code-hint">The code is in the private <code>bootstrap.code</code> file created during install. Type it here only, never into a chat.</p>
+        {{-- A .field, not a <label> around the input: the hint under the input is the field's description. --}}
+        <div class="field"><label for="bootstrap-code"><span>Activation code</span></label><input id="bootstrap-code" type="password" name="bootstrap_code" required autocomplete="off" aria-describedby="bootstrap-code-hint"><small class="hint" id="bootstrap-code-hint">The code is in the private <code>bootstrap.code</code> file created during install. Type it here only, never into a chat.</small></div>
         <label><span>Name</span><input name="name" required maxlength="100" autocomplete="name"></label>
     @endif
     <label><span>Email</span><input type="email" name="email" required autocomplete="username"></label>

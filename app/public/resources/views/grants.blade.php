@@ -52,7 +52,7 @@
             <td class="who" data-label="Agent"><b class="nobreak">{{ $machine->name }}</b></td>
             <td class="action" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
-            <td class="approval" data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
+            <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($g->approval ? 'asks every time' : 'runs without asking') : ($g->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
             <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?" data-confirm-from="confirm-grants">@csrf<button class="stop" aria-label="{{ $revoke }}" data-held-name="Revoke grant: {{ $g->action }} for {{ $machine->name }} on {{ $target->name }}">Revoke</button></form>@endif</td>

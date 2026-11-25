@@ -746,13 +746,13 @@ tableRoles();
 // catches up when it is looked at again. A request board is merged row by row (rows match by data-request): only
 // a row that holds the focus or a started input is left as it is, and its siblings are updated, added and removed
 // around it, so a new request shows up while the owner types a code into another one. The waiting heading counts
-// the rows shown. What changed is said in the live region; "Refresh requests" beside the waiting heading does the
+// the rows shown. What changed is said in the live region; "Check now" beside the waiting heading does the
 // same on demand, and "Checked HH:MM UTC" next to it says when the page last matched the server. A round
 // that failed, or a row in use that no longer matches the server, reads "Check delayed · last checked HH:MM UTC":
 // the time does not advance. The status uses the one verb, check.
-// "Pause automatic updates" beside "Refresh requests" (a quiet aria-pressed toggle, shown by this script) stops the
-// automatic rounds: nothing on the page is swapped until "Refresh requests" is pressed or the toggle, then reading
-// "Resume automatic updates", is pressed again. While paused the status reads "Paused · last checked HH:MM UTC".
+// "Pause automatic checks" beside "Check now" (a quiet aria-pressed toggle, shown by this script) stops the
+// automatic rounds: nothing on the page is swapped until "Check now" is pressed or the toggle, then reading
+// "Resume automatic checks", is pressed again. While paused the status reads "Paused · last checked HH:MM UTC".
 // The choice is kept for the browser session (sessionStorage), so it holds across the Requests page and entry
 // pages. A row still switches itself off at its deadline: that is the row's own clock, not a swap.
 const regions = () => [...document.querySelectorAll('[data-refresh]')];
@@ -865,7 +865,7 @@ if (refreshUrl) {
   let due = Date.now() + 30000;
   let running = false;
   // Automatic rounds stop after 15 minutes without a key or pointer press, so an open tab never keeps an idle
-  // session alive; a press on "Refresh requests" still works.
+  // session alive; a press on "Check now" still works.
   let used = Date.now();
   ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
   // Paused by the owner: no automatic round runs. Storage may be unavailable (private window, blocked site data);
@@ -878,7 +878,7 @@ if (refreshUrl) {
   const showPause = () => pauseButtons().forEach(button => {
     button.hidden = false;
     button.setAttribute('aria-pressed', String(paused));
-    button.textContent = paused ? 'Resume automatic updates' : 'Pause automatic updates';
+    button.textContent = paused ? 'Resume automatic checks' : 'Pause automatic checks';
   });
   showPause();
   if (paused) status(pausedText());
@@ -893,7 +893,7 @@ if (refreshUrl) {
       const response = await fetch(refreshUrl, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
       // Signed out or sent elsewhere: the page itself has to follow.
       if (response.redirected || [401, 403, 419].includes(response.status)) { location.assign(refreshUrl); return; }
-      if (!response.ok) throw new Error('refresh failed');
+      if (!response.ok) throw new Error('check failed');
       const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
       const before = waitingIn(document);
       let skipped = false;
@@ -946,10 +946,10 @@ if (refreshUrl) {
       paused = !paused;
       try { paused ? sessionStorage.setItem(pauseKey, '1') : sessionStorage.removeItem(pauseKey); } catch {}
       showPause();
-      if (paused) { status(pausedText()); say('Automatic updates paused. Refresh requests still checks once.'); }
+      if (paused) { status(pausedText()); say('Automatic checks paused. Check now still checks once.'); }
       else {
         // Resuming checks at once, so the page is current again without a wait; the toggle keeps the focus.
-        say('Automatic updates resumed.');
+        say('Automatic checks resumed.');
         status('Checked ' + last + ' UTC');
         used = Date.now();
         due = 0;

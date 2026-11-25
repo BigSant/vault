@@ -189,18 +189,23 @@ font-weight:600;padding:0 12px 2px}
 .board td.when small.wrap{white-space:normal}
 /* Codes and names are never broken inside a word: an action code stays whole, and so does an agent name (.nobreak). */
 .board td:is(.end,.action,.who) code{white-space:nowrap;overflow-wrap:normal}
-/* A section heading with something beside it (the waiting requests: "Refresh requests" and the time of the last
-   check). The heading keeps its rule line; the row wraps under it on a narrow screen. */
+/* A section heading with something beside it (the waiting requests: "Check now", "Pause automatic checks" and
+   the status). The heading keeps its rule line. The row reads left to right in the order of the document: the two
+   buttons, then the status. The status has a fixed slot as wide as its longest steady text ("Paused · last checked
+   HH:MM UTC") and ends at the right edge, so the buttons never move when it changes; a longer answer wraps in it. */
 .section-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:34px 0 12px}
 .section-head>h2{flex:1 1 16em;min-width:0;margin:0}
 .section-head[hidden]{display:none}
-.refresh-row{display:flex;flex-direction:row-reverse;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0}
-.refresh-row .note{margin:0}
+.refresh-row{display:flex;align-items:center;gap:8px;flex:none;margin:0}
+.refresh-row .note{flex:none;width:31ch;margin:0 0 0 4px;text-align:right}
 .refresh-row :is(.btn,button){flex:none;white-space:nowrap}
-/* "Pause automatic updates": a quiet toggle (aria-pressed) beside "Refresh requests". Pressed, it reads "Resume
-   automatic updates" and carries the amber edge, so the paused state shows on the control as well as in the status. */
-button.quiet{background:none;border-color:transparent;color:var(--dim);font-weight:600}
-button.quiet:hover{border-color:var(--edge);color:var(--ink)}
+/* The toggle is as wide as its longer label ("Resume automatic checks"), so neither button moves when it is pressed. */
+.refresh-row [data-refresh-pause]{min-width:17.7em}
+/* "Pause automatic checks": a quiet toggle (aria-pressed) beside "Check now". It has the edge every control has
+   and is quieter by its fill, colour and weight. Pressed, it reads "Resume automatic checks" and carries the amber
+   edge, so the paused state shows on the control as well as in the status. */
+button.quiet{background:none;color:var(--dim);font-weight:600}
+button.quiet:hover{color:var(--ink)}
 button.quiet[aria-pressed=true]{border-color:var(--amber-edge);color:var(--amber)}
 /* What follows the tabs starts at the same height on every tab, a heading or not. */
 .tabs+.section-head,.tabs+h2{margin-top:0}
@@ -259,6 +264,9 @@ input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px
 .form-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-top:12px}
 .form-foot .note{margin:0}
 .form-foot .note:empty{display:none}
+/* A foot with three buttons: the note stands above them, the buttons stay at the right. */
+.form-foot.stack{flex-direction:column;align-items:stretch;gap:10px}
+.form-foot.stack>.controls{align-self:flex-end;margin-left:0;max-width:100%}
 .form-foot .controls{flex:none;justify-content:flex-end}
 .form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
 label.check.stop{color:var(--stop)}
@@ -297,7 +305,8 @@ form.catalog-filters>details.filters{flex:0 1 auto;min-width:0;margin:0}
 }
 /* Entries: the Search button is for the closed drawer; an open filter bar has Apply, which sends the search too. */
 .catalog-filters:has(details.filters[open]) .catalog-search{display:none}
-@media (max-width:900px){details.filters>summary{min-height:40px}}
+/* A drawer is a control: it has the edge every control has. */
+@media (max-width:900px){details.filters{border-color:var(--edge)}details.filters>summary{min-height:40px}}
 .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0}
 .inline label{margin:0}
 .inline input:not([type=checkbox]){width:auto;flex:1;min-width:10em}
@@ -368,14 +377,14 @@ details.jump[open]>summary{float:left;margin-right:18px;line-height:28px;cursor:
 }
 @media (max-width:900px){
 nav.subnav:has(>details.jump){padding:0;border-bottom:none}
-details.jump{background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+details.jump{background:var(--panel);border:1px solid var(--edge);border-radius:4px}
 details.jump>summary{display:flex;align-items:center;gap:8px;min-height:40px;padding:7px 12px;font:600 13px/1.4 var(--mono);color:var(--ink)}
 details.jump>summary::before{content:"\25B8";color:var(--amber);flex:none}
 details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .jump-links{gap:0 18px;padding:0 12px 8px}
 /* Beside the closed drawer: one tap to the values. The open drawer lists the same link, so this one goes. */
 nav.subnav:has(>.jump-quick){flex-wrap:nowrap;align-items:flex-start;gap:8px}
-nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap;text-decoration:none;color:var(--ink)}
+nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap;text-decoration:none;color:var(--ink)}
 nav.subnav>a.jump-quick:hover{border-color:var(--amber);color:var(--amber)}
 nav.subnav>a.jump-quick span{margin-left:6px;color:var(--amber)}
 nav.subnav>details.jump[open]+a.jump-quick{display:none}
@@ -412,7 +421,9 @@ main.login .field>label{display:block;margin:0}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
 input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}
-.section-head .refresh-row{flex-direction:row;flex:1 1 100%}
+/* Phones: both buttons on one row at the left edge, the status as a small line under them. */
+.section-head .refresh-row{flex:1 1 100%;flex-wrap:wrap;gap:4px 8px}
+.section-head .refresh-row .note{flex:1 1 100%;width:auto;margin:0;text-align:left;font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
 .form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
@@ -525,8 +536,9 @@ button.action-name .name{font-weight:400}
 /* A form card that is one note and its button (Sign out, Archive entry): the foot is the whole card. */
 form.action>input[type=hidden]:first-child+.form-foot:last-child{margin-top:0;align-items:center}
 /* A page head followed by the stats, or by the search row (archived entries have no stats), keeps the normal block gap. */
-.head:has(+:is(.stats,.catalog-filters)){margin-bottom:14px}
-.head:has(+:is(.stats,.catalog-filters)) h1{margin-bottom:0}
+.head:has(+:is(.stats,.catalog-filters,.facts)){margin-bottom:14px}
+.head:has(+:is(.stats,.catalog-filters,.facts)) h1{margin-bottom:0}
+.head:has(+.facts){align-items:center}
 /* Editable rows inside a form card start and end where the fields above them do. */
 @media (min-width:901px){
 form.action .list.edit :is(th,td):first-child{padding-left:0}
@@ -782,6 +794,17 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
 @media (min-width:901px){.toolbar label.grow{min-width:15rem}}
 /* Desktop: the four stats are four equal columns across the strip. */
 @media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 24px}}
+/* Entries as a table: every column has its width from the table, not from the rows a filter happens to show, so
+   no column moves between filters. The entry name takes the room that is left. */
+@media (min-width:901px){
+.board.entries{table-layout:fixed}
+.board.entries th:nth-child(2),.board.entries th:nth-child(3){width:14%}
+.board.entries th:nth-child(4){width:18%}
+.board.entries th:nth-child(5){width:124px}
+.board.entries th:nth-child(6){width:168px}
+.board.entries td.name{min-width:0;max-width:none}
+.board.entries td{overflow-wrap:anywhere}
+}
 /* A stat that filters the list (rotation due). */
 .stat-link{display:block;color:inherit;text-decoration:none;border-radius:3px}
 .stat-link:hover{text-decoration:none}
@@ -844,7 +867,7 @@ form.action details.import-ref{background:var(--panel-2)}
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
 /* Entries stats: the two numbers that lead somewhere (active entries, rotation due) stay stats; production and
-   agent use follow as one small summary line, "3 production · 2 used by agents in 7 days". */
+   agent use follow as one small summary line, "3 in production · 2 used by agents, 7 days". */
 .stats.entry-stats{display:block}
 .entry-stats>.stat:nth-child(-n+2){display:inline-block;width:calc(50% - 6px);vertical-align:top;margin-bottom:10px}
 /* While the rotation-due filter is on, its stat also says "Clear ×": it takes the wider share, so the label and

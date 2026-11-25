@@ -88,17 +88,21 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - `/` — the entry list for the current workspace: header with `+ Add an entry` (the one `go`) and `Import`
   (editor+), the stats, search and filters (project, environment, type, state), the board, pager. No workspace or
   project forms on this page; empty states link to Setup.
-  **Stats (decided, final):** desktop shows all four as stats (active entries, rotation due →, production, used by
-  agents in 7 days). On phone only the two actionable numbers stay stats (active entries, rotation due →); production
-  and agent use follow as one small summary line ("3 production · 2 used by agents in 7 days"). Reviewers disagreed
+  **Stats (decided, final):** desktop shows all four as stats (active entries, rotation due →, in production, used by
+  agents, 7 days). On phone only the two actionable numbers stay stats (active entries, rotation due →); production
+  and agent use follow as one small summary line ("3 in production · 2 used by agents, 7 days"). The labels are the
+  same words at every width. Reviewers disagreed
   both ways; do not reopen it. On desktop the four are equal columns across the strip. While the rotation-due
   filter is on, its stat is underlined and says "Clear ×".
   **Rotation-due count (decided):** the stat's link keeps the search and the project, environment and type filters,
   so its number is counted inside them (`Workspace::index`): it is what the link will show. While any of them is
-  on, the label reads "rotation due in this view". The other three stats stay workspace totals. The phone summary
-  keeps "used by agents, 7 days": "in the past 7 days" does not fit its one line at 390 px.
+  on, the label reads "rotation due in this view". The other three stats stay workspace totals. The label is
+  "used by agents, 7 days": "in the past 7 days" does not fit the phone summary's one line at 390 px.
+  **Columns (decided):** as a table (901 px and up) the board has a fixed layout: Project and Environment
+  14 % each, Type 18 %, Updated 124 px, Last used 168 px, and the entry name takes the rest, so no column moves when a
+  filter changes the rows. The board is named by the h1 (`aria-labelledby="page-title"`).
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
-  wait), details (the facts table; a viewer gets the note "Viewers see entry details only." under it and no Secret
+  wait), details (the facts table; a viewer gets the note "Viewers see entry details and version history, not values." under it and no Secret
   values section), secret values (reveal; while values are on screen a plain "Hide values" button
   conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again"
   ("Reveal version N again" under an older version); the values hide by themselves after 30 seconds either way, and
@@ -112,7 +116,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
   cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
 - `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
-  "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
+  the line under Type says what to do in words on the page, never in a `title`: "Missing a type or field? Edit
+  entry types in a new tab, then reload here. What you typed stays." ("Missing a field? …" on the update form).
+  The link opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
   update form, where the type is fixed) fetches the form again and swaps only the Type options and the type field
   rows; typed values stay in the fields that still exist, and every "Clear the current … value" box
   (`clear-<type>-<key>`) keeps its state, checked or not. The status line says what was kept and what was not.
@@ -133,20 +139,27 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   `[data-refresh]` regions (the request sections, the waiting heading and the header nav count). A request board is
   merged row by row (rows match by `data-request`): only the row that holds the focus or a started input is left
   as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading
-  is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). "Refresh requests" and "Checked HH:MM UTC" sit beside the waiting heading; when a round
+  is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). Beside the waiting heading sits the refresh row; when a round
   fails, or a row in use no longer matches the server, the status reads "Check delayed · last checked HH:MM UTC"
   ("Automatic check stopped after 15 idle minutes · …"; the status keeps to the one verb, check)
   and the time does not advance,
-  here and on an owner's entry page; the button works without script. A request that expires while it holds the
+  here and on an owner's entry page; "Check now" works without script. A request that expires while it holds the
   focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry. After
   the history a `.more-link` "All request activity →" leads to the workspace log (`/audit?group=request`).
-  Beside "Refresh requests" sits a quiet toggle, "Pause automatic updates" (`button.quiet[data-refresh-pause]`,
-  `aria-pressed`, shown by script only), here and on an owner's entry page. While it is pressed it reads "Resume
-  automatic updates", no automatic round runs and nothing is swapped; "Refresh requests" still checks once, and
-  the status reads "Paused · last checked HH:MM UTC". Resuming checks at once. The choice is kept for the browser
+  **Refresh row (decided).** One verb family, check: "Check now" (named "Check now for requests"), "Pause
+  automatic checks" / "Resume automatic checks", "Checked HH:MM UTC", "Check delayed · last checked HH:MM UTC",
+  "Paused · last checked HH:MM UTC". No label or status says "refresh" or "automatic updates". The row reads left to
+  right in the order of the document at every width, so what is seen, what Tab visits and what a screen reader
+  reads agree: [Check now] [Pause automatic checks], then the status. No `row-reverse`, no `order`. On desktop the
+  status has a fixed slot (31ch, its longest steady text) that ends at the right edge, so the buttons do not move
+  when it changes; on phones both buttons share one row at the left edge and the status is a small line under
+  them. The toggle is a `button.quiet[data-refresh-pause]` (`aria-pressed`, shown by script only): it has the
+  `--edge` border every control has at rest and is quieter by its fill, colour and weight; pressed, its edge and
+  text are amber. While it is pressed no automatic round runs and nothing is swapped; "Check now" still checks
+  once. Resuming checks at once. The choice is kept for the browser
   session (`sessionStorage`, in try/catch: without storage it holds for the page). A row still switches itself
   off at its deadline while paused: that is the row's own clock, and allowing an expired request must not look
-  possible. A manual refresh that leaves a row in use as it is names it: "Request 5cda3b60 will update when you
+  possible. A manual check that leaves a row in use as it is names it: "Request 5cda3b60 will update when you
   leave this row."
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
@@ -294,11 +307,16 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
    inline label: "Requested …", "Finished …", "Expires …", "Expired …", "Revoked …" (`small.k`; `.k.keep` also shows
    on desktop where no column head names the value; the Requests history head reads "Finished (UTC)"). Approval
-   reads "asks every time" or "runs without asking". A date's "UTC" is a `small.k` wherever a column head already
+   reads "asks every time" or "runs without asking" while the grant is active, and "previously asked every time" or
+   "previously ran without asking" once it is revoked or expired (Grants and an entry's Agent access): an inactive
+   grant does nothing now. A date's "UTC" is a `small.k` wherever a column head already
    says it (also after a waiting request's "Expires …"): it shows on cards only. The site MFA field of a waiting
    request has one width wherever the board is a table (Requests and the entry page). Requests and Grants need the whole `--wide` for their
    columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
-   never behind a sideways scroll. Every other board switches at 900 px. A request card reads: agent "requests"
+   never behind a sideways scroll. Every other board switches at 900 px.
+   **Control edges:** everything pressed that looks like a box has a `--edge` border: buttons (also
+   `button.quiet`), fields, the header menus, `.fold-act`, and on phones the drawers (`details.filters`,
+   `details.jump`) and the boxed link `a.jump-quick`. `--rule` is for cards, rows and dividers only. A request card reads: agent "requests"
    action ("requested" in the history, where the row is finished); entry · project / environment; "Request 1a2b3c4d" with the state at the right; the times; the controls.
    **One grant card** (Grants below 1180 px, an entry's Agent access below 900 px): line 1 the agent and the action
   together with the state chip at the top right, where the Identities card has it; line 2 the entry · project /
@@ -360,12 +378,14 @@ validates the date. An import that fails names the item by its place in the arra
 ## Request updates, titles and labels
 
 - **Titles.** A page inside a workspace names it: `<title>Grants · Acme production · Vault</title>`. Pages outside
-  one (Account, Add a workspace, the confirm and sign-in pages) stay "Account · Vault".
+  one (Account, Add a workspace, the sign-in pages) stay "Account · Vault". The confirm page and the error pages
+  stand in for another page and never name the workspace, also when a stopped action renders them at a workspace
+  address: `<title>Password confirmation · Vault</title>` (the layout checks the `quiet-nav` section, not the path).
 - **Table names.** Every board has `aria-labelledby`: its section h2 where it has one (the request boards, and
   Versions, Agent access and Activity on an entry page), else the current tab (`id="tab-current"`: Identities,
-  Grants) or the page h1 (`id="page-title"`: Members, Activity).
+  Grants) or the page h1 (`id="page-title"`: Entries, Members, Activity).
 - **Field hints** sit under the field, never in the label column: `.field > label, input, small.hint`
-  (Initial password, Agent alias). The hint stays the field's `aria-describedby`.
+  (Initial password, Agent alias, the first owner's Activation code). The hint stays the field's `aria-describedby`.
 - **Placeholders.** An example placeholder starts with "e.g. " ("e.g. shop-stage-admin"). A format
   ("YYYY-MM-DD") and an instruction ("Leave blank to keep", the search hint) are not examples. A placeholder
   never repeats its label or column head.
@@ -376,6 +396,16 @@ validates the date. An import that fails names the item by its place in the arra
 - **Import** speaks of entries only: "every entry is checked", "Entry 2: …".
 - **Confirm prompts** (`data-confirm`) use no quotation marks: "Remove environment qa?".
 - **Validation messages** name a field by its visible label ("Require owner approval for every run", "6-digit
-  code", "Type DELETE to destroy"). The select's empty option repeats its label: "Choose a project / environment".
+  code", "Type DELETE to destroy"). A select's empty option names what to choose and fits 390 px:
+  "Choose an environment" under the label "Project / environment".
+- **Words for a save.** Saving an entry's values is "Saved": the form's button "Save new version", the Versions
+  column "Saved (UTC)", the Activity event "Saved new version". Not "rotated" (rotation is the reminder date).
+- **Quotation marks** in UI text are straight (`"`), like apostrophes.
+- **Three buttons in a form foot** (an older version on screen: Hide values, Reveal current, Reveal version N
+  again): the note stands above the buttons (`.form-foot.stack`), the buttons keep one row at the right.
+- **Removing a project or environment** that still holds entries says "Archive and destroy all entries in this
+  project before removing it." (an archived entry still counts; only destroyed ones do not).
 - **Environment template rows** are labelled "Environment" on phones (the column head is not shown there).
-- **Account.** The head row is as wide as the cards (`.capped`), so "Sign out" ends where they end.
+- **Account.** The head row is as wide as the cards (`.capped`), so "Sign out" ends where they end, and it keeps
+  the block gap of other head rows above the facts. The Security deck is one column at the card width in both
+  confirmation states (`deck wide capped`): the page has one right edge.

@@ -462,7 +462,7 @@ final class VaultTest extends TestCase
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
-        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
+        $this->get('/?state=archived')->assertSee('<h1 id="page-title">Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
             ->assertSeeText('State: Archived')->assertSee('<small><span class="chip muted">archived</span></small>', false)->assertDontSeeText('used by agents');
         $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entry');
     }
@@ -916,7 +916,7 @@ final class VaultTest extends TestCase
         $this->assertStringNotContainsString($this->sentinel, json_encode(DB::table('entry_changes')->get()));
         $this->assertStringNotContainsString('synthetic-rotated', json_encode(DB::table('entry_changes')->get()));
 
-        $this->get('/entries/'.$id)->assertOk()->assertSee('Versions')->assertSee('API key')->assertSee('“Private name” → “Renamed”', false)->assertDontSee($this->sentinel);
+        $this->get('/entries/'.$id)->assertOk()->assertSee('Versions')->assertSee('API key')->assertSee('"Private name" → "Renamed"', false)->assertDontSee($this->sentinel);
         $this->post('/entries/'.$id.'/reveal', ['version' => 1])->assertOk()->assertSee($this->sentinel)->assertSee('older version 1', false)->assertSee('differs')->assertDontSee('synthetic-rotated');
 
         $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();

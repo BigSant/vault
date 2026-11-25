@@ -8,7 +8,7 @@
     // as words made from the code itself. The code follows the name as dim small text on the same line (on phones it is
     // visually hidden: screen readers still get it).
     $eventNames = [
-        'entry.create' => 'Added entry', 'entry.rotate' => 'Rotated entry values', 'entry.update' => 'Updated entry', 'entry.reveal' => 'Revealed values',
+        'entry.create' => 'Added entry', 'entry.rotate' => 'Saved new version', 'entry.update' => 'Updated entry', 'entry.reveal' => 'Revealed values',
         'entry.archive' => 'Archived entry', 'entry.unarchive' => 'Restored entry from archive', 'entry.destroy' => 'Destroyed entry',
         'grant.create' => 'Added grant', 'grants.revoke' => 'Revoked grant',
         'machine.create' => 'Added agent', 'machines.revoke' => 'Revoked agent',
