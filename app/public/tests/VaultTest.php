@@ -325,13 +325,13 @@ final class VaultTest extends TestCase
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
         $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
-        $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
+        $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant)->assertSeeText('agent revoked');
         $this->get('/?q=Private')->assertOk()->assertSeeText('Search: Private')
-            ->assertSee('<button>Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
+            ->assertSee('<button class="catalog-search">Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
         $this->get('/?project=missing')->assertSeeText('Showing 0 of 1')->assertViewHas('archivedCount', 0);
         $this->get('/?due=1')->assertSeeText('Showing 0 of 1')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
-        DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
+        DB::table('entries')->where('id', $entry)->update(['rotate_at' => '2020-11-01 12:00:00']);
         $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
             'environment' => $this->environment, 'q' => 'Private', 'type' => 'api_key'];
         foreach ([false, true] as $due) {
@@ -340,14 +340,15 @@ final class VaultTest extends TestCase
             $this->get('/?'.http_build_query($current))->assertOk()
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
-        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1');
+        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1')
+            ->assertSeeInOrder(['data-label="Entry"', 'rotation due since 2020-11-01', 'data-label="Project"'], false);
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1')
-            ->assertSeeText('State: archived')->assertSeeText('used by agents');
+            ->assertSeeText('State: archived')->assertSee('<span class="chip muted">archived</span>', false)->assertSeeText('used by agents');
         $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1');
     }
 
@@ -388,9 +389,10 @@ final class VaultTest extends TestCase
         $this->get($base.'/grants?entry='.$entry)->assertSeeText('No matching grants.');
         [$agent] = $this->machine($entry);
         $this->get($base.'/agents')->assertSee('/revoke/machines/'.$agent);
-        DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->subDay()]);
+        DB::table('machines')->where('id', $agent)->update(['expires_at' => '2020-11-25 14:00:00']);
         $this->get($base.'/agents')->assertDontSee('/revoke/machines/'.$agent)->assertSee('Expired');
-        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertDontSeeText('No active entries.');
+        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertDontSeeText('No active entries.')
+            ->assertSeeText('Expired 2020-11-25 14:00 UTC · agent expired')->assertSeeText('Grant expiry:');
         DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->addDay()]);
         file_put_contents($this->temp.'/connectors.json', '{"actions":{}}');
         $this->get($base.'/grants')->assertSeeText('No actions are configured.')->assertDontSee('name="machine_id"', false);
@@ -452,8 +454,9 @@ final class VaultTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
                 'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
         }
+        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
-            ->assertOk()->assertSeeText('Showing 1 of 4')->assertSeeText('Outcome: denied')
+            ->assertOk()->assertSeeText('Showing 1 of 4')->assertSeeText('Outcome: Denied')
             ->assertSeeText('From: 2026-01-02')->assertSeeText('To: 2026-01-02')
             ->assertViewHas('events', fn ($events) => $events->first()->created_at === '2026-01-02 23:59:59' && $events->first()->outcome === 'denied');
     }
@@ -633,6 +636,20 @@ final class VaultTest extends TestCase
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertStatus(303)->assertSessionHasErrors();
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $this->entry(), 'action' => 'test.http', 'days' => 1])->assertRedirect();
+    }
+
+    public function test_sparse_checkbox_indices_follow_their_rows(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $names = [0 => 'First', 1 => 'Second', 2 => 'Third', 8 => 'Added'];
+        $checked = [0 => '1', 2 => '1', 8 => '1'];
+        $this->post($base.'/template', ['env_name' => $names, 'env_production' => $checked])->assertRedirect()->assertSessionHasNoErrors();
+        $template = DB::table('workspaces')->where('id', $this->workspace)->value('environment_template');
+        $this->assertSame([true, false, true, true], array_column(json_decode($template, true), 'production'));
+
+        $this->post($base.'/types', ['name' => 'Sparse fields', 'field_label' => $names, 'field_required' => $checked])->assertRedirect()->assertSessionHasNoErrors();
+        $fields = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'Sparse fields')->value('fields');
+        $this->assertSame([true, false, true, true], array_column(json_decode($fields, true), 'required'));
     }
 
     public function test_environment_template_rename_production_and_safe_delete(): void

@@ -7,9 +7,9 @@
 @endphp
 <a class="back" href="/?workspace={{ $space->id }}">← Entries</a>
 <h1>Import entries</h1>
-<p class="note">Paste a JSON array of 1 to 50 entries for <b>{{ $space->name }}</b>. Every row is validated before any secret is written to the encrypted store.</p>
+<p class="note">Paste a JSON array of entries for <b>{{ $space->name }}</b>. Validation is all-or-nothing: every row is checked before any secret is written to the encrypted store.</p>
 
-<h2>Paste entries</h2>
+<h2>JSON input</h2>
 @if($environments->isEmpty() || $types->isEmpty())
 <div class="empty capped">
     @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>@endif
@@ -27,7 +27,7 @@
 @endif
 
 <h2>Format</h2>
-<p class="note">Paste a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
+<p class="note">Each object’s <code>type</code> must exist in this workspace and include every required field for that type.</p>
 
 <details class="import-ref capped">
     <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>

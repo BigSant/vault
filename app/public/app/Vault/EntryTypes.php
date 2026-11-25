@@ -268,6 +268,11 @@ final class EntryTypes
         $row->revision = self::revision($row->name, $row->fields);
         $row->fields = json_decode($row->fields, true, flags: JSON_THROW_ON_ERROR);
 
+        foreach ($row->fields as $i => $field) {
+            $row->fields[$i]['generate'] = $field['kind'] === 'secret'
+                && (str_contains($field['key'], 'password') || str_contains($field['key'], 'passphrase'));
+        }
+
         return $row;
     }
 }

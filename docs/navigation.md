@@ -120,7 +120,9 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 Every page follows these, so the same kind of thing looks and behaves the same everywhere.
 
-1. **Form width.** A standalone form card is capped at one width; only a multi-column `.deck` changes it.
+1. **Two widths.** Forms, standalone cards, facts tables and short lists are capped at `--card` (760 px); boards
+   are capped at `--wide` (1100 px) on every page — a zero-specificity cap on every direct child of `main`, so heads,
+   stats, filter bars and boards share one right edge. Only a multi-column `.deck` differs. No page adds its own width.
 2. **Headings.** h1 is the page or area, h2 a section. A form card has its own h3 only when its h2 names something
    broader. No h2 that repeats the active tab, no h1→h3 skips, no h2 inside a card.
 3. **Form foot.** The note sits left or above; buttons sit right at natural width on every screen size.
@@ -133,12 +135,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    filter is set, a `.filter-status` line says "Showing N of M", shows one chip per active filter and holds the
    only **Clear filters** link.
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
-   inline label: "Requested …", "Finished …", "Expires …", "Expired …". Approval reads "asks every time" or
+   inline label: "Requested …", "Finished …", "Expires …", "Expired …" (`small.k`; `.k.keep` also shows on desktop
+   where no column head names the value). Approval reads "asks every time" or
    "runs without asking".
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished, inactive, or no health state) and
    `is-wait` (waiting for a decision or still running). Every row carries one.
 8. **Repeated buttons** get an `aria-label` naming their item.
 9. **Words**: "Reveal" for anything that shows a secret value; names are never uppercased.
+   Booleans are `label.check` checkboxes everywhere; array rows use explicit indices (`env_production[3]`).
 10. **Actions only when possible**: no Revoke on inactive items; a form whose required choice is empty shows an
     empty state linking to where to fix it instead of an enabled submit.
 
@@ -156,7 +160,6 @@ keyed by request path for labels that differ per form). Messages thrown by hand 
 `ValidationException::withMessages` must use the visible label themselves. Activity event codes get readable
 names in one mapping in `activity.blade.php`; the code stays as secondary text.
 
-The entry page wraps its content in `.entry-page`, which caps everything, boards included, at the card width.
 
 ## Known gaps
 

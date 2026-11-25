@@ -2,23 +2,24 @@
 @section('title', 'Projects')
 @section('content')
 @php
-    $yesNo = fn ($name, $on, $aria = null) => '<select name="'.e($name).'"'.($aria !== null ? ' aria-label="'.e($aria).'"' : '').'><option value="0">no</option><option value="1"'.($on ? ' selected' : '').'>yes</option></select>';
     $entries = fn (int $n) => $n.' '.($n === 1 ? 'entry' : 'entries');
     $oldAddProject = old('project_id') === null && old('production') === null && old('env_name') === null
         && (session('error_form') === null || session('error_form') === '/workspaces/'.$space->id.'/projects');
-    $templateRows = $template;
+    $templateRows = array_values($template);
     if (is_array(old('env_name'))) {
         $oldNames = old('env_name');
         $oldProd = is_array(old('env_production')) ? old('env_production') : [];
         $templateRows = [];
+        $lastIdx = array_key_last($oldNames);
         foreach ($oldNames as $i => $n) {
             $n = is_string($n) ? $n : '';
-            if ($n === '' && $i === array_key_last($oldNames)) {
+            if ($n === '' && $i === $lastIdx) {
                 continue;
             }
             $templateRows[] = ['name' => $n, 'production' => ($oldProd[$i] ?? '0') === '1'];
         }
     }
+    $nextTemplateIdx = count($templateRows);
 @endphp
 <h1>Setup</h1>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
@@ -122,14 +123,14 @@
 <h2 id="template">Environment template</h2>
 <p class="note">The environments each project starts with. Existing projects keep theirs.</p>
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
-    <table class="list edit">
+    <table class="list edit env-template">
         <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
         <tbody id="template-rows">
-        @foreach($templateRows as $env)
+        @foreach($templateRows as $i => $env)
             @php $rowName = $env['name'] !== '' ? $env['name'] : 'row '.$loop->iteration; @endphp
-            <tr><td data-label="Environment"><input name="env_name[]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label="Production">{!! $yesNo('env_production[]', $env['production'], 'Production for '.$rowName) !!}</td></tr>
+            <tr><td data-label="Environment"><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> Production</label></td></tr>
         @endforeach
-            <tr data-row-template><td data-label="Environment"><input name="env_name[]" maxlength="60" placeholder="staging" aria-label="Additional environment name"></td><td data-label="Production">{!! $yesNo('env_production[]', false, 'Production for additional environment') !!}</td></tr>
+            <tr data-row-template><td data-label="Environment"><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="Add an environment" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> Production</label></td></tr>
         </tbody>
     </table>
     @include('confirm-inline', ['verb' => 'save this template'])

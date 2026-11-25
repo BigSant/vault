@@ -18,7 +18,7 @@
         ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
         : 0);
 @endphp
-{{-- Everything on this page is capped at the card width (.entry-page), boards included: one right edge. --}}
+{{-- Two widths, as everywhere: boards end at --wide; the facts, the cards and the archive forms keep --card. --}}
 <div class="entry-page">
 <a class="back" href="/?workspace={{ $entry->workspace_id }}">← Entries</a>
 <div class="head">
@@ -110,7 +110,7 @@
     @forelse($history as $h)
         <tr class="{{ $h['version'] === $current ? 'is-ok' : 'is-idle' }}">
             <td class="full" data-label="Version"><small class="k">Version</small> <b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
-            <td class="when" data-label="Saved (UTC)">@if($h['at'])<small class="k">Saved</small> {{ $day($h['at']) }} <small class="k">UTC</small>@else<span class="muted">save time unknown</span>@endif</td>
+            <td class="when" data-label="Saved (UTC)">@if($h['at'])<small class="k">Saved</small> <span class="nobreak">{{ $day($h['at']) }} <small class="k">UTC</small></span>@else<span class="muted">save time unknown</span>@endif</td>
             <td data-label="By">@if($h['user'] ?? null)<small class="k">by</small> {{ $h['user'] }}@else<span class="muted">author unknown</span>@endif</td>
             <td class="changes-cell full" data-label="Changes"><div class="changes">
                 @if($h['changes'] === null)
@@ -163,12 +163,17 @@
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
     <tbody>
     @foreach($grants as $grant)
-        @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
+        {{-- The controller sets state, effective_expires_at (the earlier of the grant's and the agent's end), expiry_reason
+             (why it is not the grant's own date) and expires_at (the grant's own date). Shown as on the Grants page. --}}
+        @php
+            $gState = $grant->state;
+            $gEnds = (string) $grant->effective_expires_at;
+        @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
             <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime((string) $grant->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ $day($grant->expires_at) }} <small class="k">UTC</small></td>
+            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($gEnds) <= time() ? 'Expired' : 'Expires' }}</small> <span class="nobreak">{{ $day($gEnds) }} <small class="k">UTC</small></span>@if($grant->expiry_reason) · {{ $grant->expiry_reason }}@endif @if($gEnds !== (string) $grant->expires_at)<small>Grant expiry: <span class="nobreak">{{ $day($grant->expires_at) }} UTC</span></small>@endif</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach

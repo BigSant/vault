@@ -35,7 +35,7 @@
             default => 'is-idle',
         }; @endphp
         <tr class="{{ $stripe }}">
-        <td data-label="When (UTC)" class="when">{{ substr($event->created_at, 0, 16) }} <small class="k">UTC</small></td>
+        <td data-label="When (UTC)" class="when"><span class="nobreak">{{ substr($event->created_at, 0, 16) }} <small class="k">UTC</small></span></td>
         <td data-label="Actor" class="actor">{{ $event->actor_label }} @if($event->actor_kind === 'agent')<span class="chip muted">agent</span>@endif</td>
         <td data-label="Event" class="event"><span class="event-name">@if($event->event === 'operation.request' && isset($requestActions[$event->subject]))Agent requested <span class="name">{{ $requestActions[$event->subject] }}</span>@else{{ $eventName($event->event) }}@endif</span> <small class="nobreak event-code">{{ $eventCode($event->event) }}</small></td>
         @empty($hideSubject)<td data-label="Subject" class="subject">@if(($event->subject_label ?? null) !== null && $event->subject_label !== '')@if($event->subject_url ?? null)<a href="{{ $event->subject_url }}">{{ $event->subject_label }}</a>@else{{ $event->subject_label }}@endif @elseif($event->subject ?? null)<span class="muted">removed item</span>@else<span class="muted">—</span>@endif</td>@endempty

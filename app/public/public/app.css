@@ -12,7 +12,7 @@
 --top-1:#171c12;--top-2:#10130d;--lamp-off:#20261a;--row-edge:#0a0c08;--scroll-thumb:#4a5540;
 --term-bg:#070806;--term-ink:#d8e8c8;--term-faint:#8d927f;
 --qr-light:#ece6d3;
---card:760px;
+--card:760px;--wide:1100px;
 --mono:ui-monospace,"JetBrains Mono","Iosevka","IBM Plex Mono","SF Mono","Cascadia Code","DejaVu Sans Mono",Menlo,Consolas,monospace}
 *{box-sizing:border-box}
 html{background:var(--board);scrollbar-color:var(--scroll-thumb) var(--board)}
@@ -91,6 +91,10 @@ border-color:var(--edge)!important;border-style:dashed;box-shadow:none!important
 
 /* Page */
 main{padding:22px 28px 60px;max-width:1760px;margin:0 auto}
+/* Two widths, everywhere. --wide caps everything that sits directly in a page (boards, stats, filter bars, heads),
+   so a page has one right edge; --card is for forms, standalone cards, facts and short lists, which set it
+   themselves. A multi-column .deck is the only thing that may run wider. Pages add no widths of their own. */
+:where(main:not(.login)>:not(.deck)){max-width:var(--wide)}
 h1{font:700 20px/1.25 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:0 0 16px;overflow-wrap:anywhere}
 h1.name{text-transform:none;letter-spacing:.02em}
 /* Data (project, entry, agent names) is never uppercased: wrap it in .name inside any uppercase label. */
@@ -150,7 +154,7 @@ background:repeating-linear-gradient(-45deg,var(--hazard) 0 18px,#111 18px 36px)
 .stat span{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 
 /* Board: the main table, every row a card with a state stripe */
-.scroll{overflow-x:auto;max-width:100%;scrollbar-color:var(--scroll-thumb) transparent}
+.scroll{overflow-x:auto;scrollbar-color:var(--scroll-thumb) transparent}
 .board{width:100%;border-collapse:separate;border-spacing:0 6px}
 .board th{white-space:nowrap;text-align:left;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
 font-weight:600;padding:0 12px 2px}
@@ -184,7 +188,7 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 .list td{padding:7px 10px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere;vertical-align:middle}
 .list td input:not([type=checkbox]),.list td select{min-width:8em}
 .list small{display:block;color:var(--faint)}
-/* Facts tables and short two-column lists are as wide as a form card (--card); boards may run full width. */
+/* Facts tables and short two-column lists are as wide as a form card (--card); boards end at --wide. */
 .facts{width:100%;max-width:var(--card);border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
 .capped{max-width:var(--card)}
 .facts th{width:16em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
@@ -223,7 +227,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px
 .form-foot .controls{flex:none;justify-content:flex-end}
 .form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
 /* A plain submit is outlined in amber; a helper such as "+ Row" is not a submit and stays secondary. */
-.form-foot button:not(.go):not(.stop):not([type=button]){border-color:var(--amber);color:var(--amber)}
+.form-foot button:not(.go):not(.stop):not(.plain):not([type=button]){border-color:var(--amber);color:var(--amber)}
 .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 8px}
 .toolbar label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 .toolbar label.grow{flex:1;min-width:16em}
@@ -239,7 +243,7 @@ details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px
 details.filters>summary::before,details.filters[open]>summary::before{flex:none;content:"\25B8"}
 details.filters[open]>summary::before{content:"\25BE"}
 details.filters .toolbar{margin:0;padding:4px 12px 12px}
-.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:none;font-size:13px;color:var(--dim)}
+.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:var(--wide);font-size:13px;color:var(--dim)}
 .filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
 @media (min-width:901px){
 details.filters[data-wide-open]{background:none;border:none;border-radius:0}
@@ -273,7 +277,7 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 /* Copy failed: the note stays under the Copy button until a copy works or the value is hidden. */
 .secret-row .copy-note{margin:6px 0 0}
 pre[data-hidden]{color:var(--faint)}
-.masked{font:700 22px/1 var(--mono);letter-spacing:.3em;color:var(--faint);margin:6px 0 12px}
+.masked{font:700 22px/1 var(--mono);letter-spacing:.08em;color:var(--faint);margin:6px 0 12px}
 .empty{padding:30px;text-align:center;color:var(--dim);border:1px dashed var(--edge);border-radius:4px}
 .empty b{display:block;color:var(--ink);margin-bottom:4px}
 .pager{display:flex;justify-content:space-between;gap:10px;margin:4px 0 14px;font-size:13px}
@@ -304,9 +308,8 @@ details.jump>summary{padding:0;font:400 12px/1.3 var(--mono);color:var(--faint)}
 details.jump>summary::before,details.jump[open]>summary::before{content:none}
 .jump-links{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap}
 @media (min-width:901px){
-details.jump[open]{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap}
-details.jump[open]>summary{flex:none;cursor:default;pointer-events:none;white-space:nowrap}
-details.jump[open]>.jump-links{flex:1;min-width:0}
+/* The label floats; the links are a flex box of their own beside it, so wrapped links never start under the label. */
+details.jump[open]>summary{float:left;margin-right:18px;line-height:28px;cursor:default;pointer-events:none;white-space:nowrap}
 }
 @media (max-width:900px){
 nav.subnav:has(>details.jump){padding:0;border-bottom:none}
@@ -316,17 +319,12 @@ details.jump>summary::before{content:"\25B8";color:var(--amber);flex:none}
 details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 .jump-links{gap:0 18px;padding:0 12px 8px}
 }
-/* Entry page: every section, boards included, ends at the card width, so the right edge is one line. */
-.entry-page{max-width:var(--card)}
+/* Entry page: boards end at --wide like everywhere; facts, cards and the archive forms keep --card. */
 .entry-page>:is(.head,nav.subnav)+h2{margin-top:18px}
+.entry-page>.deck{max-width:var(--card)}
 @media (min-width:901px){
-/* The requests board fits the card: the action code and the request id stay whole, the times and the MFA label wrap. */
 .entry-page .board td.name{min-width:0}
-.entry-page .board.requests td.action :is(code,.rid){white-space:nowrap;overflow-wrap:normal}
-.entry-page .board.requests td.when .line{white-space:normal}
-.entry-page .board.requests form.mfa{flex-wrap:wrap}
-.entry-page .board.requests form.mfa label{flex:1 1 100%;min-width:0;white-space:normal}
-.entry-page .board.requests form.mfa input{min-width:0}
+.board.requests td.action :is(code,.rid){white-space:nowrap;overflow-wrap:normal}
 }
 
 /* Sign-in */
@@ -386,9 +384,19 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .board.requests form.mfa label{flex:1 1 11em;min-width:11em;font-size:12px;color:var(--dim);white-space:nowrap}
 .board.requests form.mfa button{flex:none;white-space:nowrap}
 .board.requests .state{white-space:nowrap}
+/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
+/* Phone: the time left follows the deadline on its line. Wide: it is a line of its own under the deadline. */
+.board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
+@media (max-width:900px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
+@media (min-width:901px){.board.requests .left{display:block;margin-top:3px}}
 @media (min-width:901px){
+/* Six columns fit --wide: tighter cells, and the MFA field is as wide as its eight digits need. */
+.board.requests :is(th,td):not(:first-child){padding-left:8px;padding-right:8px}
+.board.requests form.mfa input{min-width:7em}
+/* Allow once and Deny share one row. */
+.board.requests td.decision{white-space:nowrap}
+.board.requests td.decision .controls{flex-wrap:nowrap}
 .board.requests form.mfa{flex-wrap:nowrap}
-.board.requests form.mfa input{min-width:9em}
 .board.requests td.who,.board.requests td.action{min-width:0}
 .board.requests td.entry{min-width:11em}
 }
@@ -412,6 +420,16 @@ label.indent{margin-left:min(14em,30%)}
 }
 /* A form that is one button and its note (Sign out): a plain row at the card width, not a card. */
 form.plain-row{max-width:var(--card);margin:0 0 14px}
+/* button.plain: a submit that is neither the page's main action nor a change (Sign out on Account) is not outlined
+   in amber (see the form foot rule). */
+/* A page head followed by the stats keeps the normal block gap. */
+.head:has(+.stats){margin-bottom:14px}
+.head:has(+.stats) h1{margin-bottom:0}
+/* Editable rows inside a form card start and end where the fields above them do. */
+@media (min-width:901px){
+form.action .list.edit :is(th,td):first-child{padding-left:0}
+form.action .list.edit :is(th,td):last-child{padding-right:0}
+}
 .board.versions td{vertical-align:middle}
 .board.versions td.act{white-space:nowrap}
 button.ok{color:var(--go);border-color:var(--go-line)}
@@ -447,15 +465,19 @@ details.fold:target{border-color:var(--amber)}
 .with-button>input,.with-button>label{flex:1;min-width:0}
 .with-button>label{margin:0}
 .with-button:has(>label){align-items:flex-end;margin:0 0 8px}
-/* Narrow phones: the buttons wrap under the field instead of squeezing it. */
-@media (max-width:420px){
+/* Phones: the buttons wrap under the field instead of squeezing it. */
+@media (max-width:600px){
 .with-button{flex-wrap:wrap;justify-content:flex-end}
 .with-button>input,.with-button>label{flex:1 1 60%;min-width:60%}
 .with-button:has(>button~button)>input{flex-basis:100%}
 }
+/* Generate asking "Replace value?": the field keeps its line, the question and its two buttons take the next one. */
+.with-button:has(>.confirm-step){flex-wrap:wrap;justify-content:flex-end}
+.with-button:has(>.confirm-step)>input{flex-basis:100%}
 /* Counts beside a heading or in a fold summary are plain text, not chips. */
 h2 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacing:0;text-transform:none}
-.fold-name code{margin-left:6px;font-weight:400}
+/* No margin on the key: when it wraps it starts flush left, like .event-code. */
+.fold-name code{font-weight:400}
 .fold-meta{color:var(--dim);font-size:13px;font-weight:400;white-space:nowrap}
 .fold-act{color:var(--amber);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
 details[open]>summary .fold-act{color:var(--dim)}
@@ -532,6 +554,8 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
    <small class="k">Expires</small> 2026-12-01 <small class="k">UTC</small>. The .k labels show on phones only.
    Helpers for cells: .full = own line, .end = pushed to the right edge. */
 .board .k,.board td.when small.k,.board td.name small.k{display:none}
+/* .k.keep: a label no column head replaces ("Expires" under Requested, "Expired" under Finished) shows everywhere. */
+.board .k.keep,.board td.when small.k.keep{display:inline;font-size:12px;color:var(--faint)}
 @media (max-width:900px){
 .board.compact-board tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px}
 .board.compact-board td{width:auto;min-width:0;max-width:100%;padding:0;overflow-wrap:anywhere}
@@ -559,6 +583,7 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 }
 
 /* entries area */
+@media (min-width: 901px) { .catalog-search { display: none; } }
 .entry-search label.grow{flex:1;min-width:0}.entry-search button{width:auto}
 @media (min-width:901px){.toolbar label.grow{min-width:15rem}}
 a.stat{display:block;color:inherit;text-decoration:none;border-radius:3px}
@@ -650,13 +675,13 @@ details.import-ref>.inner .scroll{margin:0}
 .card details.env-add[open]>summary:hover{text-decoration:none;color:var(--amber)}
 @media (min-width:901px){
 details.type-fold .list.edit :is(th,td){padding:7px 6px}
-details.type-fold .list.edit :is(th,td):first-child{padding-left:0}
-details.type-fold .list.edit :is(th,td):last-child{padding-right:0}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):first-child{padding-left:0}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):last-child{padding-right:0}
 details.type-fold .list.edit td[data-label="Field label"] input{min-width:10em}
 details.type-fold .list.edit td[data-label="Kind"] select{min-width:12em}
-details.type-fold .list.edit td[data-label="Required"] select{min-width:4.8em}
 details.type-fold .list.edit td[data-label="Key"] code{white-space:nowrap;overflow-wrap:normal}
-details.type-fold .list.edit td:last-child label.check{white-space:nowrap}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) label.check{white-space:nowrap}
+.list.edit.env-template td:last-child,.list.edit.type-new td:last-child{width:1%}
 }
 details.more.field-rules{margin:14px 0 0}
 details.more.field-rules>summary{color:var(--dim);font-weight:400}

@@ -25,7 +25,7 @@
     $activeEntries = $entries->where('state', 'active');
 @endphp
 @if($grants->isEmpty())
-    <div class="empty">{{ $filterCount ? 'No matching grants.' : 'No grants yet.' }}
+    <div class="empty capped">{{ $filterCount ? 'No matching grants.' : 'No grants yet.' }}
         @unless($filterCount)
             @if($activeMachines->isEmpty())<a href="/workspaces/{{ $space->id }}/agents">Add an agent in Identities</a>.
             @elseif($activeEntries->isNotEmpty() && $actions)<a href="#add-grant">Add a grant</a>.
@@ -41,14 +41,14 @@
             $machine = $machines[$g->machine_id];
             $target = $entries[$g->entry_id];
             $revoke = "Revoke grant {$g->action} for {$machine->name} on {$target->name} — {$target->project} / {$target->environment}";
-            $gState = $g->revoked_at || $machine->revoked_at ? 'revoked' : (min(strtotime($g->expires_at), strtotime($machine->expires_at)) <= time() ? 'expired' : 'active');
+            $gState = $g->state;
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td data-label="Agent"><b>{{ $machine->name }}</b></td>
             <td class="end" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
-            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($g->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->expires_at, 0, 16) }} <small class="k">UTC</small></td>
+            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($g->effective_expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->effective_expires_at, 0, 16) }} <small class="k">UTC</small>@if($g->expiry_reason) · {{ $g->expiry_reason }}@endif @if($g->effective_expires_at !== $g->expires_at)<small>Grant expiry: {{ substr($g->expires_at, 0, 16) }} UTC</small>@endif</td>
             <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
             <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?">@csrf<button class="stop" aria-label="{{ $revoke }}">Revoke</button></form>@endif</td>
         </tr>
@@ -60,7 +60,7 @@
 <h2 id="add-grant">Add a grant</h2>
 
 @if($activeMachines->isEmpty() || $activeEntries->isEmpty() || !$actions)
-    <div class="empty">
+    <div class="empty capped">
         @if($activeMachines->isEmpty())<p>No active agents. <a href="/workspaces/{{ $space->id }}/agents">Add an agent in Identities</a>.</p>@endif
         @if($activeEntries->isEmpty())<p>No active entries. <a href="/entries/new?workspace={{ $space->id }}">Add an entry</a>.</p>@endif
         @unless($actions)<p>No actions are configured. Ask the operator to register the allowed target systems.</p>@endunless

@@ -2,14 +2,13 @@
 @section('title', 'Entry types')
 @section('content')
 @php
-    $kindSelect = function (string $current = 'text', string $for = 'the new field') use ($kinds) {
-        $html = '<select name="field_kind[]" aria-label="Kind for '.e($for).'">';
+    $kindSelect = function (int $index, string $current = 'text', string $for = 'the new field') use ($kinds) {
+        $html = '<select name="field_kind['.$index.']" aria-label="Kind for '.e($for).'">';
         foreach ($kinds as $value => $name) {
             $html .= '<option value="'.e($value).'"'.($value === $current ? ' selected' : '').'>'.e($name).'</option>';
         }
         return $html.'</select>';
     };
-    $required = fn (bool $on, string $for = 'the new field') => '<select name="field_required[]" aria-label="Required for '.e($for).'"><option value="1"'.($on ? ' selected' : '').'>yes</option><option value="0"'.($on ? '' : ' selected').'>no</option></select>';
     $plural = fn (int $n, string $one, string $many) => $n.' '.($n === 1 ? $one : $many);
     $errorForm = session('error_form');
     $addTypePath = '/workspaces/'.$space->id.'/types';
@@ -27,7 +26,7 @@
                 continue;
             }
             $kind = isset($oldKinds[$i]) && is_string($oldKinds[$i]) && isset($kinds[$oldKinds[$i]]) ? $oldKinds[$i] : 'text';
-            $newRows[] = ['label' => $lbl, 'kind' => $kind, 'required' => ($oldReq[$i] ?? '1') === '1'];
+            $newRows[] = ['label' => $lbl, 'kind' => $kind, 'required' => ($oldReq[$i] ?? '0') === '1'];
         }
     }
 @endphp
@@ -45,7 +44,7 @@
         $oldTypeEdit = $errorForm === $typePath;
         $oldTypeDelete = $errorForm === $typePath.'/delete';
         $storedLabels = array_column($type->fields, 'label', 'key');
-        $editRows = array_map(fn ($f) => $f + ['remove' => false], $type->fields);
+        $editRows = array_values(array_map(fn ($f) => $f + ['remove' => false], $type->fields));
         if ($oldTypeEdit && $oldLabels !== null) {
             $editRows = [];
             $lastIdx = array_key_last($oldLabels);
@@ -66,9 +65,10 @@
                 ];
             }
         }
+        $nextEditIdx = count($editRows);
     @endphp
     <details class="fold type-fold capped" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
-        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="fold-meta">{{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act">Edit<span class="sr-only"> type {{ $type->name }}</span></span></summary>
+        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act">Edit<span class="sr-only"> type {{ $type->name }}</span></span></summary>
         <div class="inner">
             <form method="post" action="{{ $typePath }}">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
@@ -76,19 +76,19 @@
                 <div class="scroll"><table class="list edit">
                     <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th><th scope="col">Key</th><th scope="col">Remove</th></tr></thead>
                     <tbody id="rows-{{ $type->key }}">
-                    @foreach($editRows as $f)
+                    @foreach($editRows as $i => $f)
                         @php $for = $f['label'] !== '' ? $f['label'] : ($f['key'] !== '' ? ($storedLabels[$f['key']] ?? $f['key']) : 'row '.$loop->iteration); @endphp
                         <tr>
-                            <td data-label="Field label"><input type="hidden" name="field_key[]" value="{{ $f['key'] }}"><input name="field_label[]" value="{{ $f['label'] }}"@if($f['key'] !== '') required @endif maxlength="80" aria-label="Label for {{ $for }}"></td>
-                            <td data-label="Kind">{!! $kindSelect($f['kind'], $for) !!}</td>
-                            <td data-label="Required">{!! $required((bool) $f['required'], $for) !!}</td>
+                            <td data-label="Field label"><input type="hidden" name="field_key[{{ $i }}]" value="{{ $f['key'] }}"><input name="field_label[{{ $i }}]" value="{{ $f['label'] }}"@if($f['key'] !== '') required @endif maxlength="80" aria-label="Label for {{ $for }}"></td>
+                            <td data-label="Kind">{!! $kindSelect($i, $f['kind'], $for) !!}</td>
+                            <td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $i }}]" value="1" @checked((bool) $f['required']) aria-label="Required for {{ $for }}"> Required</label></td>
                             <td data-label="Key">@if($f['key'] !== '')<code>{{ $f['key'] }}</code>@endif</td>
                             <td data-label="">@if($f['key'] !== '')<label class="check"><input type="checkbox" name="field_remove[]" value="{{ $f['key'] }}" aria-label="Remove field {{ $for }}" @checked($f['remove'])> remove</label>@endif</td>
                         </tr>
                     @endforeach
                         <tr data-row-template>
-                            <td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td>
-                            <td data-label="Kind">{!! $kindSelect('text', 'the new field') !!}</td><td data-label="Required">{!! $required(false, 'the new field') !!}</td><td data-label=""></td><td data-label=""></td>
+                            <td data-label="Field label"><input type="hidden" name="field_key[{{ $nextEditIdx }}]" value=""><input name="field_label[{{ $nextEditIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td>
+                            <td data-label="Kind">{!! $kindSelect($nextEditIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextEditIdx }}]" value="1" aria-label="Required for the new field"> Required</label></td><td data-label=""></td><td data-label=""></td>
                         </tr>
                     </tbody>
                 </table></div>
@@ -118,14 +118,15 @@
 
     <form class="action" method="post" action="{{ $addTypePath }}">@csrf
         <label><span>Type name</span><input name="name" value="{{ $oldAddType && is_string(old('name')) ? old('name') : '' }}" required maxlength="80" placeholder="FTP server"></label>
-        <table class="list edit">
+        @php $nextNewIdx = count($newRows); @endphp
+        <table class="list edit type-new">
             <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
             <tbody id="rows-new">
-            @foreach($newRows as $f)
+            @foreach($newRows as $i => $f)
                 @php $for = $f['label'] !== '' ? $f['label'] : 'row '.$loop->iteration; @endphp
-                <tr><td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" value="{{ $f['label'] }}" maxlength="80" aria-label="Label for {{ $for }}"></td><td data-label="Kind">{!! $kindSelect($f['kind'], $for) !!}</td><td data-label="Required">{!! $required($f['required'], $for) !!}</td></tr>
+                <tr><td data-label="Field label"><input type="hidden" name="field_key[{{ $i }}]" value=""><input name="field_label[{{ $i }}]" value="{{ $f['label'] }}" maxlength="80" aria-label="Label for {{ $for }}"></td><td data-label="Kind">{!! $kindSelect($i, $f['kind'], $for) !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $i }}]" value="1" @checked((bool) $f['required']) aria-label="Required for {{ $for }}"> Required</label></td></tr>
             @endforeach
-                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="{{ $newRows ? 'Field label' : 'Server address' }}" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect('text', 'the new field') !!}</td><td data-label="Required">{!! $required(true, 'the new field') !!}</td></tr>
+                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[{{ $nextNewIdx }}]" value=""><input name="field_label[{{ $nextNewIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect($nextNewIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextNewIdx }}]" value="1" checked aria-label="Required for the new field"> Required</label></td></tr>
             </tbody>
         </table>
         @include('confirm-inline', ['verb' => 'add this type'])

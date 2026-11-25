@@ -50,20 +50,73 @@ const fields = () => document.querySelectorAll('[data-types]').forEach(el => {
 if (type) { type.addEventListener('change', fields); fields(); }
 // The visible label of a field, without its hint: "Password", "API token".
 const fieldName = input => input.closest('.field, label')?.querySelector('label span, span')?.firstChild?.textContent?.trim() || 'value';
-document.querySelectorAll('[data-generate]').forEach(button => button.addEventListener('click', () => {
+// Two-step confirmation in place. The first press turns the button into its armed wording with a Cancel beside it and
+// the question as the note; go() runs on the second press. Returns the controls of one button's step.
+const armedText = text => 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+const twoStep = (question, armed = armedText) => {
+  let step = null;
+  let armedAt = 0;
+  const disarm = focus => {
+    if (!step) return;
+    const { box, button, text, label } = step;
+    step = null;
+    box.before(button);
+    box.remove();
+    button.textContent = text;
+    button.classList.remove('armed');
+    if (label === null) button.removeAttribute('aria-label'); else button.setAttribute('aria-label', label);
+    if (focus) button.focus();
+  };
+  const arm = button => {
+    const text = button.textContent.trim();
+    const label = button.getAttribute('aria-label');
+    const box = document.createElement('span');
+    box.className = 'confirm-step';
+    const note = document.createElement('span');
+    note.className = 'confirm-note';
+    note.textContent = question;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.setAttribute('aria-label', 'Cancel: ' + (label || text));
+    cancel.addEventListener('click', () => disarm(true));
+    button.before(box);
+    box.append(note, button, cancel);
+    button.textContent = armed(text);
+    button.setAttribute('aria-label', 'Confirm: ' + (label || text));
+    button.classList.add('armed');
+    step = { box, button, text, label };
+    armedAt = Date.now();
+    button.focus();
+    say(question + ' Press Confirm to go on, or Cancel.');
+  };
+  // A double click must not confirm what its first click only asked for.
+  return { arm, disarm, armed: () => Boolean(step), tooSoon: () => Date.now() - armedAt < 500 };
+};
+// Generate fills a secret field with a random value. A field that already holds a value is only replaced after a
+// second press ("Replace value?").
+document.querySelectorAll('[data-generate]').forEach(button => {
+  const step = twoStep('Replace value?', () => 'Confirm replace');
   const input = document.getElementById(button.dataset.generate);
   if (!input) return;
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  input.value = btoa(String.fromCharCode(...bytes));
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  button.textContent = 'Generated';
-  const name = fieldName(input);
-  say(name + ' generated. Use Reveal ' + name + ' to check it.');
-}));
-// Every Generate button gets a Reveal/Hide companion, so a generated or typed value can be checked before saving.
-document.querySelectorAll('[data-generate]').forEach(button => {
-  const input = document.getElementById(button.dataset.generate);
-  if (!input || input.type !== 'password') return;
+  button.addEventListener('click', () => {
+    if (step.armed()) { if (step.tooSoon()) return; step.disarm(true); }
+    else if (input.value !== '') { step.arm(button); return; }
+    const bytes = crypto.getRandomValues(new Uint8Array(24));
+    input.value = btoa(String.fromCharCode(...bytes));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.textContent = 'Generated';
+    const name = fieldName(input);
+    say(name + ' generated. Use Reveal ' + name + ' to check it.');
+  });
+  button.closest('.with-button')?.addEventListener('keydown', event => { if (event.key === 'Escape' && step.armed()) { event.stopPropagation(); step.disarm(true); } });
+  // Typing a value by hand, or emptying the field, withdraws the question.
+  input.addEventListener('input', event => { if (event.isTrusted) step.disarm(false); });
+  addEventListener('pageshow', event => { if (event.persisted) step.disarm(false); });
+});
+// Every secret field (a password input in .with-button) gets a Reveal/Hide button right after it, before Generate
+// when the field has one, so a generated or typed value can be checked before saving.
+document.querySelectorAll('.with-button > input[type=password]').forEach(input => {
   const name = fieldName(input);
   const show = document.createElement('button');
   show.type = 'button';
@@ -81,23 +134,41 @@ document.querySelectorAll('[data-generate]').forEach(button => {
     sync();
     say(name + (visible ? ' revealed. Hide ' + name + ' to mask it again.' : ' hidden. Reveal ' + name + ' to check it.'));
   });
-  button.before(show);
+  input.after(show);
   // A shown value never stays on screen through a submit or a page change.
   input.form?.addEventListener('submit', mask);
   addEventListener('pagehide', mask);
 });
-// Entry type editor: add another empty field row.
+// "+ Row" / "+ Field": add another empty row to an editable table. The clone is a fresh row: its controls go back to
+// their defaults, every indexed name ("field_required[3]") gets the next free index so a checkbox stays tied to its
+// row, and its accessible names end in the row's number ("Label for the new field, row 6").
 document.querySelectorAll('[data-add-row]').forEach(button => button.addEventListener('click', () => {
   const rows = document.getElementById(button.dataset.addRow);
   const template = rows?.querySelector('[data-row-template]');
   if (!template) return;
+  const indexed = /\[(\d+)\]/;
+  const used = [...rows.querySelectorAll('[name]')].map(el => indexed.exec(el.name)).filter(Boolean).map(match => Number(match[1]));
+  const next = Math.max(rows.children.length - 1, ...used) + 1;
   const row = template.cloneNode(true);
   row.removeAttribute('data-row-template');
-  row.querySelectorAll('input').forEach(input => { if (input.type !== 'hidden') input.value = ''; });
-  row.querySelectorAll('select').forEach(select => { select.selectedIndex = 0; });
+  row.querySelectorAll('.field-error').forEach(note => note.remove());
+  row.querySelectorAll('input, select, textarea').forEach(control => {
+    if (control.name) control.name = control.name.replace(indexed, '[' + next + ']');
+    if (control.matches('select')) {
+      [...control.options].forEach(option => { option.selected = option.defaultSelected; });
+      if (![...control.options].some(option => option.defaultSelected)) control.selectedIndex = 0;
+    } else if (control.type === 'checkbox' || control.type === 'radio') control.checked = control.defaultChecked;
+    else if (control.type !== 'hidden') control.value = '';
+    control.removeAttribute('aria-invalid');
+    control.removeAttribute('aria-describedby');
+    if (/^field-error-/.test(control.id)) control.removeAttribute('id');
+  });
   if (rows.closest('table')?.hasAttribute('role')) { row.setAttribute('role', 'row'); row.querySelectorAll('td').forEach(td => td.setAttribute('role', 'cell')); }
   rows.appendChild(row);
-  row.querySelector('input:not([type=hidden])')?.focus();
+  const number = rows.children.length;
+  row.querySelectorAll('[aria-label]').forEach(el => el.setAttribute('aria-label', el.getAttribute('aria-label').replace(/,? row \d+$/, '') + ', row ' + number));
+  row.querySelector('input:not([type=hidden]):not([type=checkbox])')?.focus();
+  say('Row ' + number + ' added.');
 }));
 // Inline password confirmation: the block is in every long sensitive form, hidden while the confirmation has more
 // than 4 minutes left. It appears when the time comes, when the tab is looked at again, and at the latest on submit.
@@ -129,70 +200,42 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     say('Your password confirmation has expired. Enter your current password to continue.');
   });
 });
-// Destructive actions confirm in place, in two steps. The first press turns the button into "Confirm <verb>" with a
-// Cancel beside it and the form's data-confirm question as the note; the second press sends the form.
-// In a table the armed buttons need more room than the single button. Each such cell gets an invisible, zero-height
-// copy of its armed button row, so the column is that wide from the start and arming never moves a column.
-const armedText = text => 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+// Destructive actions confirm in place, in two steps (twoStep above): the form's data-confirm question is the note
+// and the second press sends the form.
+// In a table the armed buttons need more room than the single button. Each such cell gets invisible, zero-height
+// copies of its button row, one per button that can be armed (that button as "Confirm …" + Cancel, the others as
+// they are). Only one button is armed at a time, so the column is as wide as the widest of these from the start
+// and arming never moves a column.
 document.querySelectorAll(':is(table.board, table.list) td:has(form[data-confirm])').forEach(cell => {
-  const sizer = document.createElement('div');
-  sizer.className = 'confirm-size' + (cell.querySelector('.controls') ? ' controls' : '');
-  sizer.setAttribute('aria-hidden', 'true');
-  cell.querySelectorAll('button').forEach(button => {
-    const texts = button.closest('form[data-confirm]') && button.type !== 'button' ? [armedText(button.textContent.trim()), 'Cancel'] : [button.textContent.trim()];
-    texts.forEach(text => { const fake = document.createElement('span'); fake.className = 'btn'; fake.textContent = text; sizer.append(fake); });
+  const buttons = [...cell.querySelectorAll('button')];
+  const arming = buttons.filter(button => button.closest('form[data-confirm]') && button.type !== 'button');
+  arming.forEach(armedOne => {
+    const sizer = document.createElement('div');
+    sizer.className = 'confirm-size' + (cell.querySelector('.controls') ? ' controls' : '');
+    sizer.setAttribute('aria-hidden', 'true');
+    buttons.forEach(button => {
+      const texts = button === armedOne ? [armedText(button.textContent.trim()), 'Cancel'] : [button.textContent.trim()];
+      texts.forEach(text => { const fake = document.createElement('span'); fake.className = 'btn'; fake.textContent = text; sizer.append(fake); });
+    });
+    cell.append(sizer);
   });
-  cell.append(sizer);
 });
 document.querySelectorAll('form[data-confirm]').forEach(form => {
-  let step = null;
-  let armedAt = 0;
-  const disarm = focus => {
-    if (!step) return;
-    const { box, button, text, label } = step;
-    step = null;
-    box.before(button);
-    box.remove();
-    button.textContent = text;
-    button.classList.remove('armed');
-    if (label === null) button.removeAttribute('aria-label'); else button.setAttribute('aria-label', label);
-    if (focus) button.focus();
-  };
+  const step = twoStep(form.dataset.confirm);
   form.addEventListener('submit', event => {
     if (event.defaultPrevented) return;
-    if (step) {
-      // A double click must not confirm what its first click only asked for.
-      if (Date.now() - armedAt < 500) event.preventDefault();
+    if (step.armed()) {
+      if (step.tooSoon()) event.preventDefault();
       return;
     }
     const button = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])');
     if (!button) return;
     event.preventDefault();
-    const text = button.textContent.trim();
-    const label = button.getAttribute('aria-label');
-    const box = document.createElement('span');
-    box.className = 'confirm-step';
-    const note = document.createElement('span');
-    note.className = 'confirm-note';
-    note.textContent = form.dataset.confirm;
-    const cancel = document.createElement('button');
-    cancel.type = 'button';
-    cancel.textContent = 'Cancel';
-    cancel.setAttribute('aria-label', 'Cancel: ' + (label || text));
-    cancel.addEventListener('click', () => disarm(true));
-    button.before(box);
-    box.append(note, button, cancel);
-    button.textContent = armedText(text);
-    button.setAttribute('aria-label', 'Confirm: ' + (label || text));
-    button.classList.add('armed');
-    step = { box, button, text, label };
-    armedAt = Date.now();
-    button.focus();
-    say(form.dataset.confirm + ' Press Confirm to go on, or Cancel.');
+    step.arm(button);
   });
-  form.addEventListener('keydown', event => { if (event.key === 'Escape' && step) { event.stopPropagation(); disarm(true); } });
+  form.addEventListener('keydown', event => { if (event.key === 'Escape' && step.armed()) { event.stopPropagation(); step.disarm(true); } });
   // A page restored from the back/forward cache starts unarmed again.
-  addEventListener('pageshow', event => { if (event.persisted) disarm(false); });
+  addEventListener('pageshow', event => { if (event.persisted) step.disarm(false); });
 });
 // Grant form: an action needs fields the chosen entry's type may not have. Options carry data-fields (entry: the
 // fields it has; action: the fields it reads), so impossible actions are switched off before the server says no.
@@ -222,7 +265,11 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
       option.textContent = option.dataset.text + (fits ? '' : lacking);
     });
     const valid = options.filter(option => !option.disabled);
-    if (actionSelect.selectedOptions[0]?.disabled && valid.length) valid[0].selected = true;
+    // The chosen action cannot use the newly chosen entry: back to "Choose an action", never a silent swap.
+    if (actionSelect.selectedOptions[0]?.disabled) {
+      actionSelect.value = '';
+      if (valid.length) say('The action was cleared: it needs fields this entry lacks. Choose an action.');
+    }
     const none = picked && !valid.length;
     if (submit) submit.disabled = none;
     if (none) actionSelect.setAttribute('aria-describedby', note.id); else actionSelect.removeAttribute('aria-describedby');
@@ -233,6 +280,60 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
   addEventListener('pageshow', sync);
   sync();
 });
+// Requests are time-critical. Every waiting row carries data-expires (Unix seconds) and shows how long it still
+// waits; the table's data-now is the server's clock, so this device's clock does not matter. A row past its deadline
+// is switched off and reads "expired". While rows wait the page reloads itself every 30 seconds (the table's
+// data-refresh address), but never while a field is in use, a confirmation is open or a secret is on screen.
+const waitingRows = [...document.querySelectorAll('table.requests tr[data-expires]')];
+if (waitingRows.length) {
+  const board = waitingRows[0].closest('table');
+  const skew = board.dataset.now ? Number(board.dataset.now) * 1000 - Date.now() : 0;
+  const tick = () => waitingRows.forEach(row => {
+    if (row.dataset.late) return;
+    const left = Number(row.dataset.expires) * 1000 - (Date.now() + skew);
+    const out = row.querySelector('.left');
+    if (left > 0) {
+      const minutes = Math.floor(left / 60000);
+      if (out) { out.textContent = minutes >= 60 ? Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min left' : minutes >= 1 ? minutes + ' min left' : 'under 1 min left'; out.hidden = false; }
+      return;
+    }
+    row.dataset.late = '1';
+    row.classList.remove('is-wait');
+    row.classList.add('is-idle', 'is-late');
+    if (out) out.hidden = true;
+    row.querySelectorAll('.k.keep').forEach(label => { if (label.textContent.trim() === 'Expires') label.textContent = 'Expired'; });
+    const state = row.querySelector('td.state');
+    if (state) { const chip = document.createElement('span'); chip.className = 'chip muted'; chip.textContent = 'expired'; state.replaceChildren(chip); }
+    const inside = row.contains(document.activeElement);
+    row.querySelectorAll('button, input:not([type=hidden])').forEach(control => { control.disabled = true; });
+    if (inside) document.getElementById('content')?.focus({ preventScroll: true });
+    say('A request expired before a decision. It can no longer be allowed.');
+  });
+  tick();
+  setInterval(tick, 5000);
+  const place = 'vault-refresh-scroll';
+  // A refresh keeps the place on the page.
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(place) || 'null');
+    sessionStorage.removeItem(place);
+    if (kept && kept.path === location.pathname && !location.hash) scrollTo(0, kept.y);
+  } catch { /* no session storage: the page starts at the top */ }
+  const busy = () => {
+    const active = document.activeElement;
+    if (document.hidden || document.querySelector('.confirm-step, details.menu[open], [data-secret]:not([data-hidden])')) return true;
+    if (active?.matches('input, select, textarea') || active?.closest('table.requests')) return true;
+    return [...document.querySelectorAll('main input, main textarea')].some(field => !['hidden', 'checkbox', 'radio'].includes(field.type) && field.value !== field.defaultValue);
+  };
+  const url = [...document.querySelectorAll('table.requests[data-refresh]')].map(table => table.dataset.refresh).find(Boolean);
+  let due = Date.now() + 30000;
+  const refresh = () => {
+    if (!url || Date.now() < due || busy()) return;
+    try { sessionStorage.setItem(place, JSON.stringify({ path: location.pathname, y: scrollY })); } catch { /* fine */ }
+    location.replace(url);
+  };
+  setInterval(refresh, 5000);
+  document.addEventListener('visibilitychange', refresh);
+}
 // Filter bars: an inline bar on wide screens, a closed drawer on phones. A resize follows along until the user
 // opens or closes the bar themselves.
 const wide = matchMedia('(min-width: 901px)');

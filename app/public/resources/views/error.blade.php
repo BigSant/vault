@@ -2,9 +2,10 @@
 @php
     $title = [401 => 'Sign-in failed', 403 => 'Not allowed', 404 => 'Not found', 409 => 'Not possible now', 419 => 'Session expired',
         422 => 'Check the form', 429 => 'Too many attempts'][$status] ?? 'Not available';
-    $signIn = in_array($status, [401, 419], true);
     // $shell: a signed-in person sees the error under the normal header. Guests and a failing service get the bare page.
     $shell = ! empty($shell);
+    // The bare page has no header to go anywhere from, and "entries" means nothing to a guest: it always offers Sign in.
+    $signIn = ! $shell || in_array($status, [401, 419], true);
     // Back to the workspace last opened in this session; the entries page checks membership again.
     $last = $shell ? session('last_workspace') : null;
     $home = is_string($last) && $last !== '' ? '/?workspace='.rawurlencode($last) : '/';

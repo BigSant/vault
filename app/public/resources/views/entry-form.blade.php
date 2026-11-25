@@ -3,7 +3,7 @@
 @section('content')
 @php
     $oldType = !$entry && is_string(old('type')) && $types->contains('key', old('type')) ? old('type') : null;
-    $initialType = $entry?->type ?? $oldType ?? $types->first()?->key;
+    $initialType = $entry?->type ?? $oldType ?? ($types->count() === 1 ? $types->first()->key : null);
 @endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Edit entry' : 'Add an entry' }}</h1>
@@ -42,7 +42,8 @@
                     <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
                 @endforeach
             </select></label>
-            <label><span>Type</span><select name="type" id="entry-type">
+            <label><span>Type</span><select name="type" id="entry-type" required>
+                <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>
             <p class="note">Missing a type or a field? <a href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>
@@ -51,6 +52,7 @@
 
     <fieldset>
         <legend>Secret values</legend>
+        @unless($entry)<p class="note" data-types="" @if($initialType !== null) hidden @endif>Choose a type above to see its fields.</p>@endunless
         @foreach($types as $t)
             @php $activeType = $t->key === $initialType; @endphp
             @foreach($t->fields as $f)
@@ -62,7 +64,7 @@
                 @if($f['kind'] === 'secret')
                     <div class="field" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless>
                         <label for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span></label>
-                        <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}" aria-label="Generate {{ $f['label'] }}">Generate</button></span>
+                        <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)>@if(!empty($f['generate']))<button type="button" data-generate="{{ $id }}" aria-label="Generate {{ $f['label'] }}">Generate</button>@endif</span>
                     </div>
                 @else
                     <label data-types="{{ $t->key }}" for="{{ $id }}" @unless($activeType) hidden @endunless><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>

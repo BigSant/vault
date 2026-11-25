@@ -148,7 +148,7 @@ def run():
     agent.request('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=token)
     assert 'vault_execute' in agent.last and 'get_secret' not in agent.last
     human.request('/workspaces/'+workspace+'/audit?outcome=ok')
-    assert 'Outcome: ok' in human.last and 'Showing ' in human.last
+    assert 'Outcome: OK' in human.last and 'Showing ' in human.last
     assert 'synthetic-token' not in human.last and 'synthetic-password' not in human.last
     if os.environ.get('AIOS_VAULT_CHECKOUT'):
         checkout=Path(os.environ['AIOS_VAULT_CHECKOUT'])

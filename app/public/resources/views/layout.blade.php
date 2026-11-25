@@ -25,6 +25,8 @@
     if ($navRole === 'owner') {
         $items[] = ['Activity', $base.'/audit', $section === 'audit', 0];
     }
+    // The footer line is about secret values and agents: only the Entries pages and the Agents area carry it.
+    $footer = ! $quiet && ($items[0][2] || in_array($section, ['requests', 'agents', 'grants'], true));
     if ($quiet) {
         $items = array_map(fn ($item) => [$item[0], $item[1], false, $item[3]], $items);
     }
@@ -54,7 +56,7 @@
         <summary aria-label="Account: {{ auth()->user()->name }}"><span class="menu-name">{{ auth()->user()->name }}</span></summary>
         <div class="menu-list">
             <a href="/account"{!! $path === 'account' ? ' class="on" aria-current="page"' : '' !!}>Account</a>
-            <form action="/logout" method="post">@csrf<button>Sign out</button></form>
+            <form action="/logout" method="post">@csrf<button aria-label="Sign out">Sign out</button></form>
         </div>
     </details>
     @endauth
@@ -79,7 +81,7 @@
 </div>
 @endif
 {!! substr($page, $headEnd) !!}
-@auth<p class="foot">Secret values stay in the vault. Agents only get action results.</p>@endauth
+@auth @if($footer)<p class="foot">Secret values stay in the vault. Agents only get action results.</p>@endif @endauth
 </main>
 @endif
 <p id="live" class="sr-only" aria-live="polite"></p>

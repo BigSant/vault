@@ -52,6 +52,6 @@
 <h2>Sign out</h2>
 {{-- One button, nothing to fill in: a plain row at the card width, not a card. --}}
 <form class="form-foot plain-row" method="post" action="/logout">@csrf
-    <p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button aria-label="Sign out of this session">Sign out</button>
+    <p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button class="plain" aria-label="Sign out of this session">Sign out</button>
 </form>
 @endsection

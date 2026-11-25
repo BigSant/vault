@@ -44,7 +44,7 @@
     <input type="hidden" name="workspace" value="{{ $space->id }}">
     <div class="toolbar entry-search">
         <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
-        <button>Search</button>
+        <button class="catalog-search">Search</button>
     </div>
     <details class="filters" data-wide-open>
         <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
@@ -98,11 +98,11 @@
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
         <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
-            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}">{{ $e->name }}</a>@if($e->tags)<small>{{ $e->tags }}</small>@endif</td>
+            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}">{{ $e->name }}</a>@if($e->state === 'archived') <span class="chip muted">archived</span>@elseif($due)<small><span class="chip warn">rotation due since {{ substr($e->rotate_at, 0, 10) }}</span></small>@endif @if($e->tags)<small>{{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
             <td class="env end" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
-            <td class="when updated full" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}@if($due)<small><span class="chip warn">rotation due</span> {{ substr($e->rotate_at, 0, 10) }}</small>@endif</td>
+            <td class="when updated full" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
             <td class="when used full{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">@if($e->last_used_at)<small class="k">Last used</small> {{ substr($e->last_used_at, 0, 16) }} <small class="k">UTC</small>@else—@endif</td>
         </tr>
     @endforeach

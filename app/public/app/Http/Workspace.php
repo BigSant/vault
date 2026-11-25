@@ -242,7 +242,7 @@ final class Workspace
             $waitingCount = $waiting->count();
             $operations = $waiting->concat($finished);
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
-                ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
+                ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get()->each(fn ($grant) => $this->grantStatus($grant));
             $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
                 $query->where('subject', $id)->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
                     ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
@@ -385,6 +385,21 @@ final class Workspace
         return view('agents', compact('space', 'machines'));
     }
 
+    private function grantStatus(object $grant): void
+    {
+        $grant->effective_expires_at = min($grant->expires_at, $grant->machine_expires_at);
+        $grant->state = strtotime($grant->effective_expires_at) <= time() ? 'expired' : 'active';
+        $grant->expiry_reason = null;
+        if ($grant->revoked_at || $grant->machine_revoked_at) {
+            $grant->state = 'revoked';
+            if ($grant->machine_revoked_at && (! $grant->revoked_at || $grant->machine_revoked_at < $grant->revoked_at)) {
+                $grant->expiry_reason = 'agent revoked';
+            }
+        } elseif ($grant->machine_expires_at < $grant->expires_at) {
+            $grant->expiry_reason = $grant->state === 'expired' ? 'agent expired' : 'agent expires';
+        }
+    }
+
     public function grants(Request $r, string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
@@ -397,9 +412,9 @@ final class Workspace
         $total = ($agent || $entry) ? (clone $query)->count() : null;
         $grants = $query
             ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
-            ->join('machines', 'machines.id', '=', 'grants.machine_id')->select('grants.*')
+            ->join('machines', 'machines.id', '=', 'grants.machine_id')->select('grants.*', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')
             ->orderByRaw('CASE WHEN grants.revoked_at IS NULL AND machines.revoked_at IS NULL AND grants.expires_at > ? AND machines.expires_at > ? THEN 0 ELSE 1 END', [now(), now()])
-            ->orderBy('machines.name')->orderBy('grants.action')->orderBy('grants.id')->get();
+            ->orderBy('machines.name')->orderBy('grants.action')->orderBy('grants.id')->get()->each(fn ($grant) => $this->grantStatus($grant));
         $actions = $this->ops->definitions();
         $types = $this->types->all($workspace);
         $typeNames = $types->pluck('name', 'key');

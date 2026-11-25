@@ -211,11 +211,11 @@ final class ShellTest extends TestCase
         $this->signIn('owner');
         $this->get($this->base.'/agents')->assertOk()
             ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content" tabindex="-1">', 'id="live"'], false)
-            ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button>Sign out</button>', false)->assertDontSee('Lock');
+            ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button aria-label="Sign out">Sign out</button>', false)->assertDontSee('Lock');
         $this->get('/account')->assertOk()->assertSee('Change password and sign out')->assertSee('<span class="chip role">owner</span>', false)->assertDontSee('>Lock<', false);
         // A signed-in person keeps the header on an error page; a guest gets the bare page.
         $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled')
-            ->assertSee('aria-label="Main"', false)->assertSee('<button>Sign out</button>', false)->assertSessionHas('last_page', '/account');
+            ->assertSee('aria-label="Main"', false)->assertSee('<button aria-label="Sign out">Sign out</button>', false)->assertSee('Back to entries</a>', false)->assertSessionHas('last_page', '/account');
         $this->get('/api/nothing-here')->assertNotFound();
     }
 
@@ -265,6 +265,8 @@ final class ShellTest extends TestCase
     public function test_error_pages_stay_bare_for_guests_and_unfinished_sign_ins(): void
     {
         $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertSee('credential store')->assertDontSee('aria-label="Main"', false);
+        // A guest has no entries to go back to: the bare page always offers Sign in.
+        $this->get('/nothing-here')->assertSee('href="/login">Sign in</a>', false)->assertDontSee('Back to entries');
         $user = User::create(['id' => (string) Str::uuid(), 'name' => 'Half Signed', 'email' => 'half@example.test', 'password' => Hash::make(self::PASSWORD), 'mfa_enabled' => true]);
         $this->actingAs($user)->get('/nothing-here')->assertNotFound()->assertSee('credential store')->assertDontSee('aria-label="Main"', false);
     }
@@ -380,8 +382,17 @@ final class ShellTest extends TestCase
     public function test_account_wording_and_plain_footer(): void
     {
         $this->signIn('owner');
-        $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button aria-label="Sign out of this session">Sign out</button>', false)
-            ->assertSee('<p class="foot">Secret values stay in the vault. Agents only get action results.</p>', false)->assertDontSee('class="lamp', false);
+        $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button class="plain" aria-label="Sign out of this session">Sign out</button>', false)
+            ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
+        // The footer line belongs to the Entries pages and the Agents area only.
+        $foot = '<p class="foot">Secret values stay in the vault. Agents only get action results.</p>';
+        $this->get('/?workspace='.$this->workspace)->assertOk()->assertSee($foot, false);
+        foreach (['requests', 'agents', 'grants'] as $tab) {
+            $this->get($this->base.'/'.$tab)->assertOk()->assertSee($foot, false);
+        }
+        foreach (['members', 'structure', 'types', 'audit'] as $other) {
+            $this->get($this->base.'/'.$other)->assertOk()->assertDontSee('class="foot"', false);
+        }
     }
 
     public static function unsafeReturns(): array
