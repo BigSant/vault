@@ -608,7 +608,7 @@ if (refreshUrl) {
   // The server's clock, for "Checked HH:MM UTC": the offset comes from the status line's data-now.
   const stamp = document.querySelector('[data-refresh-status][data-now]');
   const clockSkew = stamp ? Number(stamp.dataset.now) * 1000 - Date.now() : 0;
-  const checked = () => 'Checked ' + new Date(Date.now() + clockSkew).toISOString().slice(11, 16) + ' UTC';
+  const checked = () => 'Queue checked ' + new Date(Date.now() + clockSkew).toISOString().slice(11, 16) + ' UTC';
   // The waiting heading row and its jump link (the entry page) show only while their region holds something. A row
   // that holds the focus stays until the focus has left it.
   const showWith = () => document.querySelectorAll('[data-shown-with]').forEach(el => {

@@ -189,7 +189,7 @@ final class ShellTest extends TestCase
         $until = time() + 200;
         $valid = $this->get($this->base.'/structure')->assertOk()->getContent();
         $block = substr($valid, (int) strpos($valid, '<div class="confirm-inline"'), 900);
-        $this->assertMatchesRegularExpression('/Confirmed until <span class="nobreak">('.gmdate('H:i', $until).'|'.gmdate('H:i', $until + 2).') UTC<\/span>\./', $block);
+        $this->assertMatchesRegularExpression('/Password confirmed until <span class="nobreak">('.gmdate('H:i', $until).'|'.gmdate('H:i', $until + 2).') UTC<\/span>\./', $block);
         $this->assertStringContainsString('<label data-when="expired"  hidden >', $block);
         $this->assertMatchesRegularExpression('/name="confirm_password"[^>]* disabled >/', $block);
         $this->assertStringNotContainsString('is-needed', $valid);
@@ -465,7 +465,7 @@ final class ShellTest extends TestCase
         // waiting heading, outside every region; without script the button is a plain link.
         $this->get($this->base.'/requests')->assertOk()
             ->assertSeeInOrder(['<div class="section-head">', '<h2 id="waiting" data-refresh="waiting-title">',
-                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', 'Checked ', ' UTC</span>',
+                '<a class="btn" href="'.$this->base.'/requests" data-refresh-now>Refresh requests</a>', 'data-refresh-status', 'Queue checked ', ' UTC</span>',
                 '<div data-refresh="waiting" data-refresh-url="'.$this->base.'/requests">', '<div data-refresh="history" data-refresh-url="'.$this->base.'/requests">', '<h2 id="history">'], false)
             ->assertDontSee('>Refresh</a>', false);
         // Polling does not stop while the queue is empty; a hidden tab pauses. An expired row keeps the focus on its status.
@@ -562,11 +562,11 @@ final class ShellTest extends TestCase
         $this->get('/account')->assertOk();
         $deferred = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => true]);
         $deferred->assertSee('class="confirm-inline shared is-deferred is-quiet" id="confirm-reveal"  data-primary="confirm-decide"', false)
-            ->assertSee('<span data-when="valid"  hidden >Confirmed until', false)
+            ->assertSee('<span data-when="valid"  hidden >Password confirmed until', false)
             ->assertSee('<a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">Go to the password field</a> above the waiting requests', false);
         // Nothing waits: the Reveal block is the one that says it.
         $alone = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => false]);
-        $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Confirmed until', false);
+        $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Password confirmed until', false);
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString('if (first && !first.box.hidden) state = first;', $script);
     }

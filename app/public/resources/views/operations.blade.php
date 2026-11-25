@@ -12,7 +12,7 @@
                   never the page: <div data-refresh="waiting|history" data-refresh-url="…">, and the waiting heading
                   is a region of its own ("waiting-title"). Beside that heading, outside every region so that it
                   keeps the focus through a refresh, sit "Refresh requests" (a plain link without script) and
-                  "Checked HH:MM UTC".
+                  "Queue checked HH:MM UTC".
      $quietEmpty  the waiting section shows nothing while nothing waits (the entry page): its heading row is hidden
                   and its region is empty, so new requests have a place to appear. data-shown-with="waiting" lets
                   app.js show the row again when the region fills.
@@ -66,7 +66,7 @@
 @else
 <div class="section-head"@if($quietEmpty) data-shown-with="waiting"@if($rows->isEmpty()) hidden @endif @endif>
     <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}</h2>
-    @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Checked {{ gmdate('H:i') }} UTC</span></p>@endif
+    @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Queue checked {{ gmdate('H:i') }} UTC</span></p>@endif
 </div>
 @include('confirm-inline', ['verb' => 'decide', 'ask' => 'Enter your current password, then choose a request action below.', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
 @if($reload)<div data-refresh="waiting" data-refresh-url="{{ $reload }}">@endif

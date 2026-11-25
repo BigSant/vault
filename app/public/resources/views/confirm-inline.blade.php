@@ -3,7 +3,7 @@
      Params: $verb (default 'save'); $ask (optional: the sentence that asks for the password, instead of "Enter your
      current password to <verb>."); $shared (optional id); $shownWith (optional region name); $primary and
      $primaryShown (below). Uses $confirmedUntil.
-     While the confirmation is valid the block is one quiet line, "Confirmed until HH:MM UTC.", and the field is
+     While the confirmation is valid the block is one quiet line, "Password confirmed until HH:MM UTC.", and the field is
      hidden and disabled. When the confirmation has expired the line says so and the field is shown and required;
      app.js makes that switch on a page left open, and at the latest on submit.
      Inside a form the field is that form's own, with or without script.
@@ -36,7 +36,7 @@
 @endphp
 <div class="confirm-inline{{ $shared ? ' shared' : '' }}{{ $fieldHidden ? '' : ' is-needed' }}{{ $deferred ? ' is-deferred is-quiet' : '' }}"@if($shared) id="{{ $shared }}"@endif @if($shared && $primary) data-primary="{{ $primary }}"@endif data-confirmed-until="{{ (int) $until }}" data-now="{{ time() }}" data-verb="{{ $verb }}" data-ask="{{ $ask }}"@isset($shownWith) data-shown-with="{{ $shownWith }}" data-shown-rows @if(! empty($shownHidden)) hidden @endif @endisset>
     <p class="legend" data-when="expired" @if($fieldHidden) hidden @endif>Password confirmation</p>
-    <p class="note"><span data-when="valid" @if($expired || $deferred) hidden @endif>Confirmed until <span class="nobreak">{{ $until ? gmdate('H:i', $until) : '' }} UTC</span>.</span><span data-when="expired"@if($shared) data-script-text="{{ $ask }}"@endif @if(! $expired || $deferred) hidden @endif>{{ $shared ? $noScript : $ask }}</span>@if($shared && $primary)<span data-when="deferred" hidden>Your password confirmation has expired. <a class="more-link" href="#{{ $primary }}-password" data-confirm-goto="{{ $primary }}">Go to the password field</a> above the waiting requests, enter your current password, then {{ $verb }}.</span>@endif @if($shared) <span class="pending" data-pending aria-hidden="true" hidden></span>@endif</p>
+    <p class="note"><span data-when="valid" @if($expired || $deferred) hidden @endif>Password confirmed until <span class="nobreak">{{ $until ? gmdate('H:i', $until) : '' }} UTC</span>.</span><span data-when="expired"@if($shared) data-script-text="{{ $ask }}"@endif @if(! $expired || $deferred) hidden @endif>{{ $shared ? $noScript : $ask }}</span>@if($shared && $primary)<span data-when="deferred" hidden>Your password confirmation has expired. <a class="more-link" href="#{{ $primary }}-password" data-confirm-goto="{{ $primary }}">Go to the password field</a> above the waiting requests, enter your current password, then {{ $verb }}.</span>@endif @if($shared) <span class="pending" data-pending aria-hidden="true" hidden></span>@endif</p>
     <label data-when="expired" @if($fieldHidden) hidden @endif><span>Current password</span><input type="password" name="confirm_password"@if($shared) id="{{ $shared }}-password"@endif maxlength="200" autocomplete="current-password" @if($expired && ! $shared) required @else disabled @endif></label>
     @if($shared)<p class="held" data-held-row hidden><button type="button" class="go" data-held></button></p>@endif
 </div>

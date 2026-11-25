@@ -167,7 +167,7 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    summary read from the session's `form_errors`; only non-secret fields are refilled with `old()`. Views use
    `session('form_errors')`, not `$errors` (sessions are JSON, so the error bag does not survive).
 4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
-   While the confirmation is valid the block is the line "Confirmed until HH:MM UTC."; the password field appears
+   While the confirmation is valid the block is the line "Password confirmed until HH:MM UTC."; the password field appears
    only when it is required. **Time-critical actions** never go to the confirm page while script runs: Reveal
    (current and per version) and the waiting requests' Allow once / Deny / Continue sign-in use one shared block
    each (`'shared' => 'confirm-reveal'` in the Secret values card, `'confirm-decide'` above the waiting board);
@@ -177,7 +177,7 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    it. A password entered first gets the visible line "Now choose an action below." The waiting requests' block
    asks "Enter your current password, then choose a request action below." Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
-   requests, the block above them carries "Confirmed until …" and, once expired, the page's one password field;
+   requests, the block above them carries "Password confirmed until …" and, once expired, the page's one password field;
    the Reveal block (`'primary' => 'confirm-decide'`) then shows nothing while valid and a pointer to that field
    when expired, and its forms use that password.
 5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` holding a

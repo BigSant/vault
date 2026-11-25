@@ -156,7 +156,7 @@
                             <div><b>{{ $metaNames[$key] ?? $key }}:</b> “{{ $dash($before) }}” → “{{ $dash($after) }}”</div>
                         @endforeach
                     @endif
-                    @foreach($others as $what => $n)<div class="muted">{{ $n }} other field{{ $n === 1 ? '' : 's' }} {{ $what }}</div>@endforeach
+                    @foreach($others as $what => $n)<div class="muted">{{ $what === 'added' ? 'Added' : ucfirst($what) }}: {{ $n }} {{ $n === 1 ? 'field' : 'fields' }} no longer in the type</div>@endforeach
                     @if($h['event'] !== 'create' && empty($f['changed']) && empty($f['added']) && empty($f['removed']) && empty($c['meta']) && !$others)<span class="muted">No value changes</span>@endif
                 @endif
             </div></td>
@@ -187,7 +187,7 @@
 @if($isOwner)
 <h2 id="access">Agent access</h2>
 @if($grants->isEmpty())
-    <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
+    <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></div>
 @else
 <div class="scroll"><table class="board compact-board access">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
@@ -206,7 +206,7 @@
     @endforeach
     </tbody>
 </table></div>
-<p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
+<p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">All requests for this entry →</a></p>

@@ -393,7 +393,7 @@ final class VaultTest extends TestCase
             ->assertSee('<select name="action" required><option value="">Choose an action</option>', false)
             ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
             ->assertSeeText('test.http');
-        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1 grants')
+        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1 grant')
             ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
         $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
@@ -401,8 +401,8 @@ final class VaultTest extends TestCase
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant)->assertSeeText('agent revoked');
         $this->get('/?q=Private')->assertOk()->assertSeeText('Search: Private')
             ->assertSee('<button class="catalog-search">Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
-        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1 entries')->assertViewHas('archivedCount', 0);
-        $this->get('/?due=1')->assertSeeText('Showing 0 of 1 entries')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1 entry')->assertViewHas('archivedCount', 0);
+        $this->get('/?due=1')->assertSeeText('Showing 0 of 1 entry')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => '2020-11-01 12:00:00']);
         $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
@@ -413,16 +413,16 @@ final class VaultTest extends TestCase
             $this->get('/?'.http_build_query($current))->assertOk()
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
-        $this->get('/?state=due')->assertSeeText('State: Rotation due')->assertSeeText('Showing 1 of 1 entries')
+        $this->get('/?state=due')->assertSeeText('State: Rotation due')->assertSeeText('Showing 1 of 1 entry')
             ->assertSeeInOrder(['data-label="Entry"', 'rotation due since 2020-11-01', 'data-label="Project"'], false);
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
-        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entries')
+        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
             ->assertSeeText('State: Archived')->assertSee('<span class="chip muted">archived</span>', false)->assertDontSeeText('used by agents');
-        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entries');
+        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entry');
     }
 
     public function test_grants_order_by_effective_state_then_agent_and_action(): void

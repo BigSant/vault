@@ -14,7 +14,7 @@
     </form>
 </details>
 @if($agent || $entry)
-<p class="filter-status"><span class="filter-count">Showing {{ $grants->count() }} of {{ $total }} grants <a href="/workspaces/{{ $space->id }}/grants">Clear filters</a></span>
+<p class="filter-status"><span class="filter-count">Showing {{ $grants->count() }} of {{ $total }} {{ Str::plural('grant', $total) }} <a href="/workspaces/{{ $space->id }}/grants">Clear filters</a></span>
     @if($agent)<span class="chip filter">Agent: {{ $agent->name }}</span>@endif
     @if($entry)<span class="chip filter">Entry: {{ $entry->name }} — {{ $entry->project }} / {{ $entry->environment }}</span>@endif
 </p>

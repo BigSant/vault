@@ -54,6 +54,7 @@ details.menu>summary::after{content:"\25BE";color:var(--amber);flex:none}
 details.menu>summary:hover,details.menu[open]>summary{border-color:var(--amber)}
 details.menu.account>summary{background:transparent;border-color:transparent;color:var(--dim)}
 details.menu.account>summary:hover,details.menu.account[open]>summary{border-color:var(--amber);color:var(--ink)}
+@media (min-width:901px){details.menu.account>summary{margin-right:-12px}}
 .menu-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .menu-list{position:absolute;z-index:20;top:calc(100% + 4px);left:0;display:grid;grid-template-columns:minmax(0,1fr);min-width:15em;width:max-content;max-width:min(26em,calc(100vw - 32px));
 max-height:70vh;overflow-y:auto;padding:4px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;box-shadow:0 10px 28px var(--term-bg)}

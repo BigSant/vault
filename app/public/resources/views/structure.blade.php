@@ -129,6 +129,6 @@
         </tbody>
     </table>
     @include('confirm-inline', ['verb' => 'save this template'])
-    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Row</button><button>Save template</button></div></div>
+    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Environment</button><button>Save template</button></div></div>
 </form>
 @endsection

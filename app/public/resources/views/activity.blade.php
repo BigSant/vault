@@ -40,7 +40,7 @@
         <td data-label="Actor" class="actor">{{ $event->actor_label }} @if($event->actor_kind === 'agent')<span class="chip muted">agent</span>@endif</td>
         <td data-label="Event" class="event"><span class="event-name">@if($event->event === 'operation.request' && isset($requestActions[$event->subject]))Agent requested <span class="name">{{ $requestActions[$event->subject] }}</span>@else{{ $eventName($event->event) }}@endif</span> <small class="nobreak event-code">{{ $eventCode($event->event) }}</small></td>
         @empty($hideSubject)<td data-label="Subject" class="subject{{ ($event->subject_label ?? '') === '' && ! ($event->subject ?? null) ? ' is-empty' : '' }}">@if(($event->subject_label ?? null) !== null && $event->subject_label !== '')@if($event->subject_url ?? null)<a href="{{ $event->subject_url }}">{{ $event->subject_label }}</a>@else{{ $event->subject_label }}@endif @elseif($event->subject ?? null)<span class="muted">removed item</span>@else<span class="muted">—</span>@endif</td>@endempty
-        <td data-label="Outcome" class="outcome">@include('outcome', ['outcome' => $event->outcome])</td>
+        <td data-label="Outcome" class="outcome">@include('outcome', ['outcome' => $event->outcome, 'quiet' => true])</td>
     </tr>@endforeach</tbody>
 </table></div>
 @endif
