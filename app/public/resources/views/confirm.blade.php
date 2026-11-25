@@ -1,10 +1,9 @@
 @extends('layout')
-@section('title', 'Confirm it is you')
-@section('bare', '1')
+@section('title', 'Confirm your identity')
 @section('content')
+<h1>Confirm your identity</h1>
 <form class="action" method="post" action="/confirm">@csrf
     <input type="hidden" name="return" value="{{ $return }}">
-    <h1>Confirm it is you</h1>
     @if($failed)
         <div class="callout bad"><p>That password is not right. Try again.</p></div>
     @elseif($blocked)

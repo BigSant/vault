@@ -188,3 +188,40 @@ document.querySelectorAll('table.board, table.facts, table.list.edit, table.list
 });
 addEventListener('hashchange', openTarget);
 openTarget();
+// Error summary of a form that failed validation: each message links to its field when the page has a field with
+// that name, and the summary takes focus so it is read and seen first. Server names use dots: "field_key.0".
+const summary = document.getElementById('form-errors');
+if (summary) {
+  // The form that was sent, when it is on this page; otherwise any field with the name will do.
+  const sent = [...document.forms].filter(form => { try { return new URL(form.action).pathname === summary.dataset.form; } catch { return false; } });
+  const scopes = [...sent, document];
+  const find = key => {
+    const [head, ...rest] = key.split('.');
+    const names = [key, head + rest.map(part => '[' + part + ']').join(''), head + '[]', head];
+    for (const scope of scopes) for (const name of names) {
+      const hits = [...scope.querySelectorAll('input, select, textarea')].filter(el => el.name === name && el.type !== 'hidden');
+      // "field_key.2" is the third field_key[] row.
+      const field = name === head + '[]' && /^\d+$/.test(rest[0] || '') ? hits[Number(rest[0])] || hits[0] : hits[0];
+      if (field) return field;
+    }
+    return null;
+  };
+  summary.querySelectorAll('li[data-field]').forEach((item, index) => {
+    const field = find(item.dataset.field);
+    if (!field) return;
+    if (!field.id) field.id = 'field-error-' + index;
+    field.setAttribute('aria-invalid', 'true');
+    const link = document.createElement('a');
+    link.href = '#' + field.id;
+    link.textContent = item.textContent;
+    link.addEventListener('click', event => {
+      event.preventDefault();
+      // A field inside a collapsed editor or a hidden block is opened first.
+      for (let el = field.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS') el.open = true;
+      field.scrollIntoView({ block: 'center' });
+      field.focus({ preventScroll: true });
+    });
+    item.replaceChildren(link);
+  });
+  summary.focus();
+}

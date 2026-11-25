@@ -25,7 +25,7 @@
             <h1 class="name">{{ $entry->name }}</h1>
             @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
         </div>
-        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
+        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span>@if($isOwner && $waitingCount > 0) <a class="chip warn" href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif</p>
     </div>
 </div>
 @if($isEditor)
@@ -41,9 +41,9 @@
 
 <table class="facts">
     <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
-    <tr><th scope="row">Tags</th><td>{{ $entry->tags ?: '—' }}</td></tr>
+    <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
-    <tr><th scope="row">Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
+    <tr><th scope="row">Rotation reminder</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
 
 @if($isOwner && $waitingCount > 0)
@@ -95,7 +95,7 @@
     <tbody>
     @forelse($history as $h)
         <tr class="{{ $h['version'] === $current ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Version"><small class="k">Version</small> <b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
+            <td class="full" data-label="Version"><small class="k">Version</small> <b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
             <td class="when" data-label="Saved (UTC)">@if($h['at'])<small class="k">Saved</small> {{ $day($h['at']) }} <small class="k">UTC</small>@else<span class="muted">save time unknown</span>@endif</td>
             <td data-label="By">@if($h['user'] ?? null)<small class="k">by</small> {{ $h['user'] }}@else<span class="muted">author unknown</span>@endif</td>
             <td class="changes-cell full" data-label="Changes"><div class="changes">

@@ -5,7 +5,7 @@
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
 
 @if($machines->isEmpty())
-    <div class="empty">No agent identities yet. Create one below.</div>
+    <div class="empty">No agent identities yet. Add one below.</div>
 @else
 <div class="scroll"><table class="board compact-board identities">
     <thead><tr><th scope="col">Agent</th><th scope="col">Expires (UTC)</th><th scope="col">Active grants</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
@@ -27,8 +27,8 @@
 <h2>Add an agent</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/machines">@csrf
         <p class="note">Creates a bearer token, shown once.</p>
-        <label><span>Name</span><input name="name" placeholder="ai-os" required maxlength="100"></label>
-        <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="7" required></label>
+        <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="ai-os" required maxlength="100"></label>
+        <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 7) }}" required></label>
         @include('confirm-inline', ['verb' => 'create this agent'])
         <div class="form-foot"><p class="note">Up to 30 days. It can do nothing until you grant actions.</p><button class="go">Add agent</button></div>
     </form>

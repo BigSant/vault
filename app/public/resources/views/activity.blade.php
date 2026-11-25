@@ -1,5 +1,6 @@
+{{-- $filtered: the caller applied a filter, so an empty list means "nothing matches", not "nothing happened". --}}
 @if($events->isEmpty())
-    <div class="empty">No matching activity.</div>
+    <div class="empty">{{ empty($filtered) ? 'No activity yet.' : 'No matching activity.' }}</div>
 @else
 <div class="scroll"><table class="board compact-board activity">
     <thead><tr><th scope="col">When (UTC)</th><th scope="col">Actor</th><th scope="col">Event</th>@empty($hideSubject)<th scope="col">Subject</th>@endempty<th scope="col">Outcome</th></tr></thead>

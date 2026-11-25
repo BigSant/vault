@@ -36,7 +36,7 @@
 
 <h2>Workspaces</h2>
 @if($navSpaces->isEmpty())
-    <div class="empty">You are in no workspace yet. <a href="/workspaces/new">Create one</a></div>
+    <div class="empty">You are in no workspace yet. <a href="/workspaces/new">Add a workspace</a></div>
 @else
 <div class="scroll"><table class="list">
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
@@ -46,11 +46,11 @@
     @endforeach
     </tbody>
 </table></div>
-<div class="controls"><a class="btn" href="/workspaces/new">+ New workspace</a></div>
+<p class="note"><a href="/workspaces/new">Add a workspace</a> to keep another set of projects, entries, members and agents apart.</p>
 @endif
 
 <h2>Sign out</h2>
-<form class="inline" method="post" action="/logout">@csrf
-    <button>Sign out</button><span class="note">Ends this session. Sign in again with your password and authenticator code.</span>
+<form class="action" method="post" action="/logout">@csrf
+    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button>Sign out</button></div>
 </form>
 @endsection

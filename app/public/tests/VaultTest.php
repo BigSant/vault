@@ -248,14 +248,15 @@ final class VaultTest extends TestCase
         $url = '/workspaces/'.$this->workspace.'/grants';
         $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters')
             ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
-            ->assertSeeText('test.http — needs token');
+            ->assertSeeText('test.http (token)');
         $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
             ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
         $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
-        $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1')->assertViewHas('archivedCount', 0);
+        $this->get('/?due=1')->assertViewHas('scopeCount', 0)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
         $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
@@ -267,6 +268,9 @@ final class VaultTest extends TestCase
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
+        DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
+        $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
+        $this->get('/?state=archived')->assertDontSee('name="due"', false);
     }
 
     public function test_catalog_remembers_only_a_workspace_the_user_can_access(): void
@@ -282,9 +286,11 @@ final class VaultTest extends TestCase
     public function test_expired_agent_and_missing_grant_prerequisites(): void
     {
         $base = '/workspaces/'.$this->workspace;
-        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertSeeText('No active entries.')
+        $this->get($base.'/grants')->assertSeeText('No grants yet.')->assertSeeText('No active agents.')->assertSeeText('No active entries.')
             ->assertDontSee('name="machine_id"', false);
-        [$agent] = $this->machine($this->entry());
+        $entry = $this->entry();
+        $this->get($base.'/grants?entry='.$entry)->assertSeeText('No matching grants.');
+        [$agent] = $this->machine($entry);
         $this->get($base.'/agents')->assertSee('/revoke/machines/'.$agent);
         DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->subDay()]);
         $this->get($base.'/agents')->assertDontSee('/revoke/machines/'.$agent)->assertSee('Expired');
@@ -313,6 +319,8 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
+            ->assertSee('<label for="first-password">First password <small>new user only</small></label>', false)
+            ->assertSee('aria-label="Generate first password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
         $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);
         $this->get($url)->assertSee('aria-label="Role for Owner"', false)->assertDontSeeText('Add another owner');
@@ -466,12 +474,12 @@ final class VaultTest extends TestCase
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('Server address')->assertSee('secret_fields[contrasena]', false);
 
         $entry = ['environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];
-        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertUnprocessable()->assertSee('Contraseña');
+        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => str_contains(implode(' ', $errors->all()), 'Contraseña'));
         $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test', 'contrasena' => $this->sentinel]])->assertRedirect();
         $this->assertSame(1, DB::table('entries')->where('type', 'ftp_server')->count());
-        $this->post('/entries', [...$entry, 'type' => 'missing_type', 'secret_fields' => ['x' => 'y']])->assertUnprocessable();
+        $this->post('/entries', [...$entry, 'type' => 'missing_type', 'secret_fields' => ['x' => 'y']])->assertStatus(303)->assertSessionHasErrors();
 
-        $this->post($types.'/ftp_server/delete')->assertUnprocessable();
+        $this->post($types.'/ftp_server/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($types, ['name' => 'Unused', 'field_label' => ['Field'], 'field_key' => [''], 'field_kind' => ['text'], 'field_required' => ['0']]);
         $this->post($types.'/unused/delete')->assertRedirect();
         $this->assertFalse(DB::table('entry_types')->where('key', 'unused')->exists());
@@ -498,7 +506,7 @@ final class VaultTest extends TestCase
         $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
         $machine = (string) Str::uuid();
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
-        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertStatus(303)->assertSessionHasErrors();
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $this->entry(), 'action' => 'test.http', 'days' => 1])->assertRedirect();
     }
 
@@ -511,11 +519,11 @@ final class VaultTest extends TestCase
         $envs = DB::table('environments')->where('project_id', $project)->orderBy('name')->get();
         $this->assertSame(['dev', 'live', 'qa'], $envs->pluck('name')->all());
         $this->assertTrue((bool) $envs->firstWhere('name', 'live')->production);
-        $this->post($base.'/projects', ['name' => 'Shop'])->assertUnprocessable();
+        $this->post($base.'/projects', ['name' => 'Shop'])->assertStatus(303)->assertSessionHasErrors();
 
         $dev = $envs->firstWhere('name', 'dev')->id;
         $this->post($base.'/environments/'.$dev, ['name' => 'development', 'production' => '0'])->assertRedirect();
-        $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertUnprocessable();
+        $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/environments', ['project_id' => $project, 'name' => 'preprod', 'production' => '1'])->assertRedirect();
         $this->assertTrue((bool) DB::table('environments')->where('project_id', $project)->where('name', 'preprod')->value('production'));
         $this->get($base.'/structure')->assertOk()->assertSee('development')->assertSee('preprod');
@@ -524,8 +532,8 @@ final class VaultTest extends TestCase
         $this->assertFalse(DB::table('environments')->where('id', $this->environment)->exists());
         $this->post($base.'/environments/'.$dev.'/delete')->assertRedirect();
         app(Catalog::class)->create(['environment_id' => $envs->firstWhere('name', 'qa')->id, 'name' => 'n', 'alias' => 'a', 'type' => 'api_key', 'secret' => '{"token":"t"}']);
-        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertUnprocessable();
-        $this->post($base.'/projects/'.$project.'/delete')->assertUnprocessable();
+        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertStatus(303)->assertSessionHasErrors();
+        $this->post($base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/projects/'.$project, ['name' => 'Shop 2'])->assertRedirect();
         $this->assertSame('Shop 2', DB::table('projects')->where('id', $project)->value('name'));
 
@@ -569,15 +577,15 @@ final class VaultTest extends TestCase
     public function test_type_key_is_canonical_and_usage_ignores_case_and_destroyed_entries(): void
     {
         $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'API_KEY', 'secret' => '{"token":"synthetic-import"}'];
-        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertUnprocessable();
-        $this->post('/entries', $row)->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertStatus(303)->assertSessionHasErrors();
+        $this->post('/entries', $row)->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(0, DB::table('entries')->count());
 
         // A legacy row whose type differs only by case still counts as usage.
         $id = $this->entry();
         DB::table('entries')->where('id', $id)->update(['type' => 'API_KEY']);
         $types = '/workspaces/'.$this->workspace.'/types';
-        $this->post($types.'/api_key/delete')->assertUnprocessable();
+        $this->post($types.'/api_key/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(1, $this->get($types)->assertOk()->viewData('usage')['api_key']);
         $this->assertTrue(DB::table('entry_types')->where('key', 'api_key')->exists());
 
@@ -636,7 +644,7 @@ final class VaultTest extends TestCase
         $machine = (string) Str::uuid();
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
         $grant = ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1];
-        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertUnprocessable()->assertDontSee('synthetic');
+        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => !str_contains(implode(' ', $errors->all()), 'synthetic'));
         $this->assertSame(0, DB::table('grants')->count());
         $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret_fields' => ['token' => 'synthetic-token']])->assertRedirect();
         $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertRedirect();
@@ -693,9 +701,9 @@ final class VaultTest extends TestCase
         $this->assertSame(['token', 'endpoint'], $fields());
 
         // Keys are immutable and server-assigned.
-        $this->post($url, $this->typeForm(['field_key' => ['token', 'password'], 'field_label' => ['API key', 'Sneaky'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
-        $this->post($url, $this->typeForm(['field_key' => ['token', 'token'], 'field_label' => ['API key', 'Again'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
-        $this->post('/workspaces/'.$this->workspace.'/types', ['name' => 'Fresh', 'field_key' => ['chosen_by_client'], 'field_label' => ['Label'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertUnprocessable();
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'password'], 'field_label' => ['API key', 'Sneaky'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertStatus(303)->assertSessionHasErrors();
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'token'], 'field_label' => ['API key', 'Again'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertStatus(303)->assertSessionHasErrors();
+        $this->post('/workspaces/'.$this->workspace.'/types', ['name' => 'Fresh', 'field_key' => ['chosen_by_client'], 'field_label' => ['Label'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(['token', 'endpoint'], $fields());
 
         // A new row whose label slugs to an existing key gets a fresh key; the existing key keeps its place and meaning.
@@ -712,7 +720,7 @@ final class VaultTest extends TestCase
         $this->post($types.'/audited/delete')->assertRedirect();
         $this->assertSame(1, DB::table('audit')->where('event', 'type.delete')->where('subject', $row->id)->count());
         // A rejected save leaves no "ok" audit row behind.
-        $this->post($types, ['name' => 'Rejected', 'field_label' => []])->assertUnprocessable();
+        $this->post($types, ['name' => 'Rejected', 'field_label' => []])->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(1, DB::table('audit')->where('event', 'type.save')->count());
     }
 
@@ -739,12 +747,12 @@ final class VaultTest extends TestCase
         $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
             'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertUnprocessable();
         $types = '/workspaces/'.$this->workspace.'/types';
-        $this->post($types, $this->typeForm(['name' => ['x']]))->assertUnprocessable();
+        $this->post($types, $this->typeForm(['name' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
         foreach (['field_label', 'field_key', 'field_kind', 'field_required', 'field_remove'] as $column) {
-            $this->post($types, $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
-            $this->post($types.'/api_key', $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
+            $this->post($types, $this->typeForm([$column => [['nested']]]))->assertStatus(303)->assertSessionHasErrors();
+            $this->post($types.'/api_key', $this->typeForm([$column => [['nested']]]))->assertStatus(303)->assertSessionHasErrors();
         }
-        $this->post($types.'/api_key', $this->typeForm(['revision' => ['x']]))->assertUnprocessable();
+        $this->post($types.'/api_key', $this->typeForm(['revision' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
     }
 
     public function test_mfa_replay_is_rejected(): void

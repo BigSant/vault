@@ -106,7 +106,7 @@ def run():
     token = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
     human.request('/workspaces/'+workspace+'/grants')
     grant_agents = re.search(r'<select name="machine_id">(.*?)</select>', human.last, re.S)[1]
-    machine = re.search(r'<option value="([a-f0-9-]+)"[^>]*>ai-os integration</option>', grant_agents)[1]
+    machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', grant_agents)[1]
     for action in config['actions']:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': machine, 'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'days': '1'})
     agent = Client()

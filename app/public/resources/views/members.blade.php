@@ -6,7 +6,7 @@
     $soleOwner = $members->where('role', 'owner')->count() === 1;
     $roles = ['viewer' => 'viewer — metadata only', 'editor' => 'editor — create, change, reveal', 'owner' => 'owner — members, agents, grants'];
 @endphp
-<p class="note">Viewers see entry metadata. Editors can manage and reveal entries. Owners also manage members, agents and grants.</p>
+<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 <div class="scroll"><table class="board compact-board members">
     <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>@foreach($members as $m)<tr class="is-idle"><td data-label="Name"><b>{{ $m->name }}</b> @if($m->id == auth()->id())<span class="chip muted">you</span>@endif</td><td data-label="Email">{{ $m->email }}</td>
@@ -23,10 +23,10 @@
 </table></div>
 <h2>Add a member</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
-        <label><span>Name</span><input name="name" required maxlength="100"></label>
-        <label><span>Email</span><input name="email" type="email" required></label>
-        <label><span>First password <small>new user only</small></span><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password">Generate</button></span></label>
-        <label><span>Role</span><select name="role">@foreach($roles as $value => $text)<option value="{{ $value }}">{{ $text }}</option>@endforeach</select></label>
+        <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>
+        <label><span>Email</span><input name="email" type="email" value="{{ old('email') }}" required></label>
+        <div class="field"><label for="first-password">First password <small>new user only</small></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate first password">Generate</button></span></div>
+        <label><span>Role</span><select name="role">@foreach($roles as $value => $text)<option value="{{ $value }}" @selected(old('role', 'viewer') === $value)>{{ $text }}</option>@endforeach</select></label>
         @include('confirm-inline', ['verb' => 'add this member'])
         <div class="form-foot"><p class="note">Hand the password over privately. MFA is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>
     </form>

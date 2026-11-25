@@ -1,13 +1,12 @@
 @extends('layout')
-@section('title', $entry ? 'Update entry' : 'Add an entry')
+@section('title', $entry ? 'Edit entry' : 'Add an entry')
 @section('content')
 @php
-    $initialType = $entry?->type ?? $types->first()?->key;
-    $confirmedUntil = $confirmedUntil ?? null;
-    $confirmedFresh = $confirmedUntil !== null && ((int) $confirmedUntil - time()) >= 240;
+    $oldType = !$entry && is_string(old('type')) && $types->contains('key', old('type')) ? old('type') : null;
+    $initialType = $entry?->type ?? $oldType ?? $types->first()?->key;
 @endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
-<h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
+<h1>{{ $entry ? 'Edit entry' : 'Add an entry' }}</h1>
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
 @if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
 <div class="empty">
@@ -17,8 +16,8 @@
 @else
 <h2>Entry details</h2>
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
-    <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>
-    <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ $entry?->alias }}" required maxlength="100" placeholder="shop-stage-admin"></label>
+    <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
+    <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin"></label>
     @if($entry)
         @php
             $currentEnv = $environments->firstWhere('id', $entry->environment_id);
@@ -35,10 +34,11 @@
             <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
         </div>
     @else
+        @php $selectedEnv = old('environment_id'); @endphp
         <label><span>Project / environment</span><select name="environment_id" required>
             <option value="">Choose an environment</option>
             @foreach($environments as $e)
-                <option value="{{ $e->id }}">{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
+                <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
             @endforeach
         </select></label>
         <label><span>Type</span><select name="type" id="entry-type">
@@ -74,12 +74,12 @@
         @endforeach
     @endforeach
 
-    <h3 class="gap">Notes</h3>
-    <label><span>Tags</span><input name="tags" value="{{ $entry?->tags }}" maxlength="200" placeholder="billing, admin"></label>
-    <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '' }}"></label>
+    <h3 class="gap">Tags and rotation</h3>
+    <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="billing, admin"></label>
+    <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
     @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">
-        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }} @if($confirmedFresh)<span class="muted">Confirmed until {{ gmdate('H:i', (int) $confirmedUntil) }} UTC.</span>@endif</p>
+        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
         <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
     </div>
 </form>

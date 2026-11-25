@@ -174,7 +174,7 @@ final class ShellTest extends TestCase
         // A query string is no place for a password, even a correct one.
         $this->post($this->base.'/projects?confirm_password='.urlencode(self::PASSWORD), ['name' => 'shop'])->assertForbidden();
         // A validation error flashes the other input back, never the password. The confirmation it refreshed stays.
-        $this->post($this->base.'/projects', ['name' => '', 'back' => 'structure', 'confirm_password' => self::PASSWORD])->assertUnprocessable();
+        $this->post($this->base.'/projects', ['name' => '', 'back' => 'structure', 'confirm_password' => self::PASSWORD])->assertStatus(303)->assertSessionHas('form_errors');
         $this->assertStringNotContainsString(self::PASSWORD, json_encode(session()->all()));
         $this->assertStringNotContainsString('confirm_password', json_encode(session()->all()));
     }
@@ -217,7 +217,49 @@ final class ShellTest extends TestCase
         $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled')
             ->assertSee('aria-label="Main"', false)->assertSee('<button>Sign out</button>', false)->assertSessionHas('last_page', '/account');
         $this->get('/api/nothing-here')->assertNotFound();
-        $this->post($this->base.'/projects', ['name' => ''])->assertUnprocessable()->assertSee('Check the form')->assertSee('not refilled');
+    }
+
+    public function test_a_form_that_fails_validation_comes_back_with_errors_and_non_secret_input(): void
+    {
+        $this->signIn('owner');
+        // Browsers send no Referer here; the last page shown is the way back.
+        $this->get($this->base.'/structure?from=test')->assertOk()->assertDontSee('id="form-errors"', false);
+        $this->post($this->base.'/projects', ['name' => '', 'back' => 'structure', 'note' => 'kept text', 'secret' => 'synthetic-secret', 'secret_fields' => ['token' => 'synthetic-field'],
+            'import' => 'synthetic-import', 'password' => 'synthetic-pass', 'password_confirmation' => 'synthetic-pass', 'current_password' => 'synthetic-current',
+            'confirm_password' => self::PASSWORD, 'code' => '123456', 'token' => 'synthetic-token', 'bootstrap_code' => 'synthetic-boot', 'api_secret_key' => 'synthetic-lookalike'])
+            ->assertStatus(303)->assertRedirect($this->base.'/structure?from=test')->assertSessionHas('form_errors', fn ($errors) => array_keys($errors) === ['name'])
+            ->assertSessionHas('_old_input', ['name' => '', 'back' => 'structure', 'note' => 'kept text'])->assertSessionHas('error_form', $this->base.'/projects');
+        $stored = json_encode(session()->all());
+        foreach (['synthetic-', self::PASSWORD, '123456', 'password', 'secret', 'import', 'bootstrap_code'] as $never) {
+            $this->assertStringNotContainsString($never, $stored);
+        }
+        $this->assertSame(0, DB::table('projects')->count());
+        // The form page shows the summary once: an alert that can take focus, each message tied to its field name.
+        $this->get($this->base.'/structure?from=test')->assertOk()->assertSee('id="form-errors" role="alert" tabindex="-1" data-form="'.$this->base.'/projects"', false)
+            ->assertSee('<li data-field="name">', false)->assertSee('Check the form')->assertSee('not refilled')->assertSee('aria-label="Main"', false);
+        $this->get($this->base.'/structure?from=test')->assertOk()->assertDontSee('id="form-errors"', false);
+
+        // A same-origin Referer wins over the last page; a foreign one is never followed.
+        $this->post($this->base.'/projects', ['name' => ''], ['Referer' => rtrim(config('app.url'), '/').$this->base.'/types'])->assertStatus(303)->assertRedirect($this->base.'/types');
+        $this->post($this->base.'/projects', ['name' => ''], ['Referer' => 'https://evil.example/workspaces/x'])->assertStatus(303)->assertRedirect($this->base.'/structure?from=test');
+        $this->post('/workspaces', ['name' => ''], ['Referer' => 'https://evil.example/'])->assertStatus(303)->assertRedirect($this->base.'/structure?from=test');
+
+        // JSON callers and the API keep the plain 422; other errors keep the error page.
+        $this->postJson($this->base.'/projects', ['name' => ''])->assertUnprocessable()->assertExactJson(['error' => 'invalid_input']);
+        $this->post($this->base.'/projects', ['name' => ''], ['Accept' => 'application/json'])->assertUnprocessable()->assertExactJson(['error' => 'invalid_input']);
+        $this->post('/workspaces/'.Str::uuid().'/projects', ['name' => 'shop'])->assertNotFound()->assertSee('Not found');
+    }
+
+    public function test_confirm_page_keeps_the_header_and_is_never_the_way_back(): void
+    {
+        $this->signIn('owner');
+        $this->get('/account')->assertOk();
+        $this->get('/confirm?return='.urlencode($this->base.'/types'))->assertOk()->assertSee('<title>Confirm your identity · Vault</title>', false)
+            ->assertSeeInOrder(['<header', '<h1>Confirm your identity</h1>', '<form class="action" method="post" action="/confirm">'], false)
+            ->assertSee('aria-label="Main"', false)->assertSessionHas('last_page', '/account');
+        $this->get('/workspaces/new')->assertOk()->assertSee('<h1>Add a workspace</h1>', false)->assertSee('+ Add a workspace')->assertDontSee('New workspace');
+        $this->post('/workspaces', ['name' => str_repeat('n', 101)])->assertStatus(303)->assertRedirect('/workspaces/new');
+        $this->get('/workspaces/new')->assertOk()->assertSee('value="'.str_repeat('n', 101).'"', false)->assertSee('id="form-errors"', false);
     }
 
     public function test_error_pages_stay_bare_for_guests_and_unfinished_sign_ins(): void

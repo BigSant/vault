@@ -24,7 +24,8 @@ Use these words in every UI text. Code names may differ.
 - **Grant** — one agent may run one action with one entry. Not "permission".
 - **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
-- **Sign out** — not "Lock". **Add …** for every create action. **Edit entry**. **Expires (UTC)**.
+- **Sign out** — not "Lock". Create actions: headings and links "Add a/an X", submit buttons "Add X", never
+  "New" or "Create". **Edit entry**. **Expires (UTC)**.
   **rotation due**. Password fields are labelled **Current password**.
 - Roles are shown as neutral `chip role`, never with state colours.
 - A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it.
@@ -36,7 +37,7 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 ```
 
 - **Workspace switcher** (`<details>` menu): the user's workspaces with their role, the current one marked, and
-  "New workspace" → `GET /workspaces/new`. Switching keeps you on the same section when the role allows it,
+  "+ Add a workspace" → `GET /workspaces/new`. Switching keeps you on the same section when the role allows it,
   otherwise it opens Entries.
 - **Primary nav**, filtered by role in the current workspace:
 
@@ -98,7 +99,7 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 ### Account (any signed-in user)
 
 - `/account` — who you are, sensitive-action confirmation state (with the confirm form), change password, sign out.
-- `/confirm?return=/path` — confirm your password. A sensitive POST without a fresh confirmation throws
+- `/confirm?return=/path` — confirm your password (keeps the signed-in header). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
   `Referrer-Policy: no-referrer` hides the Referer, the return path falls back to the last page shown (kept in the
@@ -122,6 +123,9 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 2. **Headings.** h1 is the page or area, h2 a section. A form card has its own h3 only when its h2 names something
    broader. No h2 that repeats the active tab, no h1→h3 skips, no h2 inside a card.
 3. **Form foot.** The note sits left or above; buttons sit right at natural width on every screen size.
+   Validation errors return to the form (a 303 to the same-origin Referer or `last_page`) with a focused error
+   summary read from the session's `form_errors`; only non-secret fields are refilled with `old()`. Views use
+   `session('form_errors')`, not `$errors` (sessions are JSON, so the error bag does not survive).
 4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
 5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` drawer
    (open on desktop, closed on phone) holding a `.toolbar` with labelled selects and one **Apply** button. When a
@@ -130,7 +134,8 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
    inline label: "Requested …", "Finished …", "Expires …", "Expired …". Approval reads "asks every time" or
    "runs without asking".
-7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle`. A row without a class means "needs a look".
+7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished, inactive, or no health state) and
+   `is-wait` (waiting for a decision or still running). Every row carries one.
 8. **Repeated buttons** get an `aria-label` naming their item.
 9. **Words**: "Reveal" for anything that shows a secret value; names are never uppercased.
 10. **Actions only when possible**: no Revoke on inactive items; a form whose required choice is empty shows an

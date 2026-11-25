@@ -33,24 +33,25 @@ final class Workspace
         $projects = $space ? DB::table('projects')->where('workspace_id', $id)->orderBy('name')->get() : collect();
         $environments = $space ? $this->workspaceEnvironments($id) : collect();
         $query = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('projects.workspace_id', $id)->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active')->select('entries.*', 'environments.name as environment', 'projects.name as project')
+            ->where('projects.workspace_id', $id)->select('entries.*', 'environments.name as environment', 'projects.name as project')
             ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
-        $archivedCount = $r->query('state') === 'archived' ? (clone $query)->count() : 0;
+        $archivedCount = (clone $query)->where('entries.state', 'archived')->count();
+        $query->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active');
+        if ($r->query('due') === '1') {
+            $query->where('entries.rotate_at', '<', now());
+        }
+        $scopeCount = (clone $query)->count();
         foreach (['project' => 'projects.id', 'environment' => 'environments.id', 'type' => 'entries.type'] as $filter => $column) {
             if ($r->filled($filter)) {
                 $query->where($column, $r->query($filter));
             }
         }
 
-        $scopeCount = (clone $query)->count();
         if ($r->filled('q')) {
             $term = mb_substr((string) $r->query('q'), 0, 100);
             $query->where(function ($q) use ($term) {
                 $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
             });
-        }
-        if ($r->query('due') === '1') {
-            $query->where('entries.rotate_at', '<', now());
         }
 
         $query->addSelect('environments.production');

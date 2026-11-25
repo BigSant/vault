@@ -32,8 +32,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return false;
         });
-        $e->dontFlash(['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields', 'import', 'code', 'bootstrap_code', 'token']);
-        $e->render(function (Throwable $error, Request $r) {
+        // Every form field that carries a secret. None of them is ever put into the session.
+        $secretInputs = ['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields', 'import', 'code', 'bootstrap_code', 'token'];
+        $e->dontFlash($secretInputs);
+        $e->render(function (Throwable $error, Request $r) use ($secretInputs) {
             $status = $error instanceof HttpExceptionInterface ? $error->getStatusCode() : ($error instanceof ValidationException ? 422 : 503);
             $status = in_array($status, [400, 401, 403, 404, 405, 409, 413, 415, 419, 422, 429, 503]) ? $status : 503;
             $codes = [400 => 'invalid_request', 401 => 'authentication_required', 403 => 'access_denied', 404 => 'not_found', 405 => 'method_not_allowed', 409 => 'conflict', 413 => 'too_large', 415 => 'unsupported_media_type', 419 => 'session_expired', 422 => 'invalid_input', 429 => 'rate_limited', 503 => 'unavailable'];
@@ -43,6 +45,24 @@ return Application::configure(basePath: dirname(__DIR__))
 
             if ($error instanceof ConfirmationRequired) {
                 return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => ! $error->failed, 'failed' => $error->failed], 403);
+            }
+
+            // A form that fails validation is shown again with its messages and its non-secret input, instead of an error page.
+            // Only for a signed-in person posting a web form; the way back is a path on this site (Account::returnPath).
+            if ($error instanceof ValidationException && ! $r->isMethodSafe() && $r->hasSession()) {
+                try {
+                    if (Auth::check() && $r->session()->get('mfa_at')) {
+                        // Dropped: the secret fields by name, anything that looks like one, the CSRF token and oversized values.
+                        $old = array_filter($r->except($secretInputs), fn ($value, $key) => ! preg_match('/secret|password|token|code|import/i', (string) $key)
+                            && strlen((string) json_encode($value)) <= 4000, ARRAY_FILTER_USE_BOTH);
+
+                        // Sessions are stored as JSON, which the usual ViewErrorBag ($errors) does not survive: the layout reads
+                        // the plain form_errors array instead.
+                        return redirect(Account::returnPath($r), 303)->withErrors($error->errors())->withInput($old)->with(['form_errors' => array_slice($error->errors(), 0, 8, true), 'error_form' => $r->getPathInfo()]);
+                    }
+                } catch (Throwable) {
+                    // Without the session or the database the error page below still works.
+                }
             }
 
             // Validation texts name fields and rules, never submitted values.

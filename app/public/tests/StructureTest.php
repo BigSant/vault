@@ -62,7 +62,7 @@ final class StructureTest extends TestCase
 
     public function test_template_rejects_names_that_differ_only_in_case_or_accent(): void
     {
-        $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertUnprocessable();
+        $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/projects', ['name' => 'Example'])->assertRedirect();
         $project = DB::table('projects')->where('workspace_id', $this->workspace)->value('id');
         $this->assertEqualsCanonicalizing(['local', 'test', 'stage', 'prod'], DB::table('environments')->where('project_id', $project)->pluck('name')->all());
@@ -74,7 +74,7 @@ final class StructureTest extends TestCase
             ['name' => 'qa', 'production' => false], ['name' => 'qa', 'production' => true],
         ])]);
 
-        $this->post($this->base.'/projects', ['name' => 'New project'])->assertUnprocessable();
+        $this->post($this->base.'/projects', ['name' => 'New project'])->assertStatus(303)->assertSessionHasErrors();
         $this->assertDatabaseMissing('projects', ['workspace_id' => $this->workspace]);
         $this->assertDatabaseMissing('audit', ['workspace_id' => $this->workspace, 'event' => 'project.create']);
     }
@@ -189,8 +189,8 @@ final class StructureTest extends TestCase
         $archived = $this->entry($environment, 'archived');
         $destroyed = $this->entry($environment, 'destroyed');
 
-        $this->post($this->base.'/projects/'.$project.'/delete')->assertUnprocessable();
-        $this->post($this->base.'/environments/'.$environment.'/delete')->assertUnprocessable();
+        $this->post($this->base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments/'.$environment.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->assertDatabaseHas('entries', ['id' => $archived, 'state' => 'archived']);
         $this->assertDatabaseHas('entries', ['id' => $destroyed, 'state' => 'destroyed']);
         $this->assertDatabaseEmpty('audit');
@@ -200,11 +200,11 @@ final class StructureTest extends TestCase
     {
         [$project, $environment] = $this->project($this->workspace);
         [$other] = $this->project($this->workspace);
-        $this->post($this->base.'/projects', ['name' => $project])->assertUnprocessable();
-        $this->post($this->base.'/projects/'.$other, ['name' => $project])->assertUnprocessable();
-        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'test'])->assertUnprocessable();
+        $this->post($this->base.'/projects', ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/projects/'.$other, ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'test'])->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'qa'])->assertRedirect();
-        $this->post($this->base.'/environments/'.$environment, ['name' => 'qa'])->assertUnprocessable();
+        $this->post($this->base.'/environments/'.$environment, ['name' => 'qa'])->assertStatus(303)->assertSessionHasErrors();
     }
 
     private function project(string $workspace): array

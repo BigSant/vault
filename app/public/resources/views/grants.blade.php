@@ -21,7 +21,7 @@
 </p>
 @endif
 @if($grants->isEmpty())
-    <div class="empty">No matching grants.</div>
+    <div class="empty">{{ $filterCount ? 'No matching grants.' : 'No grants yet.' }}</div>
 @else
 <div class="scroll"><table class="board compact-board grants">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
@@ -34,9 +34,9 @@
             $gState = $g->revoked_at || $machine->revoked_at ? 'revoked' : (min(strtotime($g->expires_at), strtotime($machine->expires_at)) <= time() ? 'expired' : 'active');
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent">{{ $machine->name }}</td>
+            <td data-label="Agent"><b>{{ $machine->name }}</b></td>
             <td class="end" data-label="Action"><code>{{ $g->action }}</code></td>
-            <td class="full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak">{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
+            <td class="name full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak">{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime($g->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->expires_at, 0, 16) }} <small class="k">UTC</small></td>
             <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
@@ -55,16 +55,16 @@
 @if($activeMachines->isEmpty() || $activeEntries->isEmpty() || !$actions)
     <div class="empty">
         @if($activeMachines->isEmpty())<p>No active agents. <a href="/workspaces/{{ $space->id }}/agents">Add an agent in Identities</a>.</p>@endif
-        @if($activeEntries->isEmpty())<p>No active entries. <a href="/?workspace={{ $space->id }}">Manage Entries</a>.</p>@endif
+        @if($activeEntries->isEmpty())<p>No active entries. <a href="/entries/new?workspace={{ $space->id }}">Add an entry</a>.</p>@endif
         @unless($actions)<p>No actions are configured. Ask the operator to register the allowed target systems.</p>@endunless
     </div>
 @else
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/grants">@csrf
-        <label><span>Agent</span><select name="machine_id">@foreach($activeMachines as $m)<option value="{{ $m->id }}"{{ $m->id === $agent?->id ? ' selected' : '' }}>{{ $m->name }}</option>@endforeach</select></label>
-        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === $entry?->id ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
-        <label><span>Action</span><select name="action">@foreach($actions as $id => $a)@php $required = \App\Vault\EntryTypes::actionFields($a['kind']); @endphp<option value="{{ $id }}" data-fields="{{ implode(',', $required) }}">{{ $id }} — needs {{ implode(', ', $required) }}</option>@endforeach</select></label>
-        <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="1" required></label>
-        <label class="check"><input type="checkbox" name="approval" value="1" checked> Ask me before every run</label>
+        <label><span>Agent</span><select name="machine_id">@foreach($activeMachines as $m)<option value="{{ $m->id }}"{{ $m->id === old('machine_id', $agent?->id) ? ' selected' : '' }}>{{ $m->name }}</option>@endforeach</select></label>
+        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
+        <label><span>Action</span><select name="action">@foreach($actions as $id => $a)@php $required = \App\Vault\EntryTypes::actionFields($a['kind']); @endphp<option value="{{ $id }}" data-fields="{{ implode(',', $required) }}" @selected(old('action') === $id)>{{ $id }} ({{ implode(', ', $required) }})</option>@endforeach</select></label>
+        <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 1) }}" required></label>
+        <label class="check"><input type="checkbox" name="approval" value="1" @checked(old('approval', !session()->hasOldInput()))> Ask me before every run</label>
         @include('confirm-inline', ['verb' => 'grant this action'])
         <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go">Grant</button></div>
     </form>

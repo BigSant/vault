@@ -34,7 +34,7 @@
             @foreach($navSpaces as $s)
                 <a href="{{ $switchTo($s) }}"{!! $navSpace && $s->id === $navSpace->id ? ' class="on" aria-current="true"' : '' !!}><span class="menu-name">{{ $s->name }}</span><span class="chip role">{{ $s->role }}</span></a>
             @endforeach
-            <a class="menu-foot" href="/workspaces/new">+ New workspace</a>
+            <a class="menu-foot" href="/workspaces/new">+ Add a workspace</a>
         </div>
     </details>
     @endauth
@@ -55,6 +55,15 @@
     @endauth
 </header>
 <main id="content" tabindex="-1">
+{{-- A form that failed validation comes back here (bootstrap/app.php flashes form_errors: field name => messages). app.js focuses the summary and links each
+     message to its field when the page has one with that name. Messages name fields and rules, never values. --}}
+@php $formErrors = array_filter((array) session('form_errors'), 'is_array'); @endphp
+@if($formErrors)
+<div class="callout bad error-summary" id="form-errors" role="alert" tabindex="-1" data-form="{{ session('error_form') }}">
+    <p><b>Check the form.</b> Nothing was saved. Secret fields are deliberately not refilled.</p>
+    <ul>@foreach($formErrors as $field => $messages)@foreach(array_slice($messages, 0, 2) as $message)<li data-field="{{ $field }}">{{ $message }}</li>@endforeach @endforeach</ul>
+</div>
+@endif
 @yield('content')
 @auth<p class="foot"><span class="lamp ok"></span> Secret values stay in the vault. Agents only get action results.</p>@endauth
 </main>

@@ -12,13 +12,8 @@
     $required = fn (bool $on) => '<select name="field_required[]" aria-label="Required"><option value="1"'.($on ? ' selected' : '').'>yes</option><option value="0"'.($on ? '' : ' selected').'>no</option></select>';
     $plural = fn (int $n, string $one, string $many) => $n.' '.($n === 1 ? $one : $many);
 @endphp
-<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-type">Add type</a></div></div>
+<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-type">+ Add a type</a></div></div>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
-<div class="stats">
-    <div class="stat"><b>{{ $types->count() }}</b><span>types</span></div>
-    <div class="stat"><b>{{ $types->sum(fn ($t) => count($t->fields)) }}</b><span>fields</span></div>
-    <div class="stat"><b>{{ array_sum($usage) }}</b><span>entries</span></div>
-</div>
 <p class="note">A type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 
 @if($types->isEmpty())
@@ -41,11 +36,11 @@
                             <td data-label="Kind">{!! $kindSelect($f['kind']) !!}</td>
                             <td data-label="Required">{!! $required((bool) $f['required']) !!}</td>
                             <td data-label="Key"><code>{{ $f['key'] }}</code></td>
-                            <td data-label=""><label class="check"><input type="checkbox" name="field_remove[]" value="{{ $f['key'] }}"> remove</label></td>
+                            <td data-label=""><label class="check"><input type="checkbox" name="field_remove[]" value="{{ $f['key'] }}" aria-label="Remove field {{ $f['label'] }}"> remove</label></td>
                         </tr>
                     @endforeach
                         <tr data-row-template>
-                            <td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="new field" aria-label="Field label"></td>
+                            <td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Field label" aria-label="Field label"></td>
                             <td data-label="Kind">{!! $kindSelect() !!}</td><td data-label="Required">{!! $required(false) !!}</td><td data-label=""></td><td data-label=""></td>
                         </tr>
                     </tbody>
@@ -72,10 +67,10 @@
 </details>
 @endif
 
-<h2 id="add-type">Add type</h2>
+<h2 id="add-type">Add a type</h2>
 
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/types">@csrf
-        <label><span>Type name</span><input name="name" required maxlength="80" placeholder="FTP server"></label>
+        <label><span>Type name</span><input name="name" value="{{ old('revision') === null && (session('error_form') === null || session('error_form') === '/workspaces/'.$space->id.'/types') ? old('name') : '' }}" required maxlength="80" placeholder="FTP server"></label>
         <table class="list edit">
             <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
             <tbody id="rows-new">

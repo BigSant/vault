@@ -1,9 +1,9 @@
 @extends('layout')
-@section('title', 'Confirm identity')
+@section('title', 'Authenticator code')
 @section('bare', '1')
 @section('content')
 <form class="action" method="post" action="/mfa">@csrf
-    <h1>Confirm identity</h1>
+    <h1>Authenticator code</h1>
     @if($seed)
         <p>{{ $qr ? 'Scan the code' : 'Add the key below' }} with an authenticator app (Aegis, 2FAS, Google Authenticator or similar), then enter the 6-digit code it shows.</p>
         @if($qr)<img class="totp-qr" src="{{ $qr }}" width="240" height="240" alt="Authenticator setup QR code">@endif

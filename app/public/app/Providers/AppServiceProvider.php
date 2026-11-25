@@ -39,7 +39,7 @@ final class AppServiceProvider extends ServiceProvider
     private function navigation(Page $view): void
     {
         $request = request();
-        // Sign-in, error and confirm pages have no header, and must render even when the database is down.
+        // Sign-in pages and bare error pages have no header, and must render even when the database is down.
         if ($view->name() === 'layout' && $view->getFactory()->hasSection('bare') || ! Auth::check()) {
             $view->with(['navSpaces' => collect(), 'navSpaceId' => null, 'navRole' => null, 'navWaiting' => 0]);
 
@@ -73,8 +73,8 @@ final class AppServiceProvider extends ServiceProvider
                 $request->attributes->set('nav.waiting.'.$id, $waiting);
             }
         }
-        // Remembered so the confirm page can send people back (an error page is no place to return to); browsers send no Referer here (Referrer-Policy: no-referrer).
-        if ($view->name() === 'layout' && $request->isMethod('GET') && $session && empty($view->getData()['shell'])) {
+        // Remembered so the confirm page and a failed form can send people back (an error page or the confirm page itself is no place to return to); browsers send no Referer here (Referrer-Policy: no-referrer).
+        if ($view->name() === 'layout' && $request->isMethod('GET') && $session && empty($view->getData()['shell']) && ! $request->is('confirm')) {
             $session->put('last_page', $request->getRequestUri());
         }
         $view->with(['navSpaces' => $spaces, 'navSpaceId' => $id, 'navRole' => $role, 'navWaiting' => $waiting]);

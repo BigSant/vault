@@ -35,9 +35,9 @@
 @if($space)
 <div class="stats">
     @if($archived)
-        <div class="stat"><b>{{ $archivedCount }}</b><span>archived entries</span></div>
+        <div class="stat"><b>{{ $archivedCount }}</b><span>archived {{ Str::plural('entry', $archivedCount) }}</span></div>
     @else
-        <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active entries</span></div>
+        <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['due' => 1])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <div class="stat secondary"><b>{{ $prodCount }}</b><span>production</span></div>
     <div class="stat secondary"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
@@ -48,12 +48,14 @@
     <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
     <form class="toolbar" method="get">
         <input type="hidden" name="workspace" value="{{ $space->id }}">
-        <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="Search name, tag, alias" maxlength="100"></label>
+        <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
         <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
         <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->project }} / {{ $e->name }}</option>@endforeach</select></label>
         <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
         <label>State<select name="state"><option value="active">Active</option><option value="archived" @selected($archived)>Archived</option></select></label>
+        @unless($archived)
         <label>Rotation<select name="due"><option value="">All entries</option><option value="1" @selected($dueOnly)>Rotation due only</option></select></label>
+        @endunless
         <button>Apply</button>
     </form>
 </details>
@@ -65,8 +67,8 @@
     @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
     @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
     @if($activeType)<span class="chip filter">Type: {{ $activeType }}</span>@endif
-    @if($dueOnly)<span class="chip warn">rotation due</span>@endif
-    @if($archived)<span class="chip muted">Archived</span>@endif
+    @if($dueOnly)<span class="chip warn">Rotation: due</span>@endif
+    @if($archived)<span class="chip muted">State: archived</span>@endif
     <a href="/?workspace={{ $space->id }}">{{ $archived && $filterCount === 1 ? 'Back to active entries' : 'Clear filters' }}</a>
 </div>
 @endif
@@ -76,7 +78,7 @@
     <div class="empty">
         @if(!$space)
             <b>No workspaces yet.</b>
-            <a href="/workspaces/new">Create a workspace</a> to start storing entries.
+            <a href="/workspaces/new">Add a workspace</a> to start storing entries.
         @elseif($projects->isEmpty())
             <b>No projects in this workspace yet.</b>
             @if($canEdit)Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.@else Ask an editor or owner to create a project.@endif
@@ -85,7 +87,7 @@
             Nothing matches the current filters.
         @elseif($canEdit)
             <b>No entries here yet.</b>
-            <a href="/entries/new?workspace={{ $space->id }}">Add the first entry</a> or <a href="/workspaces/{{ $space->id }}/import">import from JSON</a>. Secret values are never shown in this list.
+            <a href="/entries/new?workspace={{ $space->id }}">Add an entry</a> or <a href="/workspaces/{{ $space->id }}/import">import from JSON</a>. Secret values are never shown in this list.
         @else
             <b>No entries here yet.</b>
             Nothing has been added to this workspace yet.
@@ -111,5 +113,8 @@
 @if($entries->lastPage() > 1)
 <div class="pager"><span>@if($entries->previousPageUrl())<a href="{{ $entries->previousPageUrl() }}">← Previous</a>@endif</span><span class="muted">Page {{ $entries->currentPage() }} of {{ $entries->lastPage() }}</span><span>@if($entries->hasMorePages())<a href="{{ $entries->nextPageUrl() }}">Next →</a>@endif</span></div>
 @endif
+@endif
+@if($space && !$archived && $archivedCount)
+<p class="note"><a href="/?workspace={{ $space->id }}&amp;state=archived">{{ $archivedCount }} archived {{ Str::plural('entry', $archivedCount) }} →</a></p>
 @endif
 @endsection
