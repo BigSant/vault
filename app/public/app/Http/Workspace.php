@@ -415,7 +415,12 @@ final class Workspace
             DB::table('workspaces')->where('id', $workspace)->lockForUpdate()->first();
             $user = User::where('email', strtolower($d['email']))->first();
             if (! $user) {
-                abort_unless(! empty($d['password']) && $d['role'] !== 'remove', 422);
+                if ($d['role'] === 'remove') {
+                    throw ValidationException::withMessages(['email' => 'Choose an existing member to remove.']);
+                }
+                if (empty($d['password'])) {
+                    throw ValidationException::withMessages(['password' => 'Enter a first password for a new user.']);
+                }
                 $id = (string) Str::uuid();
                 $this->secrets->write('auth/'.$id, ['totp' => TOTP::generate()->getSecret()], 0);
                 $user = User::create(['id' => $id, 'name' => $d['name'], 'email' => strtolower($d['email']), 'password' => Hash::make($d['password'])]);
@@ -460,7 +465,9 @@ final class Workspace
         abort_unless($entry->workspace_id === $workspace, 404);
         abort_unless(DB::table('machines')->where('id', $d['machine_id'])->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->exists(), 404);
         $definition = $this->ops->definitions()[$d['action']] ?? null;
-        abort_unless($definition, 422);
+        if (! $definition) {
+            throw ValidationException::withMessages(['action' => 'Choose an available action.']);
+        }
         // The action reads these fields from the secret, so the entry's type must require them.
         $type = $this->types->find($workspace, $entry->type);
         $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
@@ -586,8 +593,9 @@ final class Workspace
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
             'request' => ['operation'], 'member' => ['member', 'owner'], 'session' => ['session'], 'setup' => ['workspace', 'project', 'environment', 'type']];
-        $filters = $r->validate(['group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150']);
-        $total = !empty($filters['group']) || !empty($filters['actor']) ? (clone $query)->count() : null;
+        $filters = $r->validate(['group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150',
+            'outcome' => 'nullable|in:ok,denied,failed', 'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d']);
+        $total = array_filter($filters) ? (clone $query)->count() : null;
         if ($group = $filters['group'] ?? null) {
             $query->where(function ($q) use ($groups, $group) {
                 foreach ($groups[$group] as $prefix) {
@@ -597,6 +605,15 @@ final class Workspace
         }
         if ($actor = $filters['actor'] ?? null) {
             $query->where('actor', $actor);
+        }
+        if ($outcome = $filters['outcome'] ?? null) {
+            $query->where('outcome', $outcome);
+        }
+        if ($from = $filters['from'] ?? null) {
+            $query->whereDate('created_at', '>=', $from);
+        }
+        if ($to = $filters['to'] ?? null) {
+            $query->whereDate('created_at', '<=', $to);
         }
         $events = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(50)->withQueryString();
         $this->resolveEvents($workspace, $events->getCollection(), $names);

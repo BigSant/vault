@@ -76,11 +76,11 @@
 <div class="scroll"><table class="list import-format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
-        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
-        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
-        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
-        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
-        <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">JSON object mapping field keys to string values (or pass <code>secret</code> as a JSON-encoded string).</td></tr>
+        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
+        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
+        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
+        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
+        <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip">required</span></td><td class="desc">JSON object mapping field keys to string values (or pass <code>secret</code> as a JSON-encoded string).</td></tr>
         <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>
         <tr><td class="key"><code>rotate_at</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
     </tbody>

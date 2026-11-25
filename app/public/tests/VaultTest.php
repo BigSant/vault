@@ -156,7 +156,7 @@ final class VaultTest extends TestCase
         $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
             ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[1]['id'], $rows[0]['id']])
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
-            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'Private name', 'stage', 'test.http', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent requests'])
+            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'test.http', 'Private name', 'stage', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent requests'])
             ->assertDontSee($rows[2]['id']);
         $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
             ->assertSee($rows[0]['id'])->assertSee($rows[1]['id']);
@@ -271,7 +271,11 @@ final class VaultTest extends TestCase
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
-        $this->get('/?state=archived')->assertDontSee('name="due"', false);
+        app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
+            'type' => 'api_key', 'secret' => '{"token":"test"}']);
+        $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1')
+            ->assertSeeText('State: archived')->assertSeeText('used by agents');
+        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1');
     }
 
     public function test_grants_order_by_effective_state_then_agent_and_action(): void
@@ -352,6 +356,35 @@ final class VaultTest extends TestCase
         $this->post($url, ['name' => 'Owner', 'email' => $this->owner->email, 'role' => 'viewer'])->assertConflict();
     }
 
+    public function test_member_and_import_errors_return_to_their_forms(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $cases = [
+            ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter a first password for a new user.'],
+            ['import', ['import' => '{'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
+            ['import', ['import' => '[[]]'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
+        ];
+        foreach ($cases as [$page, $input, $field, $message]) {
+            $url = $base.'/'.$page;
+            $this->get($url)->assertOk();
+            $this->post($url, $input)->assertStatus(303)->assertRedirect($url)
+                ->assertSessionHas('form_errors', fn ($errors) => $errors[$field] === [$message]);
+            $this->get($url)->assertSeeText($message);
+        }
+    }
+
+    public function test_activity_filters_by_outcome_and_inclusive_dates(): void
+    {
+        foreach ([['01', 'denied'], ['02', 'ok'], ['02', 'denied'], ['03', 'denied']] as [$day, $outcome]) {
+            DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
+                'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
+        }
+        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
+            ->assertOk()->assertSeeText('Showing 1 of 4')->assertSeeText('Outcome: denied')
+            ->assertSeeText('From: 2026-01-02')->assertSeeText('To: 2026-01-02')
+            ->assertViewHas('events', fn ($events) => $events->first()->created_at === '2026-01-02 23:59:59' && $events->first()->outcome === 'denied');
+    }
+
     public function test_import_validates_all_rows_before_any_write(): void
     {
         $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-import"}'];
@@ -408,7 +441,7 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         [$machine,$token] = $this->machine($id);
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertUnprocessable();
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertStatus(303)->assertSessionHasErrors('entry');
         $this->app['auth']->logout();
         $this->withToken($token)->postJson('/entries/'.$id.'/reveal')->assertRedirect('/login');
     }
@@ -764,7 +797,7 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
-            'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertUnprocessable();
+            'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertStatus(303)->assertSessionHasErrors('clear_fields');
         $types = '/workspaces/'.$this->workspace.'/types';
         $this->post($types, $this->typeForm(['name' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
         foreach (['field_label', 'field_key', 'field_kind', 'field_required', 'field_remove'] as $column) {

@@ -28,7 +28,7 @@
     <a href="#template">Environment template</a>
 </nav>
 
-<h2 class="setup-first">Projects</h2>
+<h2 class="setup-first">Projects and environments</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 <div class="project-list">
@@ -37,32 +37,56 @@
         $envs = $environments[$project->id] ?? collect();
         $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0);
         $oldAddEnv = old('project_id') === $project->id;
-        $oldRename = session('error_form') === '/workspaces/'.$space->id.'/projects/'.$project->id;
+        $projPath = '/workspaces/'.$space->id.'/projects/'.$project->id;
+        $oldRename = session('error_form') === $projPath;
+        $oldProjectDelete = session('error_form') === $projPath.'/delete';
+        $projFormId = 'proj-'.$project->id;
     @endphp
     <div class="card project-card" id="p-{{ $project->id }}">
         <div class="card-head project-head">
             <h3><span class="name">{{ $project->name }}</span> <span class="count">{{ $entries($projectEntries) }}</span></h3>
-            <form class="inline" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}">@csrf
-                <input name="name" value="{{ $oldRename ? old('name', $project->name) : $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"><button aria-label="Rename project {{ $project->name }}">Rename</button>
-            </form>
+            <details class="fold project-edit"@if($oldRename || $oldProjectDelete) open @endif>
+                <summary><span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span></summary>
+                <div class="inner">
+                    <form id="{{ $projFormId }}" method="post" action="{{ $projPath }}">@csrf
+                        <label><span>Name</span><input name="name" value="{{ $oldRename && is_string(old('name')) ? old('name') : $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"></label>
+                    </form>
+                    <div class="form-foot">
+                        <p class="note">@if($projectEntries > 0)Holds {{ $entries($projectEntries) }}, so it cannot be removed.@endif</p>
+                        <div class="controls">
+                            @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>@endif
+                            <button form="{{ $projFormId }}" aria-label="Rename project {{ $project->name }}">Rename</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
         </div>
         @forelse($envs as $env)
-            @php $formId = 'env-'.$env->id; $n = $counts[$env->id] ?? 0; $where = $env->name.' in project '.$project->name; @endphp
-            <details class="fold env">
+            @php
+                $formId = 'env-'.$env->id;
+                $n = $counts[$env->id] ?? 0;
+                $where = $env->name.' in project '.$project->name;
+                $envPath = '/workspaces/'.$space->id.'/environments/'.$env->id;
+                $oldEnv = session('error_form') === $envPath;
+                $oldEnvDelete = session('error_form') === $envPath.'/delete';
+                $envName = $oldEnv && is_string(old('name')) ? old('name') : $env->name;
+                $envProd = $oldEnv ? old('production') === '1' : (bool) $env->production;
+            @endphp
+            <details class="fold env"@if($oldEnv || $oldEnvDelete) open @endif>
                 <summary>
                     <span class="fold-name">@include('sign', ['name' => $env->name, 'production' => $env->production])</span>
                     <span class="fold-meta">{{ $entries($n) }}</span>
                     <span class="fold-act">Edit<span class="sr-only"> environment {{ $where }}</span></span>
                 </summary>
                 <div class="inner">
-                    <form id="{{ $formId }}" method="post" action="/workspaces/{{ $space->id }}/environments/{{ $env->id }}">@csrf
-                        <label><span>Name</span><input name="name" value="{{ $env->name }}" required maxlength="60"></label>
-                        <label><span>Production</span>{!! $yesNo('production', $env->production) !!}</label>
+                    <form id="{{ $formId }}" method="post" action="{{ $envPath }}">@csrf
+                        <label><span>Name</span><input name="name" value="{{ $envName }}" required maxlength="60"></label>
+                        <label><span>Production</span>{!! $yesNo('production', $envProd) !!}</label>
                     </form>
                     <div class="form-foot">
                         <p class="note">@if($n > 0)Holds {{ $entries($n) }}, so it cannot be removed.@endif</p>
                         <div class="controls">
-                            @if($n === 0)<form method="post" action="/workspaces/{{ $space->id }}/environments/{{ $env->id }}/delete" data-confirm="Remove environment “{{ $env->name }}”?">@csrf<button class="stop" aria-label="Remove environment {{ $where }}">Remove</button></form>@endif
+                            @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment “{{ $env->name }}”?">@csrf<button class="stop" aria-label="Remove environment {{ $where }}">Remove</button></form>@endif
                             <button form="{{ $formId }}" aria-label="Save environment {{ $where }}">Save</button>
                         </div>
                     </div>
@@ -79,15 +103,12 @@
             <div class="inner">
                 <form method="post" action="/workspaces/{{ $space->id }}/environments">@csrf
                     <input type="hidden" name="project_id" value="{{ $project->id }}"><input type="hidden" name="back" value="structure">
-                    <label><span>Name</span><input name="name" value="{{ $oldAddEnv ? old('name') : '' }}" required maxlength="60" placeholder="staging" aria-label="Environment name for project {{ $project->name }}"></label>
+                    <label><span>Name</span><input name="name" value="{{ $oldAddEnv && is_string(old('name')) ? old('name') : '' }}" required maxlength="60" placeholder="staging" aria-label="Environment name for project {{ $project->name }}"></label>
                     <label><span>Production</span>{!! $yesNo('production', $oldAddEnv && old('production') === '1', 'Production for environment in project '.$project->name) !!}</label>
                     <div class="form-foot"><button aria-label="Add environment to project {{ $project->name }}">Add environment</button></div>
                 </form>
             </div>
         </details>
-        @if($projectEntries === 0)
-            <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
-        @endif
     </div>
 @empty
     <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>

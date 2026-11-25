@@ -1,12 +1,12 @@
 @extends('layout')
-@section('title', request('state') === 'archived' ? 'Archived entries' : 'Entries')
+@section('title', 'Entries')
 @section('content')
 @php
     $canEdit = $space && $space->role !== 'viewer';
     $archived = request('state') === 'archived';
     $dueOnly = request('state') === 'due';
     $now = time();
-    $activeCount = array_key_exists('active', $stats) ? (int) $stats['active'] : ($archived ? null : $entries->total());
+    $activeCount = (int) $stats['active'];
     $dueCount = (int) ($stats['due'] ?? 0);
     $prodCount = (int) ($stats['production'] ?? 0);
     $usedRecent = (int) ($stats['used'] ?? 0);
@@ -24,8 +24,8 @@
     $activeType = request()->filled('type') ? ($typeNames[request('type')] ?? request('type')) : null;
 @endphp
 <div class="head">
-    <h1>{{ $archived ? 'Archived entries' : 'Entries' }}</h1>
-    @if(!$archived && $canEdit)
+    <h1>Entries</h1>
+    @if($canEdit)
     <div class="controls">
         <a class="btn" href="/workspaces/{{ $space->id }}/import">Import</a>
         <a class="btn go" href="/entries/new?workspace={{ $space->id }}">+ Add an entry</a>
@@ -34,28 +34,26 @@
 </div>
 @if($space)
 <div class="stats">
-    @if($archived)
-        <div class="stat"><b>{{ $archivedCount }}</b><span>archived {{ Str::plural('entry', $archivedCount) }}</span></div>
-    @else
-        <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
+    <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <div class="stat secondary"><b>{{ $prodCount }}</b><span>production</span></div>
     <div class="stat secondary"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
-    @endif
 </div>
 
-<details class="filters" data-wide-open>
-    <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
-    <form class="toolbar" method="get">
-        <input type="hidden" name="workspace" value="{{ $space->id }}">
-        <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
-        <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
-        <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->project }} / {{ $e->name }}</option>@endforeach</select></label>
-        <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
-        <label>State<select name="state"><option value="active" @selected(!$dueOnly && !$archived)>Active</option><option value="due" @selected($dueOnly)>Rotation due</option><option value="archived" @selected($archived)>Archived</option></select></label>
-        <button>Apply</button>
-    </form>
-</details>
+<form method="get">
+    <input type="hidden" name="workspace" value="{{ $space->id }}">
+    <label>Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
+    <details class="filters" data-wide-open>
+        <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
+        <div class="toolbar">
+            <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
+            <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->project }} / {{ $e->name }}</option>@endforeach</select></label>
+            <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
+            <label>State<select name="state"><option value="active" @selected(!$dueOnly && !$archived)>Active</option><option value="due" @selected($dueOnly)>Rotation due</option><option value="archived" @selected($archived)>Archived</option></select></label>
+            <button>Apply</button>
+        </div>
+    </details>
+</form>
 
 @if($hasFilters)
 <div class="filter-status">
@@ -78,7 +76,7 @@
             <a href="/workspaces/new">Add a workspace</a> to start storing entries.
         @elseif($projects->isEmpty())
             <b>No projects in this workspace yet.</b>
-            @if($canEdit)Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.@else Ask an editor or owner to create a project.@endif
+            @if($canEdit)Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.@else Ask an editor or owner to add a project.@endif
         @elseif($archived || $hasFilters)
             <b>No matching entries.</b>
             Nothing matches the current filters.

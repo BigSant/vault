@@ -302,18 +302,59 @@ final class ShellTest extends TestCase
         $this->signIn('owner');
         $this->get($this->base.'/agents')->assertOk();
         $this->post($this->base.'/machines', ['name' => 'agent', 'days' => 99])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['days'][0], 'Valid for (days)'))->assertSessionHas('error_unfilled', false);
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['days'] === ['Valid for (days) must be 30 or less.'])->assertSessionHas('error_unfilled', false);
         // Under the h1 and the tabs, never above them; no secret was typed, so nothing is said about refilling.
         $this->get($this->base.'/agents')->assertOk()->assertSeeInOrder(['<h1>Agents</h1>', 'aria-label="Agents sections"', '</nav>', 'id="form-errors"', 'Valid for (days)'], false)
             ->assertDontSee('not refilled');
         // A label that differs on one form: "First password" for a new member, "New password" on the account page.
         $this->post($this->base.'/members', ['name' => 'New Person', 'email' => 'new@example.test', 'password' => 'short', 'role' => 'viewer'])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['password'][0], 'First password'))->assertSessionHas('error_unfilled', true);
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['First password must be at least 14 characters.'])->assertSessionHas('error_unfilled', true);
         $this->get($this->base.'/agents')->assertOk()->assertSee('Secret fields are not refilled.');
         $this->post('/password', ['current_password' => self::PASSWORD, 'password' => 'short', 'password_confirmation' => 'short'])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['password'][0], 'New password'));
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['New password must be at least 14 characters.']);
+        $this->post('/password', ['current_password' => self::PASSWORD, 'password' => str_repeat('a', 14), 'password_confirmation' => str_repeat('b', 14)])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['New password and its repeat do not match.']);
         $this->post($this->base.'/operations/'.Str::uuid().'/mfa', ['code' => 'abc'])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['code'][0], 'Site MFA code'));
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['code'] === ['Site MFA code must be 6 to 8 digits.']);
+        // Every rule the forms use has its own sentence: the label first, never "The … field".
+        $this->post($this->base.'/machines', ['name' => '', 'days' => 0])->assertStatus(303)
+            ->assertSessionHas('form_errors', ['name' => ['Name is required.'], 'days' => ['Valid for (days) must be 1 or more.']]);
+        $this->post($this->base.'/machines', ['name' => str_repeat('n', 101), 'days' => 'many'])->assertStatus(303)
+            ->assertSessionHas('form_errors', ['name' => ['Name must be 100 characters or fewer.'], 'days' => ['Valid for (days) must be a whole number.']]);
+        $this->post($this->base.'/members', ['name' => 'New Person', 'email' => 'not-an-email', 'role' => 'boss'])->assertStatus(303)
+            ->assertSessionHas('form_errors', ['email' => ['Email must be a valid email address.'], 'role' => ['Role is not one of the allowed choices.']]);
+        $messages = require base_path('lang/en/validation.php');
+        foreach (\Illuminate\Support\Arr::dot(\Illuminate\Support\Arr::except($messages, ['attributes', 'form_attributes'])) as $key => $text) {
+            $this->assertStringNotContainsString('field', $text, $key);
+            $this->assertStringEndsWith('.', $text, $key);
+        }
+    }
+
+    public function test_confirm_page_status_is_announced_and_describes_the_password_field(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->get('/confirm')->assertOk()->assertDontSee('id="confirm-status"', false)->assertDontSee('aria-describedby', false);
+        $this->post($this->base.'/projects', ['name' => 'shop'])->assertForbidden()
+            ->assertSee('<div class="callout warn" id="confirm-status" role="status">', false)->assertSee('aria-describedby="confirm-status"', false)->assertDontSee('aria-invalid', false);
+        $this->post('/confirm', ['current_password' => 'wrong-password', 'return' => '/account'])->assertUnauthorized()
+            ->assertSee('<div class="callout bad" id="confirm-status" role="alert">', false)->assertSee('aria-describedby="confirm-status"', false)->assertSee('aria-invalid="true"', false);
+    }
+
+    public function test_activity_names_events_in_words_with_the_code_as_inline_text(): void
+    {
+        $this->signIn('owner');
+        $machine = (string) Str::uuid();
+        $known = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ci-agent', 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
+        DB::table('operations')->insert(['id' => $known, 'machine_id' => $machine, 'grant_id' => (string) Str::uuid(), 'entry_id' => (string) Str::uuid(),
+            'action' => 'shop.admin-login', 'version' => 1, 'state' => 'denied', 'request_id' => 'r-'.$machine, 'expires_at' => now()->addHour(), 'created_at' => now(), 'updated_at' => now()]);
+        foreach ([['operation.request', $known, 'ok'], ['operation.request', (string) Str::uuid(), 'denied'], ['entry.rotate', (string) Str::uuid(), 'ok']] as [$event, $subject, $outcome]) {
+            DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'machine:'.$machine, 'event' => $event, 'subject' => $subject, 'outcome' => $outcome, 'created_at' => now()]);
+        }
+        $this->get($this->base.'/audit')->assertOk()
+            ->assertSee('<span class="event-name">Agent requested <span class="name">shop.admin-login</span></span> <small class="nobreak event-code">request.request</small>', false)
+            ->assertSee('<span class="event-name">Agent request</span>', false)->assertSee('<span class="event-name">Rotated entry values</span>', false)
+            ->assertSee('<span class="chip bad">denied</span>', false)->assertDontSee('<code class="nobreak event-code">', false)->assertDontSee('Agent requested an action');
     }
 
     public function test_page_head_end_is_after_the_h1_its_head_block_and_the_tabs(): void

@@ -29,6 +29,13 @@ final class AppServiceProvider extends ServiceProvider
         View::composer(['layout', 'tabs', 'account', 'workspace-new'], fn (Page $view) => $this->navigation($view));
         // Unix time until which sensitive actions need no password, or null. Every form can then ask for it inline.
         View::composer('*', fn (Page $view) => $view->with('confirmedUntil', Access::confirmedUntil(request())));
+        // Activity rows about a request say which action was asked for: request id => action, for the rows on show.
+        View::composer('activity', function (Page $view) {
+            $events = $view->getData()['events'] ?? [];
+            $ids = collect($events instanceof \Illuminate\Contracts\Pagination\Paginator ? $events->items() : $events)
+                ->filter(fn ($event) => ($event->event ?? null) === 'operation.request' && is_string($event->subject ?? null))->pluck('subject')->unique();
+            $view->with('requestActions', $ids->isEmpty() ? [] : DB::table('operations')->whereIn('id', $ids->all())->pluck('action', 'id')->all());
+        });
         // Validation messages name fields by their visible labels (lang/en/validation.php). A label that differs on
         // one form ("First password" for a new member) is listed there under form_attributes, by request path.
         Validator::resolver(function ($translator, array $data, array $rules, array $messages, array $attributes) {

@@ -6,6 +6,7 @@ document.querySelectorAll('[data-copy]').forEach(button => { button.dataset.labe
 const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(selector).forEach(el => {
   el.textContent = el.dataset.hiddenText || 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1';
   if (el.id) document.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.copy === el.id) { button.disabled = true; button.textContent = button.dataset.label; } });
+  if (el.id) document.getElementById(el.id + '-copy-note')?.remove();
 });
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
 if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again. Copy is off until you reveal them again.'); }, 30000);
@@ -14,8 +15,31 @@ addEventListener('pagehide', () => { hideSecrets(); document.querySelectorAll('.
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
   const el = document.getElementById(button.dataset.copy);
   if (!el || el.dataset.hidden) return;
-  try { await navigator.clipboard.writeText(el.textContent); button.textContent = 'Copied'; say('Copied'); }
-  catch { button.textContent = 'Copy blocked'; say('Copy blocked'); }
+  try {
+    await navigator.clipboard.writeText(el.textContent);
+    button.textContent = 'Copied';
+    document.getElementById(el.id + '-copy-note')?.remove();
+    say('Copied');
+  } catch {
+    // The clipboard is closed to this page (permission, old browser): the text is selected, so the device's own
+    // Copy command works, and a note that stays says so. data-copy-name names the thing: "token", else "value".
+    button.textContent = button.dataset.label;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const selection = getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const text = 'Copy did not work. Select the ' + (button.dataset.copyName || 'value') + ' and use your device\'s Copy command.';
+    let note = document.getElementById(el.id + '-copy-note');
+    if (!note) {
+      note = document.createElement('p');
+      note.className = 'note copy-note';
+      note.id = el.id + '-copy-note';
+      (button.closest('.controls') || button).after(note);
+    }
+    note.textContent = text;
+    say(text);
+  }
 }));
 const type = document.getElementById('entry-type');
 const fields = () => document.querySelectorAll('[data-types]').forEach(el => {
@@ -107,6 +131,19 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
 });
 // Destructive actions confirm in place, in two steps. The first press turns the button into "Confirm <verb>" with a
 // Cancel beside it and the form's data-confirm question as the note; the second press sends the form.
+// In a table the armed buttons need more room than the single button. Each such cell gets an invisible, zero-height
+// copy of its armed button row, so the column is that wide from the start and arming never moves a column.
+const armedText = text => 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+document.querySelectorAll(':is(table.board, table.list) td:has(form[data-confirm])').forEach(cell => {
+  const sizer = document.createElement('div');
+  sizer.className = 'confirm-size' + (cell.querySelector('.controls') ? ' controls' : '');
+  sizer.setAttribute('aria-hidden', 'true');
+  cell.querySelectorAll('button').forEach(button => {
+    const texts = button.closest('form[data-confirm]') && button.type !== 'button' ? [armedText(button.textContent.trim()), 'Cancel'] : [button.textContent.trim()];
+    texts.forEach(text => { const fake = document.createElement('span'); fake.className = 'btn'; fake.textContent = text; sizer.append(fake); });
+  });
+  cell.append(sizer);
+});
 document.querySelectorAll('form[data-confirm]').forEach(form => {
   let step = null;
   let armedAt = 0;
@@ -145,7 +182,7 @@ document.querySelectorAll('form[data-confirm]').forEach(form => {
     cancel.addEventListener('click', () => disarm(true));
     button.before(box);
     box.append(note, button, cancel);
-    button.textContent = 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+    button.textContent = armedText(text);
     button.setAttribute('aria-label', 'Confirm: ' + (label || text));
     button.classList.add('armed');
     step = { box, button, text, label };

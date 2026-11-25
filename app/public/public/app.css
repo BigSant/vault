@@ -12,6 +12,7 @@
 --top-1:#171c12;--top-2:#10130d;--lamp-off:#20261a;--row-edge:#0a0c08;--scroll-thumb:#4a5540;
 --term-bg:#070806;--term-ink:#d8e8c8;--term-faint:#8d927f;
 --qr-light:#ece6d3;
+--card:760px;
 --mono:ui-monospace,"JetBrains Mono","Iosevka","IBM Plex Mono","SF Mono","Cascadia Code","DejaVu Sans Mono",Menlo,Consolas,monospace}
 *{box-sizing:border-box}
 html{background:var(--board);scrollbar-color:var(--scroll-thumb) var(--board)}
@@ -99,6 +100,10 @@ color:var(--amber);margin:34px 0 12px}
 h2::after{content:"";flex:1;border-top:1px solid var(--rule)}
 h2[id]{scroll-margin-top:16px}
 h3{font:700 14px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px;color:var(--ink)}
+/* Form sections inside a card: <fieldset><legend>, the legend looking like a card h3. .legend gives the same look
+   to a title that is neither (the inline password confirmation). */
+fieldset{min-width:0;margin:0;padding:0;border:none}
+legend,.legend{display:block;width:100%;padding:0;margin:0 0 12px;font:700 14px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
 h3 small{display:block;margin-top:3px;color:var(--faint);font:400 12px/1.4 var(--mono);overflow-wrap:anywhere;text-transform:none;letter-spacing:0}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 4px}
 .head h1{margin-bottom:6px}
@@ -179,7 +184,9 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 .list td{padding:7px 10px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere;vertical-align:middle}
 .list td input:not([type=checkbox]),.list td select{min-width:8em}
 .list small{display:block;color:var(--faint)}
-.facts{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
+/* Facts tables and short two-column lists are as wide as a form card (--card); boards may run full width. */
+.facts{width:100%;max-width:var(--card);border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
+.capped{max-width:var(--card)}
 .facts th{width:16em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
 .facts td{padding:9px 14px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere}
 .facts tr:last-child th,.facts tr:last-child td{border-bottom:none}
@@ -192,7 +199,7 @@ form.action,.card{margin:0;background:var(--panel);border:1px solid var(--rule);
 form.action.danger,.card.danger{border-top:7px solid transparent;
 background:linear-gradient(var(--panel),var(--panel)) padding-box,repeating-linear-gradient(-45deg,var(--hazard) 0 10px,#111 10px 20px) border-box}
 /* One width for every standalone form card: a form outside a deck, or alone in one. Pages add no width classes. */
-form.action:not(.deck>form.action),.deck>form.action:only-child{max-width:760px}
+form.action:not(.deck>form.action),.deck>form.action:only-child{max-width:var(--card)}
 main.login form.action{max-width:none}
 .stats,.list,.facts,.deck,form.action:not(.deck>form.action),.scroll,.box{margin-bottom:14px}
 .board,.scroll:has(>.board){margin-bottom:8px}
@@ -200,7 +207,7 @@ main.login form.action{max-width:none}
 label{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 label small{color:var(--faint);font-size:12px}
 label.check{display:flex;gap:9px;align-items:flex-start;color:var(--ink)}
-label.stack{grid-template-columns:1fr;gap:4px}
+label.stack{grid-template-columns:minmax(0,1fr);gap:4px}
 input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{font:14px/1.4 var(--mono);color:var(--ink);background:var(--field);
 border:1px solid var(--edge);border-radius:3px;padding:7px 10px;min-height:36px;width:100%;caret-color:var(--amber)}
 input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
@@ -263,6 +270,8 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 .secret-row{margin:0 0 12px}
 .secret-row .controls{margin-top:6px}
 .note+.secret-row{margin-top:12px}
+/* Copy failed: the note stays under the Copy button until a copy works or the value is hidden. */
+.secret-row .copy-note{margin:6px 0 0}
 pre[data-hidden]{color:var(--faint)}
 .masked{font:700 22px/1 var(--mono);letter-spacing:.3em;color:var(--faint);margin:6px 0 12px}
 .empty{padding:30px;text-align:center;color:var(--dim);border:1px dashed var(--edge);border-radius:4px}
@@ -308,7 +317,7 @@ main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
 .form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
-label,main.login label{grid-template-columns:1fr;gap:4px}
+label,main.login label{grid-template-columns:minmax(0,1fr);gap:4px}
 .toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}.toolbar :is(button,.btn){min-height:40px}.toolbar>a:not(.btn),.toolbar .clear{min-height:40px}
 .board,.board tbody,.board tr,.board td{display:block;width:100%}
 /* Column heads stay for screen readers (app.js adds the table roles the block layout takes away). */
@@ -340,9 +349,17 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .list.edit td[data-label]::before{content:attr(data-label);content:attr(data-label)/"";display:block;margin-bottom:3px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 .list.edit td.act{padding-top:4px}.list.edit td.act .controls{flex-wrap:wrap}
 .fold-foot button{width:auto}}
-/* Requests: the site MFA code keeps its visible label; the button lines up with the input. */
-.board.requests form.mfa{align-items:flex-end}
-.board.requests form.mfa label{flex:1;min-width:16em;font-size:12px;color:var(--dim);white-space:nowrap}
+/* Requests: the site MFA code keeps its visible label; the button lines up with the input, on the same line. */
+.board.requests form.mfa{align-items:flex-end;gap:8px}
+.board.requests form.mfa label{flex:1 1 11em;min-width:11em;font-size:12px;color:var(--dim);white-space:nowrap}
+.board.requests form.mfa button{flex:none;white-space:nowrap}
+.board.requests .state{white-space:nowrap}
+@media (min-width:901px){
+.board.requests form.mfa{flex-wrap:nowrap}
+.board.requests form.mfa input{min-width:9em}
+.board.requests td.who,.board.requests td.action{min-width:0}
+.board.requests td.entry{min-width:11em}
+}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .nobreak{white-space:nowrap}
 .card .form-foot:first-child{margin:0 0 12px;align-items:center;flex-wrap:wrap}
@@ -409,13 +426,13 @@ details[open]>summary .fold-act{color:var(--dim)}
 /* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
 @media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}.fold-act{margin-left:auto}}
 /* Password field inside a long form; hidden until the confirmation is about to end (app.js reveals it). */
-.confirm-inline{margin-top:16px;padding-top:12px;border-top:1px dashed var(--rule)}
+.confirm-inline{margin-top:14px;padding-top:14px;border-top:1px dashed var(--rule)}
 .confirm-inline .note{margin:0 0 8px}
 /* Error page inside the signed-in shell */
-.error-page{max-width:760px}
+.error-page{max-width:var(--card)}
 /* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
    form that was sent, focuses it and links the messages to their fields. Its focus ring is red like the callout. */
-.error-summary{max-width:760px;scroll-margin-top:16px}
+.error-summary{max-width:var(--card);scroll-margin-top:16px}
 .error-summary:focus,.error-summary:focus-visible{outline:1px solid var(--stop);outline-offset:2px}
 .error-summary a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--stop);text-underline-offset:3px}
 .error-summary a:hover{color:var(--stop)}
@@ -429,32 +446,44 @@ input:is([type=checkbox],[type=radio])[aria-invalid="true"]{outline:2px solid va
 .field-error{display:block;grid-column:-2/-1;margin:0;color:var(--stop);font:400 12px/1.4 var(--mono);letter-spacing:0;text-transform:none}
 td>.field-error{margin-top:4px}
 /* A standalone card that is not a form (revealed values, the one-time token) keeps the form card width. */
-.card.solo{max-width:760px;margin-bottom:14px}
+.card.solo{max-width:var(--card);margin-bottom:14px}
 .card.danger>.block-label:first-child{margin-bottom:10px}
 /* Entry page: requests waiting for the owner sit right under the title. */
 .waiting-first>h2{margin-top:14px}
 .waiting-first{margin-bottom:18px}
 /* Destructive actions confirm in place: app.js turns the button into "Confirm <verb>" with a Cancel beside it and
-   the question from data-confirm as the note. */
+   the question from data-confirm as the note. The note wraps and never decides a width. */
 .confirm-step{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap;max-width:100%}
-.confirm-step .confirm-note{flex:0 1 auto;max-width:34ch;color:var(--ink);font:400 13px/1.4 var(--mono);letter-spacing:0;text-transform:none;white-space:normal;text-align:right}
-/* In a table row the question sits above the two buttons, so the action column stays narrow. */
-:is(.board,.list) .confirm-step{display:inline-grid;grid-template-columns:auto auto;justify-content:end;white-space:normal}
-:is(.board,.list) .confirm-step .confirm-note{grid-column:1/-1;justify-self:end;width:max-content;max-width:min(30ch,100%)}
-@media (max-width:900px){.board tr:has(.confirm-step) td:last-child{grid-area:auto/1/auto/-1!important;flex-basis:100%;justify-self:stretch!important;text-align:right}}
+.confirm-step .confirm-note{flex:0 1 auto;min-width:0;max-width:34ch;color:var(--ink);font:400 13px/1.4 var(--mono);letter-spacing:0;text-transform:none;
+white-space:normal;overflow-wrap:anywhere;text-align:right}
 .confirm-step button{flex:none;white-space:nowrap}
 .confirm-step button.armed{background:var(--stop);border-color:var(--stop);color:var(--on-accent)}
 .confirm-step button.armed:hover{color:var(--on-accent);box-shadow:0 0 14px var(--stop-glow)}
-.form-foot>.confirm-step:last-child{margin-left:auto;flex:none;max-width:60%}
+/* In a table row the question sits above the two buttons and takes their width (width:0 keeps it out of the
+   column's sizing). The column already has room for the armed buttons: app.js adds .confirm-size, an invisible
+   zero-height copy of them, to every such cell. */
+:is(.board,.list) .confirm-step{display:inline-grid;grid-template-columns:auto auto;justify-content:end;white-space:normal;vertical-align:middle}
+:is(.board,.list) .confirm-step .confirm-note{grid-column:1/-1;width:0;min-width:100%;max-width:none}
+.confirm-size{display:flex;flex-wrap:nowrap;justify-content:flex-end;gap:8px;height:0;margin:0!important;overflow:hidden;visibility:hidden;pointer-events:none}
+.confirm-size .btn{flex:none;white-space:nowrap;min-height:0!important;padding-top:0!important;padding-bottom:0!important}
+@media (max-width:900px){
+/* Phone: the armed cell takes a line of its own across the card; the question wraps above the buttons. */
+.confirm-size{display:none}
+.board tr:has(.confirm-step) td:has(.confirm-step){grid-area:auto/1/auto/-1!important;flex:1 1 100%!important;width:100%;max-width:100%;margin-left:0!important;justify-self:stretch!important;text-align:right}
+:is(.board,.list) :is(.controls,form):has(>.confirm-step,>form>.confirm-step){display:flex;flex-wrap:wrap;justify-content:flex-end;width:100%}
+:is(.board,.list) .controls>form:has(>.confirm-step){flex:1 1 100%;justify-content:flex-end}
+:is(.board,.list) .confirm-step{display:flex;width:100%}
+:is(.board,.list) .confirm-step .confirm-note{flex:1 1 100%;width:auto;min-width:0}
+}
+.form-foot>.confirm-step:last-child{margin-left:auto;flex:0 1 auto;max-width:60%}
 @media (max-width:900px){.form-foot>.confirm-step:last-child{align-self:flex-end;max-width:100%}}
-/* Activity: the event in words, its code as the small secondary text. */
-.board.activity .event-name{display:block;font-weight:600}
-.board.activity .event-code{display:inline-block;margin-top:3px;font-size:12px;color:var(--dim)}
+/* Activity: the event in words, then its code as dim small text on the same line. */
+.board.activity .event-name{font-weight:600}
+.board.activity .event-code{margin-left:6px;font-size:12px;color:var(--dim)}
 @media (max-width:900px){
 .board.activity td.when{order:1}.board.activity td.event{order:0;flex-basis:100%}
 .board.activity td.actor{order:2}.board.activity td.subject{order:3}.board.activity td.outcome{order:4;margin-left:auto}
 .board.activity td.actor,.board.activity td.subject{flex:0 1 auto}
-.board.activity .event-name{display:inline}.board.activity .event-code{margin:0 0 0 4px}
 }
 .board .line.expires{color:var(--dim)}
 
@@ -475,11 +504,13 @@ td>.field-error{margin-top:4px}
 .board.compact-board td.end{margin-left:auto}
 .board .k,.board td.when small.k,.board td.name small.k{display:inline;font-size:12px;color:var(--faint)}
 .board.compact-board .controls{margin-top:4px}
-/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", state and times, the id last. */
+/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", the state, the times one per
+   line from the left, the controls, and the request id as the last quiet line. */
 .board.requests td.who{order:0}.board.requests td.action{order:1;flex:1 1 40%}.board.requests td.entry{order:2;flex-basis:100%}
-.board.requests td.state{order:3}.board.requests td.when{order:4}.board.requests td.decision{order:5;flex-basis:100%}
+.board.requests td.state{order:3;flex-basis:100%}.board.requests td.when{order:4;flex-basis:100%}.board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
-.board.requests td.action small.rid{display:none}.board.requests td.when small.rid{display:block}
+.board.requests td.action small.rid{display:none}
+.board.requests td:is(.when,.decision) small.rid{display:block;margin-top:6px;color:var(--faint)}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
 /* Entry page: versions and agent access */
 .board.compact-board td.act{margin-left:0}
@@ -561,10 +592,17 @@ details.import-ref>.inner .scroll{margin:0}
 .setup-first{margin-top:20px}
 .project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
 .project-card[id]{scroll-margin-top:16px}
-.project-head h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0;margin:0}
+.project-head{align-items:center;gap:10px 14px}
+.project-head h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0;margin:0}
 .project-head h3 .name{overflow-wrap:anywhere}
 .project-head h3 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacing:0;text-transform:none}
-.project-head .inline{flex:0 1 24em;min-width:min(100%,16em);max-width:100%}
+.project-head details.project-edit{margin:0;flex:0 0 auto}
+.project-head details.project-edit>summary{min-height:32px;padding:5px 11px;gap:6px}
+.project-head details.project-edit:not([open]):hover{border-color:var(--amber)}
+.project-head details.project-edit[open]{flex:1 0 100%}
+.project-head details.project-edit[open]>summary{min-height:40px;padding:8px 14px}
+.card details.fold .form-foot .controls{flex:0 1 auto;max-width:100%}
+.card details.fold .error-summary{max-width:none}
 .card details.fold:last-of-type{margin-bottom:0}
 .card>.note+details.fold{margin-top:8px}
 details.more.field-rules{margin:14px 0 0}
@@ -572,11 +610,14 @@ details.more.field-rules>summary{color:var(--dim);font-weight:400}
 details.more.field-rules>summary:hover{color:var(--ink)}
 details.more.field-rules ul{margin:0;padding-left:20px}
 details.more.field-rules li+li{margin-top:4px}
+/* Form section dividers inside a card (move to global CSS next to fieldset/legend when Fable merges). */
+form.action fieldset+fieldset{margin-top:14px}
+form.action fieldset+fieldset>legend{padding-top:14px;border-top:1px dashed var(--rule)}
+form.action fieldset>:last-child{margin-bottom:0}
 @media (max-width:900px){
-.project-head{gap:10px}
-.project-head .inline{flex:none;flex-direction:row;flex-wrap:nowrap;align-items:center}
-.project-head .inline input:not([type=checkbox]){width:auto;min-width:0}
-.project-head .inline>button{flex:none;align-self:auto}
+.project-head{flex-direction:row;align-items:center;gap:10px}
+.project-head details.project-edit>summary{min-height:40px;padding:8px 12px}
+.project-head details.project-edit>summary .fold-act{margin-left:0}
 .list.edit td[data-label=""]::before{content:none}
 .card details.fold:not(.env)>summary .fold-name{flex:1 1 auto}
 }

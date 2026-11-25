@@ -4,7 +4,7 @@
 <h1>Members</h1>
 @php
     $soleOwner = $members->where('role', 'owner')->count() === 1;
-    $roles = ['viewer' => 'viewer — metadata only', 'editor' => 'editor — create, change, reveal', 'owner' => 'owner — members, agents, grants'];
+    $roles = ['viewer' => 'viewer — view entry metadata', 'editor' => 'editor — add, change, reveal entries; edit Setup', 'owner' => 'owner — editor access; manage members, agents, grants'];
 @endphp
 <p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
 <div class="scroll"><table class="board compact-board members">

@@ -61,8 +61,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - `/` — the entry list for the current workspace: header with `+ Add an entry` (the one `go`) and `Import`
   (editor+), search and filters (project, environment, type, state), the board, pager. No workspace or project
   forms on this page; empty states link to Setup.
-- `/entries/{id}` — one entry, in this order: title, requests waiting for a decision (owners, only when any wait),
-  jump links, facts, secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
+- `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
+  wait), facts, secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
 - `/entries/new`, `/entries/new?entry=` — add / update form.
 - `/workspaces/{w}/import` — paste a JSON import (editor+).
@@ -148,7 +148,8 @@ Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request),
 links on the entry page), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
 label), `.confirm-inline` (password field inside a long form), the compact phone card for boards, `.card.solo`
 (a capped standalone card), `.confirm-step` (inline two-step confirmation that replaces `confirm()` for every
-`data-confirm` form) and `.field-error` (message under an invalid field).
+`data-confirm` form) and `.field-error` (message under an invalid field), `.legend` (form section titles; sections inside a card are
+`fieldset`/`legend`, not headings) and `.capped` (short lists capped at the card width).
 
 Validation messages use the visible labels from `lang/en/validation.php` (`attributes`, plus `form_attributes`
 keyed by request path for labels that differ per form). Messages thrown by hand with

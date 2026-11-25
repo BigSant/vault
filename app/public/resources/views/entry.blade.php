@@ -28,20 +28,23 @@
         <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
     </div>
 </div>
-{{-- Requests that wait for this owner come first, right under the title. Their count is said once, by the section heading. --}}
-@if($isOwner && $waitingCount > 0)
-<div class="waiting-first">
-@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
-</div>
-@endif
+@php $hasWaiting = $isOwner && $waitingCount > 0; @endphp
 @if($isEditor)
-{{-- Jump links: the sections in page order, each named like its heading. Links, not actions. --}}
+{{-- Jump links right under the title: the sections in page order, each named like its heading. Links, not actions.
+     When requests wait for this owner, they are the first link and the first section. --}}
 <nav class="subnav" aria-label="Entry sections">
     <span class="subnav-label" aria-hidden="true">On this page</span>
+    @if($hasWaiting)<a href="#waiting">Requests waiting for you</a>@endif
     <a href="#values">Secret values</a><a href="#versions">Versions</a>
     @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
     @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
 </nav>
+@endif
+{{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading. --}}
+@if($hasWaiting)
+<div class="waiting-first">
+@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
+</div>
 @endif
 
 <table class="facts">

@@ -38,7 +38,7 @@
 @if($navSpaces->isEmpty())
     <div class="empty">You are in no workspace yet. <a href="/workspaces/new">Add a workspace</a></div>
 @else
-<div class="scroll"><table class="list">
+<div class="scroll capped"><table class="list">
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
     <tbody>
     @foreach($navSpaces as $s)

@@ -8,8 +8,9 @@
      $hideEntry   leave out the Entry column (the entry page)
      $heading, $sectionId, $empty   override the h2 text, its id and the empty text in the single modes
      $refreshUrl  adds a "Refresh states" link under the last table
-     Phone card: "<agent> requests <action>", then "<entry> · <project> / <environment>", then state and times;
-     the request id is the last, quiet item (on wide screens it sits under the action). --}}
+     Columns: Agent · Action · Entry. Phone card: "<agent> requests <action>", then "<entry> · <project> /
+     <environment>", the state, then "Requested …", "Expires …" or "Finished …" each on a line of its own, the
+     controls, and the request id as the last, quiet line (on wide screens it sits under the action). --}}
 @php
     $mode = $mode ?? (isset($historyOnly) ? 'history' : 'waiting');
     $isWaiting = fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time();
@@ -36,7 +37,7 @@
     <div class="empty">{{ $none }}</div>
 @else
 <div class="scroll"><table class="board compact-board requests">
-    <thead><tr><th scope="col">Agent</th>@empty($hideEntry)<th scope="col">Entry</th>@endempty<th scope="col">Action</th><th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th>@empty($hideEntry)<th scope="col">Entry</th>@endempty<th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
     <tbody>
     @foreach($rows as $o)
         @php
@@ -45,12 +46,13 @@
         @endphp
         <tr class="{{ $stripes[$state] ?? 'is-idle' }}">
             <td class="who" data-label="Agent"><b class="nobreak">{{ $o->agent }}</b></td>
-            @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             <td class="name action" data-label="Action"><small class="k">requests</small> <code>{{ $o->action }}</code><small class="muted rid" title="Request {{ $o->id }}">{{ substr($o->id, 0, 8) }}</small></td>
-            <td class="state" data-label="State">@if(in_array($state, ['running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}"></span> @endif @include('outcome', ['outcome' => $state])</td>
-            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> {{ $time($o->created_at) }} <small class="k">UTC</small>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires">Expires {{ $time($o->expires_at) }} UTC</span>@endunless <small class="k rid" title="Request {{ $o->id }}">Request {{ substr($o->id, 0, 8) }}</small></td>
+            @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
+            {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
+            <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
+            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> {{ $time($o->created_at) }} <small class="k">UTC</small>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires">Expires {{ $time($o->expires_at) }} UTC</span>@endunless</td>
             @if($finished)
-            <td class="when" data-label="Finished (UTC)">@if(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> {{ $time($o->updated_at) }} <small class="k">UTC</small>@endif</td>
+            <td class="when" data-label="Finished (UTC)">@if(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> {{ $time($o->updated_at) }} <small class="k">UTC</small>@endif <small class="k rid" title="Request {{ $o->id }}">Request {{ substr($o->id, 0, 8) }}</small></td>
             @else
             <td class="decision" data-label="Decision">
                 @if($o->state === 'pending')
@@ -58,6 +60,7 @@
                 @else
                     <form class="inline mfa" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/mfa">@csrf<label class="stack"><span>Site MFA code (6–8 digits)</span><input name="code" pattern="[0-9]{6,8}" inputmode="numeric" autocomplete="one-time-code" required maxlength="8" aria-label="Site MFA code (6–8 digits): {{ $what }}"></label><button class="ok" aria-label="Continue sign-in: {{ $what }}">Continue sign-in</button></form>
                 @endif
+                <small class="k rid" title="Request {{ $o->id }}">Request {{ substr($o->id, 0, 8) }}</small>
             </td>
             @endif
         </tr>
