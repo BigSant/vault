@@ -2,34 +2,14 @@
 @section('title', 'Projects')
 @section('content')
 @php $yesNo = fn ($name, $on, $form = null) => '<select name="'.e($name).'"'.($form ? ' form="'.e($form).'"' : '').' aria-label="Production"><option value="0">no</option><option value="1"'.($on ? ' selected' : '').'>yes</option></select>'; @endphp
-<h1>Projects and environments</h1>
+<div class="head"><h1>Setup</h1><div class="controls"><a class="btn go" href="#add-project">+ Add a project</a></div></div>
+@include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
 <div class="stats">
     <div class="stat"><b>{{ $projects->count() }}</b><span>projects</span></div>
     <div class="stat"><b>{{ $environments->flatten()->count() }}</b><span>environments</span></div>
     <div class="stat"><b>{{ $counts->sum() }}</b><span>entries</span></div>
 </div>
-<p class="note">Only empty projects and environments can be removed (archived entries count as entries).</p>
-
-<div class="deck">
-    <form class="action" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
-        <h3>Add a project</h3>
-        <label><span>Name</span><input name="name" required maxlength="100" placeholder="shop"></label>
-        <div class="form-foot"><p class="note">Gets these environments: {{ implode(', ', array_column($template, 'name')) ?: 'none' }}.</p><button>Add project</button></div>
-    </form>
-    <form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
-        <h3>Environment template<small>Used for new projects only. Existing projects keep theirs.</small></h3>
-        <table class="list">
-            <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
-            <tbody id="template-rows">
-            @foreach($template as $env)
-                <tr><td><input name="env_name[]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', $env['production']) !!}</td></tr>
-            @endforeach
-                <tr data-row-template><td><input name="env_name[]" maxlength="60" placeholder="new environment" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', false) !!}</td></tr>
-            </tbody>
-        </table>
-        <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Row</button><button>Save template</button></div></div>
-    </form>
-</div>
+<p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 @forelse($projects as $project)
     @php $envs = $environments[$project->id] ?? collect(); $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0); @endphp
@@ -71,6 +51,28 @@
         </form>
     </div>
 @empty
-    <div class="empty">No projects yet. Add the first one above.</div>
+    <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>
 @endforelse
+
+<h2>New projects</h2>
+<div class="deck">
+    <form class="action" id="add-project" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
+        <h3>Add a project</h3>
+        <label><span>Name</span><input name="name" required maxlength="100" placeholder="shop"></label>
+        <div class="form-foot"><p class="note">Gets these environments: {{ implode(', ', array_column($template, 'name')) ?: 'none' }}.</p><button>Add project</button></div>
+    </form>
+    <form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
+        <h3>Environment template<small>Used for new projects only. Existing projects keep theirs.</small></h3>
+        <table class="list">
+            <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
+            <tbody id="template-rows">
+            @foreach($template as $env)
+                <tr><td><input name="env_name[]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', $env['production']) !!}</td></tr>
+            @endforeach
+                <tr data-row-template><td><input name="env_name[]" maxlength="60" placeholder="new environment" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', false) !!}</td></tr>
+            </tbody>
+        </table>
+        <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Row</button><button>Save template</button></div></div>
+    </form>
+</div>
 @endsection

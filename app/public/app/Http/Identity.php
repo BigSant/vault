@@ -135,10 +135,15 @@ final class Identity
     public function confirm(Request $r)
     {
         $d = $r->validate(['current_password' => 'required|string|max:200']);
-        abort_unless(Hash::check($d['current_password'], $r->user()->password), 401);
+        $return = Account::safePath($r->input('return'));
+        if (! Hash::check($d['current_password'], $r->user()->password)) {
+            abort_if($r->expectsJson(), 401);
+
+            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true], 401);
+        }
         $r->session()->put('confirmed_at', time());
 
-        return redirect('/');
+        return redirect($return);
     }
 
     public function changePassword(Request $r)

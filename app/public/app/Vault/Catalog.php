@@ -310,7 +310,7 @@ final class Catalog
 
     public function import(string $workspace, #[\SensitiveParameter] string $json): int
     {
-        $this->access->workspace($workspace, ['owner']);
+        $this->access->workspace($workspace, ['owner', 'editor']);
         try {
             $rows = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
         } catch (\Throwable) {

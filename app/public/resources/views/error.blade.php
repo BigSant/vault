@@ -7,7 +7,7 @@
     <div class="callout bad">
         <p>{{ match($status) {
             401 => 'Check your sign-in details or the authenticator code.',
-            403 => 'This needs the right role and a fresh password confirmation.',
+            403 => 'Not allowed. Check your role in the workspace, or the code you entered.',
             404 => 'Not found, or not available to you.',
             409 => 'The entry or permission changed meanwhile. Reload the page and try again.',
             419 => 'The session expired. Sign in again.',

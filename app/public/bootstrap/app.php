@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Account;
 use App\Http\MachineAuth;
 use App\Http\OwnerSession;
 use App\Http\SecurityHeaders;
+use App\Vault\ConfirmationRequired;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -32,6 +34,10 @@ return Application::configure(basePath: dirname(__DIR__))
             $codes = [400 => 'invalid_request', 401 => 'authentication_required', 403 => 'access_denied', 404 => 'not_found', 405 => 'method_not_allowed', 409 => 'conflict', 413 => 'too_large', 415 => 'unsupported_media_type', 419 => 'session_expired', 422 => 'invalid_input', 429 => 'rate_limited', 503 => 'unavailable'];
             if ($r->is('api/*') || $r->expectsJson()) {
                 return response()->json(['error' => $codes[$status]], $status);
+            }
+
+            if ($error instanceof ConfirmationRequired) {
+                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => true, 'failed' => false], 403);
             }
 
             // Validation texts name fields and rules, never submitted values.

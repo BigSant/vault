@@ -1,0 +1,54 @@
+@extends('layout')
+@section('title', 'Account')
+@section('content')
+<h1>Account</h1>
+<table class="facts">
+    <tr><th scope="row">Name</th><td>{{ $user->name }}</td></tr>
+    <tr><th scope="row">Email</th><td>{{ $user->email }}</td></tr>
+    <tr><th scope="row">Sensitive actions</th><td>
+        @if($confirmedUntil)
+            <span class="chip ok">confirmed</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
+        @else
+            <span class="chip muted">not confirmed</span> <a href="#confirm">Confirm your password</a> to reveal values or change access.
+        @endif
+    </td></tr>
+</table>
+
+<div class="deck">
+    @unless($confirmedUntil)
+    <form class="action" id="confirm" method="post" action="/confirm">@csrf
+        <input type="hidden" name="return" value="/account">
+        <h3>Confirm sensitive actions<small>Lasts 5 minutes. Needed to reveal values and to change entries, access or structure.</small></h3>
+        <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
+        <div class="form-foot"><p class="note">Reveals and access changes are written to the activity log.</p><button class="go">Confirm</button></div>
+    </form>
+    @endunless
+    <form class="action" method="post" action="/password">@csrf
+        <h3>Change sign-in password</h3>
+        <label><span>Current password</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
+        <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
+        <label><span>Repeat</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
+        <div class="form-foot"><p class="note">At least 14 characters. Every session signs out, this one too.</p><button class="stop">Change and sign out</button></div>
+    </form>
+</div>
+
+<h2>Workspaces</h2>
+@if($navSpaces->isEmpty())
+    <div class="empty">You are in no workspace yet. <a href="/workspaces/new">Create one</a></div>
+@else
+<div class="scroll"><table class="list">
+    <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
+    <tbody>
+    @foreach($navSpaces as $s)
+        <tr><td><a href="/?workspace={{ $s->id }}">{{ $s->name }}</a></td><td><span class="chip {{ $s->role === 'owner' ? 'warn' : ($s->role === 'editor' ? 'ok' : 'steel') }}">{{ $s->role }}</span></td></tr>
+    @endforeach
+    </tbody>
+</table></div>
+<div class="controls"><a class="btn" href="/workspaces/new">+ New workspace</a></div>
+@endif
+
+<h2>Sign out</h2>
+<form class="inline" method="post" action="/logout">@csrf
+    <button>Lock</button><span class="note">Ends this session. Sign in again with your password and authenticator code.</span>
+</form>
+@endsection

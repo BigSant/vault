@@ -1,0 +1,165 @@
+<?php
+
+namespace Tests;
+
+use App\Models\User;
+use Illuminate\Foundation\Testing\TestCase;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
+
+/** The signed-in shell: header navigation, the account page and the password confirmation flow. */
+final class ShellTest extends TestCase
+{
+    private const PASSWORD = 'Synthetic-password-123!';
+
+    private string $workspace;
+
+    private string $base;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->assertSame(':memory:', config('database.connections.sqlite.database'));
+        Artisan::call('migrate', ['--force' => true]);
+        Http::preventStrayRequests();
+        $this->workspace = (string) Str::uuid();
+        $this->base = '/workspaces/'.$this->workspace;
+        DB::table('workspaces')->insert(['id' => $this->workspace, 'name' => 'Main space']);
+    }
+
+    private function signIn(string $role, ?int $confirmedAt = null): User
+    {
+        $user = User::create(['id' => (string) Str::uuid(), 'name' => ucfirst($role).' Person', 'email' => $role.'@example.test', 'password' => Hash::make(self::PASSWORD), 'mfa_enabled' => true]);
+        DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $user->id, 'role' => $role]);
+        $this->actingAs($user)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => $confirmedAt ?? time(), 'auth_revision' => $user->credentialRevision()]);
+
+        return $user;
+    }
+
+    private function waitingRequest(string $state = 'pending', string $workspace = ''): void
+    {
+        $machine = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $workspace ?: $this->workspace, 'name' => 'agent', 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
+        DB::table('operations')->insert(['id' => (string) Str::uuid(), 'machine_id' => $machine, 'grant_id' => (string) Str::uuid(), 'entry_id' => (string) Str::uuid(),
+            'action' => 'test.http', 'version' => 1, 'state' => $state, 'request_id' => 'r-'.$machine, 'expires_at' => now()->addHour(), 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    public static function roles(): array
+    {
+        return [
+            'owner' => ['owner', ['requests', 'members', 'structure', 'audit'], []],
+            'editor' => ['editor', ['structure'], ['requests', 'members', 'audit']],
+            'viewer' => ['viewer', [], ['requests', 'members', 'structure', 'audit']],
+        ];
+    }
+
+    #[DataProvider('roles')]
+    public function test_primary_nav_shows_only_what_the_role_can_open(string $role, array $shown, array $hidden): void
+    {
+        $this->signIn($role);
+        $response = $this->get('/')->assertOk()->assertSee('aria-label="Main"', false)->assertSee('href="/?workspace='.$this->workspace.'"', false)
+            ->assertSee('href="/account"', false)->assertSee('action="/logout"', false)->assertSee('href="/workspaces/new"', false)
+            ->assertDontSee('Confirm sensitive actions')->assertDontSee('Change sign-in password');
+        foreach ($shown as $section) {
+            $response->assertSee('href="'.$this->base.'/'.$section.'"', false);
+        }
+        foreach ($hidden as $section) {
+            $response->assertDontSee('href="'.$this->base.'/'.$section.'"', false);
+        }
+    }
+
+    public function test_active_nav_item_and_setup_tabs_follow_the_page(): void
+    {
+        $this->signIn('editor');
+        $this->get($this->base.'/structure')->assertOk()
+            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
+            ->assertSeeInOrder(['aria-label="Setup"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false);
+        $this->get($this->base.'/types')->assertOk()
+            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
+            ->assertSeeInOrder(['aria-label="Setup"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false);
+        $this->get('/')->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="page">Entries</a>', false);
+    }
+
+    public function test_agents_item_counts_waiting_requests_for_owners_only(): void
+    {
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Other space']);
+        $this->waitingRequest('pending');
+        $this->waitingRequest('requires_user_action');
+        $this->waitingRequest('succeeded');
+        $this->waitingRequest('pending', $other);
+        $chip = '<span class="chip warn" title="Requests waiting for you">2</span>';
+        $this->signIn('owner');
+        $this->get('/')->assertOk()->assertSee($chip, false);
+        $this->signIn('editor');
+        $this->get('/')->assertOk()->assertDontSee('Requests waiting for you');
+    }
+
+    public function test_workspace_switcher_keeps_the_section_when_the_role_allows_it(): void
+    {
+        $user = $this->signIn('owner');
+        $second = (string) Str::uuid();
+        $third = (string) Str::uuid();
+        DB::table('workspaces')->insert([['id' => $second, 'name' => 'Second space'], ['id' => $third, 'name' => 'Third space']]);
+        DB::table('members')->insert([['workspace_id' => $second, 'user_id' => $user->id, 'role' => 'editor'], ['workspace_id' => $third, 'user_id' => $user->id, 'role' => 'viewer']]);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('Second space')
+            ->assertSee('href="/workspaces/'.$second.'/structure"', false)->assertSee('href="/?workspace='.$third.'"', false);
+        $this->get($this->base.'/audit')->assertOk()->assertSee('href="/?workspace='.$second.'"', false)->assertDontSee('/workspaces/'.$second.'/audit');
+    }
+
+    public function test_account_page_shows_identity_confirmation_state_and_forms(): void
+    {
+        $this->signIn('viewer');
+        $this->get('/account')->assertOk()->assertSee('Viewer Person')->assertSee('viewer@example.test')->assertSee('Main space')
+            ->assertSee('confirmed</span> until', false)->assertSee('action="/password"', false)->assertSee('action="/logout"', false)
+            ->assertDontSee('name="return" value="/account"', false);
+        $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()->assertSee('not confirmed')
+            ->assertSee('name="return" value="/account"', false);
+        $this->get('/workspaces/new')->assertOk()->assertSee('action="/workspaces"', false);
+    }
+
+    public function test_unconfirmed_sensitive_post_answers_403_with_the_confirm_form(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->get($this->base.'/structure?from=test')->assertOk();
+        // Browsers send no Referer here, so the last page shown is the way back.
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure'])->assertForbidden()
+            ->assertSee('action="/confirm"', false)->assertSee('name="current_password"', false)
+            ->assertSee('name="return" value="'.$this->base.'/structure?from=test"', false);
+        $this->assertSame(0, DB::table('projects')->count());
+        $this->post($this->base.'/projects', ['name' => 'shop'], ['Referer' => rtrim(config('app.url'), '/').$this->base.'/types'])->assertForbidden()
+            ->assertSee('name="return" value="'.$this->base.'/types"', false);
+        $this->post($this->base.'/projects', ['name' => 'shop'], ['Referer' => 'https://evil.example/workspaces/x'])->assertForbidden()
+            ->assertSee('name="return" value="'.$this->base.'/structure?from=test"', false)->assertDontSee('evil.example');
+        $this->postJson($this->base.'/projects', ['name' => 'shop'])->assertForbidden()->assertExactJson(['error' => 'access_denied']);
+        $this->get('/confirm?return='.urlencode($this->base.'/types'))->assertOk()->assertSee('name="return" value="'.$this->base.'/types"', false);
+        $this->get('/confirm?return='.urlencode('//evil.example'))->assertOk()->assertSee('name="return" value="/"', false);
+    }
+
+    public function test_confirm_returns_to_a_safe_path_and_then_the_action_works(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->post('/confirm', ['current_password' => 'wrong-password', 'return' => $this->base.'/structure'])->assertUnauthorized()
+            ->assertSee('name="return" value="'.$this->base.'/structure"', false);
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure'])->assertForbidden();
+        $this->post('/confirm', ['current_password' => self::PASSWORD, 'return' => $this->base.'/structure?x=1'])->assertRedirect($this->base.'/structure?x=1');
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure'])->assertRedirect($this->base.'/structure');
+        $this->assertSame(1, DB::table('projects')->count());
+    }
+
+    public static function unsafeReturns(): array
+    {
+        return [['//evil.example'], ['https://evil.example'], ['/\\evil'], ['/ok//evil.example'], ["/a\nb"], ['evil'], ['/confirm?return=/'], [''], [['/a']]];
+    }
+
+    #[DataProvider('unsafeReturns')]
+    public function test_confirm_ignores_unsafe_return_targets(mixed $return): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->post('/confirm', ['current_password' => self::PASSWORD, 'return' => $return])->assertRedirect('/');
+    }
+}

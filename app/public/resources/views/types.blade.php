@@ -11,7 +11,8 @@
     };
     $required = fn (bool $on) => '<select name="field_required[]" aria-label="Required"><option value="1"'.($on ? ' selected' : '').'>yes</option><option value="0"'.($on ? '' : ' selected').'>no</option></select>';
 @endphp
-<h1>Entry types</h1>
+<div class="head"><h1>Setup</h1><div class="controls"><a class="btn go" href="#add-type">+ Add a type</a></div></div>
+@include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
 <div class="stats">
     <div class="stat"><b>{{ $types->count() }}</b><span>types</span></div>
     <div class="stat"><b>{{ $types->sum(fn ($t) => count($t->fields)) }}</b><span>fields</span></div>
@@ -19,20 +20,9 @@
 </div>
 <p class="note">A type lists the fields an entry has. Every field value is stored encrypted in OpenBao, whatever its kind; the kind only changes the input. The type key is visible to agents, so keep names free of sensitive data.</p>
 
-<details class="more" @if($types->isEmpty()) open @endif>
-    <summary>Add a type</summary>
-    <div class="inner"><form method="post" action="/workspaces/{{ $space->id }}/types">@csrf
-        <label><span>Type name</span><input name="name" required maxlength="80" placeholder="FTP server"></label>
-        <div class="scroll"><table class="list">
-            <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
-            <tbody id="rows-new">
-                <tr data-row-template><td><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Server address" aria-label="Field label"></td><td>{!! $kindSelect() !!}</td><td>{!! $required(true) !!}</td></tr>
-            </tbody>
-        </table></div>
-        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new">+ Field</button><button>Create type</button></div></div>
-    </form></div>
-</details>
-
+@if($types->isEmpty())
+    <div class="empty"><b>No entry types yet</b>An entry needs a type. <a href="#add-type">Add the first type</a></div>
+@endif
 @foreach($types as $type)
     @php $used = $usage[$type->key] ?? 0; @endphp
     <h2 id="type-{{ $type->key }}">{{ $type->name }}</h2>
@@ -71,4 +61,18 @@
     @endif
     </div>
 @endforeach
+
+<h2>Add a type</h2>
+<div class="deck wide">
+    <form class="action" id="add-type" method="post" action="/workspaces/{{ $space->id }}/types">@csrf
+        <label><span>Type name</span><input name="name" required maxlength="80" placeholder="FTP server"></label>
+        <div class="scroll"><table class="list">
+            <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
+            <tbody id="rows-new">
+                <tr data-row-template><td><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Server address" aria-label="Field label"></td><td>{!! $kindSelect() !!}</td><td>{!! $required(true) !!}</td></tr>
+            </tbody>
+        </table></div>
+        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new">+ Field</button><button>Create type</button></div></div>
+    </form>
+</div>
 @endsection

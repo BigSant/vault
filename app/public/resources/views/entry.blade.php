@@ -2,7 +2,10 @@
 @section('title', $entry->name)
 @section('content')
 @php
-    $canEdit = $role !== 'viewer' && $entry->state === 'active';
+    $isOwner = $space->role === 'owner';
+    $isEditor = $space->role !== 'viewer';
+    $canEdit = $isEditor && $entry->state === 'active';
+    $showLifecycle = $canEdit || ($entry->state === 'archived' && $isEditor);
     $label = fn ($key) => $labels[$key] ?? $key;
     $metaNames = ['name' => 'Name', 'alias' => 'Agent alias', 'tags' => 'Tags', 'rotate_at' => 'Rotation reminder'];
     $stateChip = ['active' => 'ok', 'archived' => 'muted', 'destroyed' => 'bad'][$entry->state] ?? 'muted';
@@ -17,7 +20,7 @@
     </div>
     @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Update</a>@endif
 </div>
-<nav class="subnav"><a class="btn" href="#data">Values</a><a class="btn" href="#versions">Versions</a>@if($role === 'owner')<a class="btn" href="#access">Agent access</a><a class="btn" href="#activity">Activity</a>@endif</nav>
+<nav class="subnav"><a class="btn" href="#data">Values</a><a class="btn" href="#versions">Versions</a>@if($showLifecycle)<a class="btn" href="#lifecycle">Lifecycle</a>@endif @if($isOwner)<a class="btn" href="#access">Agent access</a><a class="btn" href="#activity">Activity</a>@endif</nav>
 
 <table class="facts">
     <tr><th>Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
@@ -53,7 +56,7 @@
     @endisset
     @if($canEdit)
         <div class="form-foot">
-            <p class="note">Every reveal goes to the activity log. If asked, confirm your password at the bottom of the page. Older versions are under Versions.</p>
+            <p class="note">Every reveal goes to the activity log. You may be asked to confirm your password first. Older versions are under Versions.</p>
             <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<button class="go">Reveal current</button></form>
         </div>
     @endif
@@ -111,8 +114,8 @@
 </table></div>
 @if(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
 
-@if($canEdit || ($entry->state === 'archived' && $role !== 'viewer'))
-<h2>Lifecycle</h2>
+@if($showLifecycle)
+<h2 id="lifecycle">Lifecycle</h2>
 <div class="deck">
     @if($canEdit)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Agent permissions for it are revoked.">@csrf
@@ -120,12 +123,12 @@
         <div class="form-foot"><p class="note">Revokes every agent permission for this entry. You can bring it back later.</p><button class="stop">Archive</button></div>
     </form>
     @endif
-    @if($entry->state === 'archived' && $role !== 'viewer')
+    @if($entry->state === 'archived' && $isEditor)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/unarchive">@csrf
         <h3>Restore from archive</h3>
         <div class="form-foot"><p class="note">Agent permissions have to be granted again.</p><button>Restore</button></div>
     </form>
-    @if($role === 'owner')
+    @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf
         <h3>Destroy permanently</h3>
         <label><span>Type DELETE</span><input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
@@ -136,12 +139,15 @@
 </div>
 @endif
 
-@if($role === 'owner')
+@if($isOwner)
 <h2 id="access">Agent access</h2>
+@if($grants->isEmpty())
+    <div class="empty">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
+@else
 <div class="scroll"><table class="board">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires</th><th scope="col">State</th></tr></thead>
     <tbody>
-    @forelse($grants as $grant)
+    @foreach($grants as $grant)
         @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
             <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
@@ -150,11 +156,11 @@
             <td class="when" data-label="Expires">{{ $grant->expires_at }}</td>
             <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
-    @empty
-        <tr class="is-idle"><td colspan="5" data-label="">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/settings">Grant an action</a></td></tr>
-    @endforelse
+    @endforeach
     </tbody>
 </table></div>
+<p class="note">Read-only summary. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
+@endif
 @include('operations', ['workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id])
 <h2 id="activity">Activity</h2>
 <p class="note">The last 30 events for this entry and its operations.</p>

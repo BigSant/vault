@@ -35,6 +35,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   | Activity | `/workspaces/{w}/audit` | owner |
 
   The Agents item carries a count chip when requests wait for a decision or an MFA code.
+- The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
+  derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
 - **Account menu** (`<details>` under the user's name): Account → `GET /account`, Lock (POST `/logout`).
 
 ## Areas
@@ -81,8 +83,11 @@ Two tabs: **Projects · Entry types**.
 ### Account (any signed-in user)
 
 - `/account` — who you are, sensitive-action confirmation state (with the confirm form), change password, sign out.
-- `/confirm?return=/path` — confirm your password. A sensitive POST without a fresh confirmation answers 403
-  with this form instead of a generic error; after confirming you go back to `return` (a same-origin path only).
+- `/confirm?return=/path` — confirm your password. A sensitive POST without a fresh confirmation throws
+  `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
+  go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
+  `Referrer-Policy: no-referrer` hides the Referer, the return path falls back to the last page shown (kept in the
+  session as `last_page`). A wrong password re-renders the form with 401.
 - `/workspaces/new` — create a workspace.
 
 ## Ownership of files

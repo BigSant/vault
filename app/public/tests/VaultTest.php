@@ -112,6 +112,53 @@ final class VaultTest extends TestCase
         return [$id, $token, $grant];
     }
 
+    public function test_workspace_navigation_enforces_roles(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        foreach (['owner', 'editor', 'viewer'] as $role) {
+            DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => $role]);
+            foreach (['requests', 'agents', 'grants', 'members'] as $page) {
+                $this->get($base.'/'.$page)->assertStatus($role === 'owner' ? 200 : 404);
+            }
+            if ($role === 'owner') {
+                $this->get($base.'/settings')->assertRedirect($base.'/requests');
+            } else {
+                $this->get($base.'/settings')->assertNotFound();
+            }
+        }
+        $this->get($base.'/import')->assertNotFound();
+        $this->post($base.'/import')->assertNotFound();
+    }
+
+    public function test_owner_and_editor_can_open_import(): void
+    {
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $this->get($url)->assertOk();
+        DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
+        $this->get($url)->assertOk();
+        $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
+        $this->post($url, ['import' => json_encode([$row])])->assertRedirect();
+        $this->assertTrue(DB::table('entries')->where('alias', 'editor-import')->exists());
+    }
+
+    public function test_old_waiting_requests_stay_visible_beyond_the_history_limit(): void
+    {
+        $entry = $this->entry();
+        [$machine, , $grant] = $this->machine($entry);
+        $rows = [];
+        foreach (['pending', 'requires_user_action', ...array_fill(0, 51, 'succeeded')] as $index => $state) {
+            $rows[] = ['id' => (string) Str::uuid(), 'entry_id' => $entry, 'machine_id' => $machine, 'grant_id' => $grant,
+                'request_id' => 'request-'.$index, 'action' => 'test.http', 'version' => 1, 'state' => $state,
+                'expires_at' => now()->addDay(), 'created_at' => now()->subMinutes(60 - $index)];
+        }
+        DB::table('operations')->insert($rows);
+        $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
+            ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[1]['id'], $rows[0]['id']])
+            ->assertViewHas('history', fn ($history) => $history->count() === 50)
+            ->assertSeeInOrder(['Waiting for you', 'Continue sign-in', 'Allow once', 'Recent history'])
+            ->assertDontSee($rows[2]['id']);
+    }
+
     public function test_secret_stays_in_backend_and_is_not_prefilled_or_listed(): void
     {
         $id = $this->entry();
@@ -260,7 +307,7 @@ final class VaultTest extends TestCase
         [$machine,$token,$grant] = $this->machine($id, true);
         $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-before-revoke'])->json('id');
         $this->post('/workspaces/'.$this->workspace.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
-        $this->post('/workspaces/'.$this->workspace.'/revoke/grants/'.$grant)->assertRedirect();
+        $this->post('/workspaces/'.$this->workspace.'/revoke/grants/'.$grant)->assertRedirect('/workspaces/'.$this->workspace.'/grants');
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1, 'approval' => '1'])->assertRedirect();
         $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertJsonPath('state', 'revoked');
         $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-after-revoke'])->assertJsonPath('state', 'pending');

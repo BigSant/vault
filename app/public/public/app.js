@@ -38,3 +38,17 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 document.querySelectorAll('[data-confirm]').forEach(form => form.addEventListener('submit', event => {
   if (!confirm(form.dataset.confirm)) event.preventDefault();
 }));
+// Header menus are <details>: only one stays open, and a click outside or Escape closes it.
+const menus = document.querySelectorAll('details.menu');
+menus.forEach(menu => menu.addEventListener('toggle', () => {
+  if (menu.open) menus.forEach(other => { if (other !== menu) other.open = false; });
+}));
+addEventListener('click', event => menus.forEach(menu => { if (menu.open && !menu.contains(event.target)) menu.open = false; }));
+addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  menus.forEach(menu => {
+    if (!menu.open) return;
+    menu.open = false;
+    if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
+  });
+});

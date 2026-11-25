@@ -44,9 +44,16 @@ final class Workspace
         }
 
         $query->addSelect('environments.production');
+        $active = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.workspace_id', $id)->where('entries.state', 'active');
+        $stats = $space ? [
+            'due' => (clone $active)->whereNotNull('entries.rotate_at')->where('entries.rotate_at', '<', now())->count(),
+            'production' => (clone $active)->where('environments.production', true)->count(),
+            'used' => (clone $active)->whereExists(fn ($q) => $q->from('operations')->whereColumn('operations.entry_id', 'entries.id')->where('operations.state', 'succeeded')->where('operations.updated_at', '>=', now()->subDays(7)))->count(),
+        ] : ['due' => 0, 'production' => 0, 'used' => 0];
 
         return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
-            'typeNames' => $space ? $this->types->names($space->id) : [], 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
+            'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
     }
 
     public function workspace(Request $r)
@@ -276,8 +283,16 @@ final class Workspace
         return redirect('/?workspace='.$entry->workspace_id);
     }
 
+    public function importForm(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
+
+        return view('import', compact('space'));
+    }
+
     public function import(Request $r, string $workspace)
     {
+        $this->access->workspace($workspace, ['owner', 'editor']);
         $this->access->recent($r);
         $d = $r->validate(['import' => 'required|string|max:900000']);
         $this->catalog->import($workspace, $d['import']);
@@ -287,15 +302,59 @@ final class Workspace
 
     public function settings(string $workspace)
     {
+        $this->access->workspace($workspace, ['owner']);
+
+        return redirect('/workspaces/'.$workspace.'/requests');
+    }
+
+    public function requests(string $workspace)
+    {
         $space = $this->access->workspace($workspace, ['owner']);
-        $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('workspace_id', $workspace)->select('users.id', 'users.name', 'users.email', 'members.role')->get();
-        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')->get();
-        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)->where('entries.state', 'active')->select('entries.id', 'entries.name', 'entries.type')->get();
-        $grants = DB::table('grants')->whereIn('machine_id', $machines->pluck('id'))->get();
-        $operations = DB::table('operations')->whereIn('machine_id', $machines->pluck('id'))->orderByDesc('created_at')->limit(50)->get();
+        $operations = DB::table('operations')->whereIn('machine_id', DB::table('machines')->select('id')->where('workspace_id', $workspace))
+            ->orderByDesc('created_at')->orderByDesc('id');
+        $states = ['pending', 'requires_user_action'];
+        $now = now();
+        $waiting = (clone $operations)->whereIn('state', $states)->where('expires_at', '>', $now)->get();
+        $history = $operations->where(fn ($query) => $query->whereNotIn('state', $states)->orWhere('expires_at', '<=', $now))->limit(50)->get();
+
+        return view('requests', compact('space', 'waiting', 'history'));
+    }
+
+    public function agents(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')
+            ->selectSub(DB::table('grants')->selectRaw('COUNT(*)')->whereColumn('machine_id', 'machines.id')
+                ->whereNull('grants.revoked_at')->where('grants.expires_at', '>', now())
+                ->whereNull('machines.revoked_at')->where('machines.expires_at', '>', now()), 'active_grants')
+            ->orderBy('name')->get();
+
+        return view('agents', compact('space', 'machines'));
+    }
+
+    public function grants(Request $r, string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')->orderBy('name')->get()->keyBy('id');
+        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.workspace_id', $workspace)->select('entries.id', 'entries.name', 'entries.type', 'entries.state')->orderBy('entries.name')->get()->keyBy('id');
+        $agent = is_string($r->query('agent')) ? $machines->get($r->query('agent')) : null;
+        $entry = is_string($r->query('entry')) ? $entries->get($r->query('entry')) : null;
+        $grants = DB::table('grants')->whereIn('machine_id', $machines->keys())->whereIn('entry_id', $entries->keys())
+            ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
+            ->orderBy('action')->get();
         $actions = $this->ops->definitions();
 
-        return view('settings', compact('space', 'members', 'machines', 'entries', 'grants', 'operations', 'actions'));
+        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions'));
+    }
+
+    public function members(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('workspace_id', $workspace)
+            ->select('users.name', 'users.email', 'members.role')->orderBy('users.name')->get();
+
+        return view('members', compact('space', 'members'));
     }
 
     public function member(Request $r, string $workspace)
@@ -324,12 +383,12 @@ final class Workspace
             $this->access->audit($workspace, 'member.change', $user->id);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/members');
     }
 
     public function machine(Request $r, string $workspace)
     {
-        $this->access->workspace($workspace, ['owner']);
+        $space = $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
         $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30']);
         $token = bin2hex(random_bytes(32));
@@ -339,7 +398,7 @@ final class Workspace
             $this->access->audit($workspace, 'machine.create', $id);
         });
 
-        return view('token', compact('token', 'workspace'));
+        return view('token', compact('token', 'id', 'space'));
     }
 
     public function grant(Request $r, string $workspace)
@@ -373,7 +432,7 @@ final class Workspace
             $this->access->audit($workspace, 'grant.create', $d['entry_id']);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/grants');
     }
 
     public function revoke(Request $r, string $workspace, string $kind, string $id)
@@ -393,7 +452,7 @@ final class Workspace
         });
 
         // The broker rechecks authorization before network requests and every second while waiting.
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'));
     }
 
     public function decision(Request $r, string $workspace, string $id)
@@ -413,7 +472,7 @@ final class Workspace
             $this->access->audit($workspace, 'operation.'.$d['decision'], $id);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/requests');
     }
 
     public function mfa(Request $r, string $workspace, string $id)
@@ -427,7 +486,7 @@ final class Workspace
         $this->access->audit($workspace, 'operation.mfa', $id);
         $this->ops->broker('POST', '/operations/'.$id.'/mfa', $d);
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/requests');
     }
 
     public function audit(string $workspace)

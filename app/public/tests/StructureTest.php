@@ -39,6 +39,26 @@ final class StructureTest extends TestCase
         return $id;
     }
 
+    public function test_foreign_filters_are_ignored_and_never_expose_foreign_grants(): void
+    {
+        $other = $this->workspace();
+        $fixtures = [];
+        foreach ([$this->workspace, $other] as $workspace) {
+            [, $environment] = $this->project($workspace);
+            $entry = $this->entry($environment, 'active');
+            $machine = (string) Str::uuid();
+            DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $workspace, 'name' => $machine, 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
+            DB::table('grants')->insert(['id' => (string) Str::uuid(), 'machine_id' => $machine, 'entry_id' => $entry, 'action' => 'action.'.$machine, 'expires_at' => now()->addDay()]);
+            $fixtures[] = [$machine, $entry];
+        }
+        [[$agent, $entry], [$otherAgent, $otherEntry]] = $fixtures;
+        $this->get($this->base.'/grants?agent='.$otherAgent.'&entry='.$otherEntry)
+            ->assertOk()->assertViewHas('agent', fn ($value) => $value === null)->assertViewHas('entry', fn ($value) => $value === null)
+            ->assertSee('action.'.$agent)->assertDontSee($otherAgent)->assertDontSee($otherEntry);
+        $this->get($this->base.'/grants?agent='.$agent.'&entry='.$entry)->assertOk()
+            ->assertSee('value="'.$agent.'" selected', false)->assertSee('value="'.$entry.'" selected', false);
+    }
+
     public function test_template_rejects_names_that_differ_only_in_case_or_accent(): void
     {
         $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertUnprocessable();

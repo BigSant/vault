@@ -4,7 +4,7 @@
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
 <p class="note">Values go straight to the encrypted store. Existing values are never shown in this form.@if($entry) An empty field keeps its current value, and every save creates a new version.@endif</p>
-@if($environments->isEmpty())<div class="callout warn"><p>Create a project first: <a href="/workspaces/{{ $workspace }}/structure">Projects</a>.</p></div>@endif
+@if($environments->isEmpty())<div class="callout warn"><p>Create a project first in <a href="/workspaces/{{ $workspace }}/structure">Setup</a>.</p></div>@endif
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
     <h3>Where and what</h3>
     <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>

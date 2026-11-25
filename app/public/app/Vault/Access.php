@@ -39,7 +39,9 @@ final class Access
 
     public function recent(Request $r): void
     {
-        abort_unless(time() - (int) $r->session()->get('confirmed_at', 0) < 300, 403);
+        if (time() - (int) $r->session()->get('confirmed_at', 0) >= 300) {
+            throw new ConfirmationRequired;
+        }
     }
 
     public function audit(?string $workspace, string $event, ?string $subject = null, string $outcome = 'ok', ?string $actor = null): void

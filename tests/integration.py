@@ -104,7 +104,7 @@ def run():
     print('PASS: encrypted backend write, metadata-only detail, audited owner reveal')
     human.request('/workspaces/'+workspace+'/machines', {'name': 'ai-os integration', 'days': '1'})
     token = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
-    human.request('/workspaces/'+workspace+'/settings')
+    human.request('/workspaces/'+workspace+'/grants')
     machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', human.last)[1]
     for action in config['actions']:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': machine, 'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'days': '1'})
@@ -121,7 +121,7 @@ def run():
             op = agent.request('/api/v1/operations/'+op['id'], token=token)
             assert all(s not in agent.last for s in ['synthetic-token', 'synthetic-password', 'synthetic-cookie', 'synthetic-session', 'c3ludGhldGljLXBhc3N3b3Jk'])
             if op['state'] == 'requires_user_action' and not mfa_sent:
-                human.request('/workspaces/'+workspace+'/settings')
+                human.request('/workspaces/'+workspace+'/requests')
                 human.request('/workspaces/'+workspace+'/operations/'+op['id']+'/mfa', {'code': '123456'})
                 mfa_sent = True
             if op['state'] in ['succeeded', 'failed', 'expired', 'revoked']:
