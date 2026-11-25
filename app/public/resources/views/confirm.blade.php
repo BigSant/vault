@@ -1,5 +1,5 @@
 @extends('layout')
-@section('title', 'Confirm your password')
+@section('title', 'Confirm it is you')
 @section('bare', '1')
 @section('content')
 <form class="action" method="post" action="/confirm">@csrf

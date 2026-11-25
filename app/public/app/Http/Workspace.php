@@ -9,6 +9,7 @@ use App\Vault\EntryTypes;
 use App\Vault\Operations;
 use App\Vault\Secrets;
 use App\Vault\Structure;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -185,8 +186,7 @@ final class Workspace
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $entry = $r->query('entry') ? $this->access->entry($r->query('entry'), ['owner', 'editor']) : null;
         abort_if($entry && $entry->workspace_id !== $workspace, 404);
-        $environments = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
-            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderBy('environments.name')->get();
+        $environments = $this->workspaceEnvironments($workspace);
         $types = $this->types->all($workspace)->when($entry, fn ($all) => $all->where('key', $entry->type))->values();
         abort_if($types->isEmpty() && $entry, 409);
 
@@ -228,8 +228,12 @@ final class Workspace
         $grants = collect();
         $events = collect();
         $operations = collect();
+        $waitingCount = 0;
         if ($role === 'owner') {
-            $operations = $this->requestRows($space->id)->where('operations.entry_id', $id)->limit(25)->get();
+            $query = $this->requestRows($space->id)->where('operations.entry_id', $id);
+            [$waiting, $finished] = $this->requestSections($query, 25);
+            $waitingCount = $waiting->count();
+            $operations = $waiting->concat($finished);
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
                 ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
             $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
@@ -239,7 +243,7 @@ final class Workspace
             $this->resolveEvents($space->id, $events);
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
+        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)
@@ -289,11 +293,20 @@ final class Workspace
         return redirect('/?workspace='.$entry->workspace_id);
     }
 
+    private function workspaceEnvironments(string $workspace)
+    {
+        return DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderBy('environments.name')->get();
+    }
+
     public function importForm(string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
 
-        return view('import', compact('space'));
+        $environments = $this->workspaceEnvironments($workspace);
+        $types = $this->types->all($workspace);
+
+        return view('import', compact('space', 'environments', 'types'));
     }
 
     public function import(Request $r, string $workspace)
@@ -324,14 +337,20 @@ final class Workspace
             ->orderByDesc('operations.created_at')->orderByDesc('operations.id');
     }
 
-    public function requests(string $workspace)
+    private function requestSections(Builder $operations, int $historyLimit): array
     {
-        $space = $this->access->workspace($workspace, ['owner']);
-        $operations = $this->requestRows($workspace);
         $states = ['pending', 'requires_user_action'];
         $now = now();
         $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)->get();
-        $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit(50)->get();
+        $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit($historyLimit)->get();
+
+        return [$waiting, $history];
+    }
+
+    public function requests(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        [$waiting, $history] = $this->requestSections($this->requestRows($workspace), 50);
 
         return view('requests', compact('space', 'waiting', 'history'));
     }
@@ -369,7 +388,7 @@ final class Workspace
     {
         $space = $this->access->workspace($workspace, ['owner']);
         $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('workspace_id', $workspace)
-            ->select('users.name', 'users.email', 'members.role')->orderBy('users.name')->get();
+            ->select('users.id', 'users.name', 'users.email', 'members.role')->orderBy('users.name')->get();
 
         return view('members', compact('space', 'members'));
     }
@@ -410,12 +429,13 @@ final class Workspace
         $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30']);
         $token = bin2hex(random_bytes(32));
         $id = (string) Str::uuid();
-        DB::transaction(function () use ($id, $workspace, $d, $token) {
-            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays((int) $d['days']), 'created_at' => now(), 'updated_at' => now()]);
+        $expiresAt = now()->addDays((int) $d['days']);
+        DB::transaction(function () use ($id, $workspace, $d, $token, $expiresAt) {
+            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => $expiresAt, 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($workspace, 'machine.create', $id);
         });
 
-        return view('token', compact('token', 'id', 'space'));
+        return view('token', ['token' => $token, 'id' => $id, 'space' => $space, 'name' => $d['name'], 'expiresAt' => $expiresAt]);
     }
 
     public function grant(Request $r, string $workspace)

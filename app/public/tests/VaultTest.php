@@ -133,7 +133,8 @@ final class VaultTest extends TestCase
     public function test_owner_and_editor_can_open_import(): void
     {
         $url = '/workspaces/'.$this->workspace.'/import';
-        $this->get($url)->assertOk();
+        $this->get($url)->assertOk()->assertViewHas('environments', fn ($rows) => $rows->contains('id', $this->environment))
+            ->assertViewHas('types', fn ($rows) => $rows->contains('key', 'api_key'));
         DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
         $this->get($url)->assertOk();
         $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
@@ -157,6 +158,8 @@ final class VaultTest extends TestCase
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
             ->assertSeeInOrder(['Waiting for you', 'ai-os', 'Private name', 'stage', 'test.http', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent history'])
             ->assertDontSee($rows[2]['id']);
+        $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
+            ->assertSee($rows[0]['id'])->assertSee($rows[1]['id']);
     }
 
     public function test_secret_stays_in_backend_and_is_not_prefilled_or_listed(): void
@@ -217,6 +220,7 @@ final class VaultTest extends TestCase
 
     public function test_cross_workspace_access_and_last_owner_removal_are_rejected(): void
     {
+        $this->get('/workspaces/'.$this->workspace.'/members')->assertOk()->assertSeeText('you')->assertDontSeeText('Remove');
         $id = $this->entry();
         $other = User::create(['id' => (string) Str::uuid(), 'name' => 'Other', 'email' => 'other@example.test', 'password' => 'unused']);
         $this->actingAs($other)->withSession(['auth_revision' => $other->credentialRevision()])->get('/entries/'.$id)->assertNotFound();
@@ -231,20 +235,22 @@ final class VaultTest extends TestCase
         $url = '/workspaces/'.$this->workspace.'/audit';
         $this->get($url.'?group=grant&actor=machine:'.$machine)->assertOk()->assertSeeText('ai-os')
             ->assertSeeText('grant.revoke')->assertSeeText('Private name')->assertDontSeeText('entry.create')
-            ->assertSee('href="/entries/'.$entry.'"', false)->assertSeeText('Page 1');
+            ->assertSee('href="/entries/'.$entry.'"', false)->assertDontSeeText('Page 1')->assertSeeText('Clear filters')->assertSee('compact-board activity');
         $this->get($url.'?group=entry&actor=machine:'.$machine)->assertOk()->assertSeeText('No matching activity.');
-        $this->get('/entries/'.$entry)->assertViewHas('events', fn ($events) => $events->first()->actor_label === 'ai-os'
+        $this->get('/entries/'.$entry)->assertSee('compact-board activity')->assertSeeText('grant.revoke')->assertViewHas('events', fn ($events) => $events->first()->actor_label === 'ai-os'
             && $events->first()->subject_label === 'Private name');
     }
 
     public function test_grant_approval_and_due_filter(): void
     {
         $entry = $this->entry();
-        [, , $grant] = $this->machine($entry, true);
+        [$machine, , $grant] = $this->machine($entry, true);
         $url = '/workspaces/'.$this->workspace.'/grants';
         $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('every time');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
-        $this->get($url)->assertOk()->assertSeeText('not asked');
+        $this->get($url)->assertOk()->assertSeeText('no approval')->assertSee('/revoke/grants/'.$grant);
+        DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
+        $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
         $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);

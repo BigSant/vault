@@ -54,6 +54,7 @@ final class StructureTest extends TestCase
         [[$agent, $entry], [$otherAgent, $otherEntry]] = $fixtures;
         $this->get($this->base.'/grants?agent='.$otherAgent.'&entry='.$otherEntry)
             ->assertOk()->assertViewHas('agent', fn ($value) => $value === null)->assertViewHas('entry', fn ($value) => $value === null)
+            ->assertSee('select name="agent"', false)->assertSee('select name="entry"', false)->assertSeeText('Apply')
             ->assertSee('action.'.$agent)->assertDontSee($otherAgent)->assertDontSee($otherEntry);
         $this->get($this->base.'/grants?agent='.$agent.'&entry='.$entry)->assertOk()
             ->assertSee('value="'.$agent.'" selected', false)->assertSee('value="'.$entry.'" selected', false);

@@ -7,8 +7,8 @@
 @if($machines->isEmpty())
     <div class="empty">No agent identities yet. Create one below.</div>
 @else
-<div class="scroll"><table class="board">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Expires (UTC)</th><th scope="col">Active grants</th><th scope="col">State</th><th scope="col"></th></tr></thead>
+<div class="scroll"><table class="board compact-board identities">
+    <thead><tr><th scope="col">Agent</th><th scope="col">Expires (UTC)</th><th scope="col">Active grants</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     @foreach($machines as $m)
         @php $mState = $m->revoked_at ? 'revoked' : (strtotime($m->expires_at) <= time() ? 'expired' : 'active'); @endphp

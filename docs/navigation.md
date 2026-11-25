@@ -50,7 +50,7 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   The Agents item carries a count chip when requests wait for a decision or an MFA code.
 - The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
   derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
-- **Account menu** (`<details>` under the user's name): Account → `GET /account`, Lock (POST `/logout`).
+- **Account menu** (`<details>` under the user's name): Account → `GET /account`, Sign out (POST `/logout`).
 
 ## Areas
 

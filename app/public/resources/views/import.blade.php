@@ -1,21 +1,72 @@
 @extends('layout')
 @section('title', 'Import entries')
 @section('content')
+@php
+    $environments = $environments ?? collect();
+    $types = $types ?? collect();
+@endphp
 <a class="back" href="/?workspace={{ $space->id }}">← Entries</a>
 <h1>Import entries</h1>
 <p class="note">Paste a JSON array of 1 to 50 entries for <b>{{ $space->name }}</b>. Every row is validated before any secret is written to the encrypted store.</p>
 
+<h2>Entries to import</h2>
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
     <h3>JSON payload<small>Up to 50 entries per import.</small></h3>
     <label class="stack"><span>Entries JSON</span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret":"{\"token\":\"...\"}"}]'></textarea></label>
+    @include('confirm-inline', ['verb' => 'import'])
     <div class="form-foot">
-        <p class="note">The import text is never logged and is not refilled after an error. You may be asked to confirm your password first.</p>
+        <p class="note">The import text is never logged and is not refilled after an error.</p>
         <div class="controls"><a class="btn" href="/?workspace={{ $space->id }}">Cancel</a><button class="go">Import</button></div>
     </div>
 </form>
 
 <h2>Format</h2>
 <p class="note">Send a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
+
+<details class="import-ref">
+    <summary>Environment ids <span class="muted">({{ $environments->count() }})</span></summary>
+    <div class="inner">
+        @if($environments->isEmpty())
+            <p class="note">No environments in this workspace yet. Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.</p>
+        @else
+            <div class="scroll"><table class="list import-ids">
+                <thead><tr><th scope="col">Project / environment</th><th scope="col">environment_id</th></tr></thead>
+                <tbody>
+                @foreach($environments as $env)
+                    <tr>
+                        <td class="env-name">{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</td>
+                        <td class="env-id"><code>{{ $env->id }}</code></td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table></div>
+        @endif
+    </div>
+</details>
+
+<details class="import-ref">
+    <summary>Type keys <span class="muted">({{ $types->count() }})</span></summary>
+    <div class="inner">
+        @if($types->isEmpty())
+            <p class="note">No entry types yet. Manage types in <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</p>
+        @else
+            <div class="scroll"><table class="list import-types">
+                <thead><tr><th scope="col">Type key</th><th scope="col">Name</th><th scope="col">Required fields</th></tr></thead>
+                <tbody>
+                @foreach($types as $t)
+                    @php $reqFields = array_values(array_map(fn ($f) => $f['key'], array_filter($t->fields ?? [], fn ($f) => !empty($f['required'])))); @endphp
+                    <tr>
+                        <td class="type-key"><code>{{ $t->key }}</code></td>
+                        <td class="type-name">{{ $t->name }}</td>
+                        <td class="type-fields">@if($reqFields)@foreach($reqFields as $fk)<code>{{ $fk }}</code>@if(!$loop->last) @endif @endforeach @else<span class="muted">none</span>@endif</td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table></div>
+        @endif
+    </div>
+</details>
+
 <div class="scroll"><table class="list import-format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>

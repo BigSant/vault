@@ -4,13 +4,13 @@
 @php
     $initialType = $entry?->type ?? $types->first()?->key;
     $confirmedUntil = $confirmedUntil ?? null;
-    $needsConfirm = $confirmedUntil === null || ((int) $confirmedUntil - time()) < 240;
-    $confirmExpired = $confirmedUntil === null || (int) $confirmedUntil <= time();
+    $confirmedFresh = $confirmedUntil !== null && ((int) $confirmedUntil - time()) >= 240;
 @endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
 @if($environments->isEmpty())<div class="callout warn"><p>Create a project first in <a href="/workspaces/{{ $workspace }}/structure">Setup</a>.</p></div>@endif
+<h2>Entry</h2>
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
     <h3>Entry details</h3>
     <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>
@@ -31,7 +31,8 @@
             <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
         </div>
     @else
-        <label><span>Project / environment</span><select name="environment_id">
+        <label><span>Project / environment</span><select name="environment_id" required>
+            <option value="">Choose a project / environment</option>
             @foreach($environments as $e)
                 <option value="{{ $e->id }}">{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
             @endforeach
@@ -54,14 +55,14 @@
             @if($f['kind'] === 'secret')
                 <div class="field" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless>
                     <label for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span></label>
-                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}">Generate</button></span>
+                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}">Generate</button></span>
                 </div>
             @else
                 <label data-types="{{ $t->key }}" for="{{ $id }}" @unless($activeType) hidden @endunless><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>
                     @if($f['kind'] === 'multiline')
-                        <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }} @if($req) required @endif @disabled(!$activeType)></textarea>
+                        <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)></textarea>
                     @else
-                        <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }} @if($req) required @endif @disabled(!$activeType)>
+                        <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)>
                     @endif
                 </label>
             @endif
@@ -72,14 +73,9 @@
     <h3 class="gap">Notes</h3>
     <label><span>Tags</span><input name="tags" value="{{ $entry?->tags }}" maxlength="200" placeholder="billing, admin"></label>
     <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '' }}"></label>
-    @if($needsConfirm)
-    <div class="confirm-inline">
-        <p class="note">@if($confirmExpired)Your password confirmation has expired. Enter your password to save.@else Your password confirmation expires at {{ gmdate('H:i', (int) $confirmedUntil) }} UTC. Enter your password to save.@endif</p>
-        <label><span>Current password</span><input type="password" name="confirm_password" autocomplete="current-password" @if($confirmExpired) required @endif></label>
-    </div>
-    @endif
+    @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">
-        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }} @unless($needsConfirm)<span class="muted">Confirmed until {{ gmdate('H:i', (int) $confirmedUntil) }} UTC.</span>@endunless</p>
+        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }} @if($confirmedFresh)<span class="muted">Confirmed until {{ gmdate('H:i', (int) $confirmedUntil) }} UTC.</span>@endif</p>
         <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
     </div>
 </form>

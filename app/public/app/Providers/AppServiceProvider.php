@@ -73,8 +73,8 @@ final class AppServiceProvider extends ServiceProvider
                 $request->attributes->set('nav.waiting.'.$id, $waiting);
             }
         }
-        // Remembered so the confirm page can send people back; browsers send no Referer here (Referrer-Policy: no-referrer).
-        if ($view->name() === 'layout' && $request->isMethod('GET') && $session) {
+        // Remembered so the confirm page can send people back (an error page is no place to return to); browsers send no Referer here (Referrer-Policy: no-referrer).
+        if ($view->name() === 'layout' && $request->isMethod('GET') && $session && empty($view->getData()['shell'])) {
             $session->put('last_page', $request->getRequestUri());
         }
         $view->with(['navSpaces' => $spaces, 'navSpaceId' => $id, 'navRole' => $role, 'navWaiting' => $waiting]);

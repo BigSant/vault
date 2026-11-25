@@ -9,11 +9,16 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 return Application::configure(basePath: dirname(__DIR__))
-    ->withRouting(web: __DIR__.'/../routes/web.php', api: __DIR__.'/../routes/api.php', commands: __DIR__.'/../routes/console.php')
+    ->withRouting(web: __DIR__.'/../routes/web.php', api: __DIR__.'/../routes/api.php', commands: __DIR__.'/../routes/console.php', then: function () {
+        // Unknown pages run through the web middleware, so the "Not found" page knows who is signed in. API paths stay out.
+        Route::fallback(fn () => abort(404))->middleware('web')->where('fallbackPlaceholder', '^(?!api(/|$)).*');
+    })
     ->withMiddleware(function (Middleware $m) {
         $m->append(SecurityHeaders::class);
         $m->alias(['vault.auth' => OwnerSession::class, 'vault.machine' => MachineAuth::class]);
@@ -42,6 +47,17 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Validation texts name fields and rules, never submitted values.
             $messages = $error instanceof ValidationException ? array_slice(array_merge(...array_values($error->errors()) ?: [[]]), 0, 5) : [];
+
+            // Signed-in people keep the header on an error page. Guests, half-finished sign-ins and a failing service get the bare page.
+            if (! in_array($status, [401, 419, 503], true)) {
+                try {
+                    if (Auth::check() && $r->hasSession() && $r->session()->get('mfa_at')) {
+                        return response()->view('error', ['status' => $status, 'messages' => $messages, 'shell' => true], $status);
+                    }
+                } catch (Throwable) {
+                    // The header needs the database; fall through to the page that needs nothing.
+                }
+            }
 
             return response()->view('error', ['status' => $status, 'messages' => $messages], $status);
         });

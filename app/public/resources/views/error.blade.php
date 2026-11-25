@@ -3,11 +3,15 @@
     $title = [401 => 'Sign-in failed', 403 => 'Not allowed', 404 => 'Not found', 409 => 'Changed meanwhile', 419 => 'Session expired',
         422 => 'Check the form', 429 => 'Too many attempts'][$status] ?? 'Not available';
     $signIn = in_array($status, [401, 419], true);
+    // $shell: a signed-in person sees the error under the normal header. Guests and a failing service get the bare page.
+    $shell = ! empty($shell);
 @endphp
 @section('title', $title)
+@unless($shell)
 @section('bare', '1')
+@endunless
 @section('content')
-<div class="card">
+<div class="{{ $shell ? 'error-page' : 'card' }}">
     <h1>{{ $title }} <span class="chip bad">{{ $status }}</span></h1>
     <div class="callout bad">
         <p>{{ match($status) {

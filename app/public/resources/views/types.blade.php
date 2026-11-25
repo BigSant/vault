@@ -12,7 +12,7 @@
     $required = fn (bool $on) => '<select name="field_required[]" aria-label="Required"><option value="1"'.($on ? ' selected' : '').'>yes</option><option value="0"'.($on ? '' : ' selected').'>no</option></select>';
     $plural = fn (int $n, string $one, string $many) => $n.' '.($n === 1 ? $one : $many);
 @endphp
-<div class="head"><h1>Setup</h1><div class="controls"><a class="btn go" href="#add-type">+ Add a type</a></div></div>
+<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-type">Add a type</a></div></div>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
 <div class="stats">
     <div class="stat"><b>{{ $types->count() }}</b><span>types</span></div>
@@ -24,24 +24,14 @@
 @if($types->isEmpty())
     <div class="empty"><b>No entry types yet</b>An entry needs a type. <a href="#add-type">Add the first type</a></div>
 @else
-<div class="scroll"><table class="list">
-    <thead><tr><th scope="col">Type</th><th scope="col">Fields</th><th scope="col">Entries</th></tr></thead>
-    <tbody>
-    @foreach($types as $type)
-        <tr><td><a href="#type-{{ $type->key }}">{{ $type->name }}</a><small>key {{ $type->key }}</small></td>
-            <td><span class="chip muted">{{ count($type->fields) }}</span></td><td><span class="chip muted">{{ $usage[$type->key] ?? 0 }}</span></td></tr>
-    @endforeach
-    </tbody>
-</table></div>
-
-<h2>Edit a type</h2>
+<h2>Types</h2>
 <p class="note">Removed fields keep their values in older versions. A new required field is asked for at the next update of an entry.
     Agent actions need these required fields: browser <code>username</code> + <code>password</code>, API/CLI <code>token</code>, DB <code>role</code>.
     A type used by entries (archived ones too) cannot be removed.</p>
 @foreach($types as $type)
     @php $used = $usage[$type->key] ?? 0; @endphp
     <details class="fold" id="type-{{ $type->key }}">
-        <summary><span class="fold-name">{{ $type->name }}</span> <span class="chip muted">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="chip muted">{{ $plural($used, 'entry', 'entries') }}</span></summary>
+        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="fold-meta">{{ $plural($used, 'entry', 'entries') }}</span></summary>
         <div class="inner">
             <form method="post" action="/workspaces/{{ $space->id }}/types/{{ $type->key }}">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
@@ -65,10 +55,10 @@
                     </tbody>
                 </table>
                 <div class="form-foot"><p class="note">Leave the last row empty if you add no field.</p>
-                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}">+ Field</button><button>Save type</button></div></div>
+                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}">+ Field</button><button aria-label="Save type {{ $type->name }}">Save type</button></div></div>
             </form>
             @if($used === 0)
-                <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/types/{{ $type->key }}/delete" data-confirm="Remove type “{{ $type->name }}”?">@csrf<button class="stop">Remove type</button></form>
+                <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/types/{{ $type->key }}/delete" data-confirm="Remove type “{{ $type->name }}”?">@csrf<button class="stop" aria-label="Remove type {{ $type->name }}">Remove type</button></form>
             @endif
         </div>
     </details>
@@ -85,7 +75,7 @@
                 <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Server address" aria-label="Field label"></td><td data-label="Kind">{!! $kindSelect() !!}</td><td data-label="Required">{!! $required(true) !!}</td></tr>
             </tbody>
         </table>
-        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new">+ Field</button><button>Create type</button></div></div>
+        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new">+ Field</button><button class="go">Create type</button></div></div>
     </form>
 </div>
 @endsection

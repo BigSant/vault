@@ -35,6 +35,7 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
   row.removeAttribute('data-row-template');
   row.querySelectorAll('input').forEach(input => { if (input.type !== 'hidden') input.value = ''; });
   row.querySelectorAll('select').forEach(select => { select.selectedIndex = 0; });
+  if (rows.closest('table')?.hasAttribute('role')) { row.setAttribute('role', 'row'); row.querySelectorAll('td').forEach(td => td.setAttribute('role', 'cell')); }
   rows.appendChild(row);
   row.querySelector('input:not([type=hidden])')?.focus();
 }));
@@ -64,5 +65,14 @@ const openTarget = () => {
   fold.open = true;
   target.scrollIntoView();
 };
+// On phones a board row is a card (display:block), which drops the table semantics. Explicit roles keep
+// the column heads tied to their cells for screen readers.
+document.querySelectorAll('table.board, table.list.edit').forEach(table => {
+  table.setAttribute('role', 'table');
+  table.querySelectorAll('thead, tbody, tfoot').forEach(el => el.setAttribute('role', 'rowgroup'));
+  table.querySelectorAll('tr').forEach(el => el.setAttribute('role', 'row'));
+  table.querySelectorAll('th').forEach(el => el.setAttribute('role', el.scope === 'row' ? 'rowheader' : 'columnheader'));
+  table.querySelectorAll('td').forEach(el => el.setAttribute('role', 'cell'));
+});
 addEventListener('hashchange', openTarget);
 openTarget();

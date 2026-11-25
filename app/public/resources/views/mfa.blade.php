@@ -15,6 +15,6 @@
         <p class="note">Enter the current code from your authenticator app.</p>
     @endif
     <label><span>6-digit code</span><input name="code" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required maxlength="6"></label>
-    <div class="form-foot"><p class="note"></p><button class="go">Unlock</button></div>
+    <div class="form-foot"><p class="note"></p><button class="go">Continue</button></div>
 </form>
 @endsection

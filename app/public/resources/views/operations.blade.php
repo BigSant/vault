@@ -1,4 +1,4 @@
-<h2>{{ $heading ?? 'Requests' }}</h2>
+<h2 id="{{ $sectionId ?? 'requests' }}">{{ $heading ?? 'Requests' }}</h2>
 @if($operations->isEmpty())
     <div class="empty">{{ $empty ?? 'No requests yet.' }}</div>
 @else
@@ -8,16 +8,18 @@
     )->sortKeys();
 @endphp
 @foreach($sections as $finished => $rows)
-<div class="scroll"><table class="board">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Entry</th><th scope="col">Action</th><th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
+@if($split ?? $hideEntry ?? false)<h3>{{ $finished ? 'Finished' : 'Waiting for you' }}</h3>@endif
+<div class="scroll"><table class="board compact-board requests">
+    <thead><tr><th scope="col">Agent</th>@empty($hideEntry)<th scope="col">Entry</th>@endempty<th scope="col">Action</th><th scope="col">State</th><th scope="col">Requested (UTC)</th>@if($finished)<th scope="col">Finished (UTC)</th>@else<th scope="col">Decision</th>@endif</tr></thead>
     <tbody>
     @foreach($rows as $o)
-        @php $row = ['succeeded' => 'is-ok', 'failed' => 'is-bad', 'expired' => 'is-idle', 'revoked' => 'is-idle'][$o->state] ?? ''; @endphp
+        @php $state = in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime($o->expires_at) <= time() ? 'expired' : $o->state;
+            $row = ['succeeded' => 'is-ok', 'failed' => 'is-bad', 'denied' => 'is-bad', 'approved' => 'is-ok', 'running' => 'is-idle', 'expired' => 'is-idle', 'revoked' => 'is-idle'][$state] ?? ''; @endphp
         <tr class="{{ $row }}">
-            <td data-label="Agent">{{ $o->agent }}</td>
-            <td class="name" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>
-            <td class="name" data-label="Action"><code>{{ $o->action }}</code><small class="muted">{{ $o->id }}</small></td>
-            <td data-label="State">@if(in_array($o->state, ['running', 'requires_user_action'], true))<span class="lamp {{ $o->state === 'running' ? 'run' : 'warn' }}"></span> @endif @include('outcome', ['outcome' => in_array($o->state, ['pending', 'requires_user_action']) && strtotime($o->expires_at) <= time() ? 'expired' : $o->state])</td>
+            <td data-label="Agent"><b class="nobreak">{{ $o->agent }}</b></td>
+            @empty($hideEntry)<td class="name" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
+            <td class="name" data-label="Action"><code>{{ $o->action }}</code><small class="muted" title="{{ $o->id }}">{{ substr($o->id, 0, 8) }}</small></td>
+            <td data-label="State">@if(in_array($state, ['running', 'requires_user_action'], true))<span class="lamp {{ $o->state === 'running' ? 'run' : 'warn' }}"></span> @endif @include('outcome', ['outcome' => $state])</td>
             <td class="when" data-label="Requested (UTC)">{{ substr($o->created_at ?? '', 0, 16) ?: '—' }}</td>
             @if($finished)
             <td class="when" data-label="Finished (UTC)">{{ in_array($o->state, ['approved', 'running'], true) ? '—' : (substr($o->updated_at ?? '', 0, 16) ?: '—') }}</td>

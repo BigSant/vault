@@ -92,7 +92,7 @@ final class ShellTest extends TestCase
         $this->waitingRequest('requires_user_action');
         $this->waitingRequest('succeeded');
         $this->waitingRequest('pending', $other);
-        $chip = '<span class="chip warn" title="Requests waiting for you">2</span>';
+        $chip = '<span class="chip warn" title="Requests waiting for you">2<span class="sr-only"> requests waiting</span></span>';
         $this->signIn('owner');
         $this->get('/')->assertOk()->assertSee($chip, false);
         $this->signIn('editor');
@@ -213,8 +213,18 @@ final class ShellTest extends TestCase
             ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content">', 'id="live"'], false)
             ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button>Sign out</button>', false)->assertDontSee('Lock');
         $this->get('/account')->assertOk()->assertSee('Change password and sign out')->assertSee('<span class="chip role">owner</span>', false)->assertDontSee('>Lock<', false);
-        $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled');
+        // A signed-in person keeps the header on an error page; a guest gets the bare page.
+        $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled')
+            ->assertSee('aria-label="Main"', false)->assertSee('<button>Sign out</button>', false)->assertSessionHas('last_page', '/account');
+        $this->get('/api/nothing-here')->assertNotFound();
         $this->post($this->base.'/projects', ['name' => ''])->assertUnprocessable()->assertSee('Check the form')->assertSee('not refilled');
+    }
+
+    public function test_error_pages_stay_bare_for_guests_and_unfinished_sign_ins(): void
+    {
+        $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertSee('credential store')->assertDontSee('aria-label="Main"', false);
+        $user = User::create(['id' => (string) Str::uuid(), 'name' => 'Half Signed', 'email' => 'half@example.test', 'password' => Hash::make(self::PASSWORD), 'mfa_enabled' => true]);
+        $this->actingAs($user)->get('/nothing-here')->assertNotFound()->assertSee('credential store')->assertDontSee('aria-label="Main"', false);
     }
 
     public static function unsafeReturns(): array

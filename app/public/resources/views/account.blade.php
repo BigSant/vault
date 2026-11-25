@@ -14,6 +14,7 @@
     </td></tr>
 </table>
 
+<h2>Security</h2>
 <div class="deck">
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf

@@ -40,7 +40,7 @@
     @endauth
     <nav class="nav" aria-label="Main">
         @foreach($items as [$text, $href, $active, $count])
-            <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="page"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}</span>@endif</a>
+            <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="page"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}<span class="sr-only"> {{ $count === 1 ? 'request' : 'requests' }} waiting</span></span>@endif</a>
         @endforeach
     </nav>
     <span class="spacer"></span>

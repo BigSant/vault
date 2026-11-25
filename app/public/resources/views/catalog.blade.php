@@ -16,6 +16,12 @@
         + ($archived ? 1 : 0)
         + ($dueOnly ? 1 : 0);
     $hasFilters = request()->filled('q') || $drawerCount > 0;
+    $activeProject = request()->filled('project') ? $projects->firstWhere('id', request('project')) : null;
+    $activeEnv = request()->filled('environment') ? $environments->firstWhere('id', request('environment')) : null;
+    $activeEnvLabel = $activeEnv
+        ? trim(($projects->firstWhere('id', $activeEnv->project_id)?->name ?? '').' / '.$activeEnv->name, ' /')
+        : null;
+    $activeType = request()->filled('type') ? ($typeNames[request('type')] ?? request('type')) : null;
 @endphp
 <div class="head">
     <h1>{{ $archived ? 'Archived entries' : 'Entries' }}</h1>
@@ -28,7 +34,7 @@
 </div>
 @if($space)
 <div class="stats">
-    <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>{{ $archived ? 'active entries' : 'entries' }}</span></div>
+    <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active entries</span></div>
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="/?workspace={{ $space->id }}&due=1"><b>{{ $dueCount }}</b><span>rotation due →</span></a>
     <div class="stat"><b>{{ $prodCount }}</b><span>production</span></div>
     <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents · 7 days</span></div>
@@ -64,6 +70,10 @@
             Showing {{ $entries->total() }}
         @endif
     </span>
+    @if(request()->filled('q'))<span class="chip filter">Search: {{ request('q') }}</span>@endif
+    @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
+    @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
+    @if($activeType)<span class="chip filter">Type: {{ $activeType }}</span>@endif
     @if($dueOnly)<span class="chip warn">Rotation due</span>@endif
     @if($archived)<span class="chip muted">Archived</span>@endif
     <a href="/?workspace={{ $space->id }}">Clear filters</a>
@@ -92,7 +102,7 @@
     </div>
 @else
 <div class="scroll"><table class="board entries">
-    <thead><tr><th scope="col">Entry · tags</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">Last used (UTC)</th></tr></thead>
+    <thead><tr><th scope="col">Entry · tags</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated (UTC)</th><th scope="col">Last used (UTC)</th></tr></thead>
     <tbody>
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
@@ -101,7 +111,7 @@
             <td class="proj" data-label="Project">{{ $e->project }}</td>
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type">{{ $typeNames[$e->type] ?? $e->type }}</td>
-            <td class="when updated" data-label="Updated">{{ substr($e->updated_at, 0, 10) }}@if($due)<small><span class="chip warn">rotate</span> due {{ substr($e->rotate_at, 0, 10) }}</small>@endif</td>
+            <td class="when updated" data-label="Updated (UTC)">{{ substr($e->updated_at, 0, 10) }}@if($due)<small><span class="chip warn">rotate</span> due {{ substr($e->rotate_at, 0, 10) }}</small>@endif</td>
             <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">{{ $e->last_used_at ? substr($e->last_used_at, 0, 16) : '—' }}</td>
         </tr>
     @endforeach
