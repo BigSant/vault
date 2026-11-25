@@ -44,13 +44,13 @@
             $gState = $g->state;
         @endphp
         <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b>{{ $machine->name }}</b></td>
+            <td class="who" data-label="Agent"><b class="nobreak">{{ $machine->name }}</b></td>
             <td class="end" data-label="Action"><code>{{ $g->action }}</code></td>
             <td class="name full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a> <small class="nobreak"><span class="k">· </span>{{ $target->project }} / @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="Expires (UTC)">
                 @if($g->effective_revoked_at)
-                    Revoked <span class="nobreak">{{ substr($g->effective_revoked_at, 0, 16) }} UTC</span> @if($g->expiry_reason)<small class="wrap">{{ $g->expiry_reason }}</small>@endif
+                    <span class="nobreak">Revoked {{ substr($g->effective_revoked_at, 0, 16) }} UTC</span> @if($g->expiry_reason)<small class="wrap">{{ $g->expiry_reason }}</small>@endif
                 @else
                     <span class="nobreak"><small class="k">{{ strtotime($g->effective_expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ substr($g->effective_expires_at, 0, 16) }} <small class="k">UTC</small></span>@if($g->expiry_reason) <small class="wrap">{{ $g->expiry_reason }}</small>@endif @if($g->effective_expires_at !== $g->expires_at)<small class="wrap">Grant expiry: {{ substr($g->expires_at, 0, 16) }} UTC</small>@endif
                 @endif

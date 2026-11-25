@@ -234,7 +234,9 @@ final class Workspace
         $environment = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('environments.id', $entry->environment_id)
             ->select('environments.name', 'environments.production', 'projects.name as project')->first();
         $historyOlder = false;
-        $history = $entry->state === 'destroyed' ? [] : $this->catalog->history($entry, older: $historyOlder);
+        $historyPage = max(1, min(100000, (int) request()->input('vpage', 1)));
+        $history = $entry->state === 'destroyed' ? [] : $this->catalog->history($entry, older: $historyOlder, page: $historyPage);
+        $historyHasMore = $historyOlder;
         $grants = collect();
         $events = collect();
         $operations = collect();
@@ -253,7 +255,7 @@ final class Workspace
             $this->resolveEvents($space->id, $events);
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
+        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)

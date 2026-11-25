@@ -2,6 +2,8 @@
 
 namespace App\Http;
 
+use App\Providers\AppServiceProvider;
+use App\Vault\Access;
 use Illuminate\Http\Request;
 
 /** Personal pages: the account, the password confirmation, and creating a workspace. */
@@ -16,6 +18,17 @@ final class Account
     public function confirmForm(Request $r)
     {
         return view('confirm', ['return' => self::safePath($r->query('return')), 'blocked' => false, 'failed' => false, 'navFirst' => true]);
+    }
+
+    /**
+     * The header's waiting count for an owner, as {"waiting": N}: app.js asks once a minute on the pages that do not
+     * refresh their requests themselves. Anyone else gets 404, like the Agents pages.
+     */
+    public function waiting(Access $access, string $workspace)
+    {
+        $access->workspace($workspace, ['owner']);
+
+        return response()->json(['waiting' => AppServiceProvider::waiting($workspace)]);
     }
 
     public function newWorkspace()

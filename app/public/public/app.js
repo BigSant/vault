@@ -364,8 +364,12 @@ if (refreshUrl) {
   });
   let due = Date.now() + 30000;
   let running = false;
+  // Automatic rounds stop after 15 minutes without a key or pointer press, so an open tab never keeps an idle
+  // session alive; a press on "Refresh requests" still works.
+  let used = Date.now();
+  ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
   const refresh = async manual => {
-    if (running || (!manual && (document.hidden || Date.now() < due))) return;
+    if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;
     running = true;
     due = Date.now() + 30000;
     try {
@@ -413,6 +417,56 @@ if (refreshUrl) {
     event.preventDefault();
     refresh(true);
   });
+} else {
+  // Every other page of an owner: the header's Agents count stays current without a reload. The nav's
+  // data-waiting-url answers {"waiting": N}; it is asked once a minute while the page is visible (a hidden tab pauses
+  // and catches up when it is looked at again), and only the count chip changes, never while the focus is in the
+  // nav. A count that grew is said in the live region. After 15 minutes without a key or pointer press the asking
+  // stops, so an unattended page does not keep the session alive.
+  const nav = document.querySelector('nav.nav[data-waiting-url]');
+  const agents = nav?.querySelector('a[href$="/requests"]');
+  if (agents) {
+    const words = n => n === 1 ? '1 request waiting' : n + ' requests waiting';
+    const shown = () => Number(agents.querySelector('.chip')?.firstChild?.textContent) || 0;
+    const show = n => {
+      const chip = agents.querySelector('.chip');
+      if (!n) { if (chip) { chip.previousSibling?.nodeType === 3 && chip.previousSibling.remove(); chip.remove(); } return; }
+      const next = document.createElement('span');
+      next.className = 'chip warn';
+      next.title = 'Requests waiting for you';
+      const spoken = document.createElement('span');
+      spoken.className = 'sr-only';
+      spoken.textContent = n === 1 ? ' request waiting' : ' requests waiting';
+      next.append(String(n), spoken);
+      if (chip) chip.replaceWith(next); else agents.append(' ', next);
+    };
+    let due = Date.now() + 60000;
+    let used = Date.now();
+    let running = false;
+    let stopped = false;
+    ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
+    const ask = async () => {
+      if (stopped || running || document.hidden || Date.now() < due || Date.now() - used > 900000) return;
+      running = true;
+      due = Date.now() + 60000;
+      try {
+        const response = await fetch(nav.dataset.waitingUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        // Signed out, or no longer an owner here: the next page load says so; the count is left as it is.
+        if (response.redirected || [401, 403, 404, 419].includes(response.status)) { stopped = true; return; }
+        if (!response.ok) return;
+        const n = Number((await response.json()).waiting);
+        if (!Number.isInteger(n) || n < 0 || nav.contains(document.activeElement)) { if (nav.contains(document.activeElement)) due = Date.now() + 5000; return; }
+        const before = shown();
+        if (n === before) return;
+        show(n);
+        if (n > before) say(words(n) + ' for you. Open Agents to decide.');
+      } catch {
+        // No connection: the next round tries again.
+      } finally { running = false; }
+    };
+    setInterval(ask, 5000);
+    document.addEventListener('visibilitychange', ask);
+  }
 }
 // Filter bars: an inline bar on wide screens, a closed drawer on phones. A resize follows along until the user
 // opens or closes the bar themselves.

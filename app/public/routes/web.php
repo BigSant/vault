@@ -41,6 +41,7 @@ Route::middleware('vault.auth')->group(function () {
     Route::get('/workspaces/new', [Account::class, 'newWorkspace']);
     Route::post('/workspaces', [Workspace::class, 'workspace']);
     Route::get('/workspaces/{workspace}/import', [Workspace::class, 'importForm'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/waiting', [Account::class, 'waiting'])->whereUuid('workspace');
     Route::get('/workspaces/{workspace}/requests', [Workspace::class, 'requests'])->whereUuid('workspace');
     Route::get('/workspaces/{workspace}/agents', [Workspace::class, 'agents'])->whereUuid('workspace');
     Route::get('/workspaces/{workspace}/grants', [Workspace::class, 'grants'])->whereUuid('workspace');

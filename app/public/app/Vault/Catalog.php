@@ -187,13 +187,19 @@ final class Catalog
      * Versions from before the change log have no details. Field names are filtered against the type's current
      * fields on every read, so rows written before that rule (or naming a since-removed field) only add to the counts.
      */
-    public function history(object $entry, int $limit = 50, ?bool &$older = null): array
+    public function history(object $entry, int $limit = 50, ?bool &$older = null, int $page = 1): array
     {
-        $latest = (int) $entry->version;
-        $oldest = max(1, $latest - max(1, $limit) + 1);
+        $limit = max(1, $limit);
+        $latest = (int) $entry->version - (max(1, $page) - 1) * $limit;
+        if ($latest < 1) {
+            $older = false;
+
+            return [];
+        }
+        $oldest = max(1, $latest - $limit + 1);
         $older = $oldest > 1;
         $changes = DB::table('entry_changes')->leftJoin('users', 'users.id', '=', 'entry_changes.user_id')->where('entry_id', $entry->id)
-            ->where('entry_changes.version', '>=', $oldest)->select('entry_changes.*', 'users.name as user')->get()->keyBy('version');
+            ->where('entry_changes.version', '>=', $oldest)->where('entry_changes.version', '<=', $latest)->select('entry_changes.*', 'users.name as user')->get()->keyBy('version');
         $type = $this->types->find($entry->workspace_id ?? $this->access->entry($entry->id)->workspace_id, $entry->type);
         $stored = $this->secrets->versions('entries/'.$entry->id);
         $history = [];

@@ -17,7 +17,8 @@
 @endunless
 @section('content')
 <div class="{{ $shell ? 'error-page' : 'card' }}">
-    <h1>{{ $title }} <span class="chip bad">{{ $status }}</span></h1>
+    <h1>{{ $title }}</h1>
+    <p class="error-status"><span class="chip bad">Error {{ $status }}</span></p>
     <div class="callout bad">
         <p>{{ match($status) {
             401 => 'Check your sign-in details or the authenticator code.',

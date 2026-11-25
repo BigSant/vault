@@ -24,7 +24,7 @@
 <div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
 
-<h2 class="setup-first">Environments by project</h2>
+<h2>Environments</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 <div class="project-list">

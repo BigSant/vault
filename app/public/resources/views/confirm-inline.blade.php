@@ -11,7 +11,7 @@
     $verb = $verb ?? 'save';
 @endphp
 <div class="confirm-inline" data-confirmed-until="{{ (int) $until }}" data-now="{{ time() }}" @if($early) hidden @endif>
-    <p class="legend">Confirm your identity</p>
-    <p class="note"><span data-when="ending" @if($expired) hidden @endif>Your password confirmation ends{{ $until ? ' at '.gmdate('H:i', $until).' UTC' : ' soon' }}.</span><span data-when="expired" @unless($expired) hidden @endunless>Your password confirmation has expired.</span> Enter your password to {{ $verb }}.</p>
+    <p class="legend">Password confirmation</p>
+    <p class="note"><span data-when="ending" @if($expired) hidden @endif>Your password confirmation ends{{ $until ? ' at '.gmdate('H:i', $until).' UTC' : ' soon' }}.</span><span data-when="expired" @unless($expired) hidden @endunless>Your password confirmation has expired.</span> Enter your current password to {{ $verb }}.</p>
     <label><span>Current password</span><input type="password" name="confirm_password" autocomplete="current-password" @if($expired) required @endif @if($early) disabled @endif></label>
 </div>

@@ -17,6 +17,10 @@
     $waitingCount = isset($waitingCount) ? (int) $waitingCount : ($isOwner
         ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
         : 0);
+    // Versions are listed a page at a time, newest first.
+    $vPage = max(1, (int) ($historyPage ?? 1));
+    $vMore = isset($historyHasMore) ? (bool) $historyHasMore : ! empty($historyOlder);
+    $vUrl = fn (int $p) => '/entries/'.$entry->id.($p > 1 ? '?vpage='.$p : '').'#versions';
 @endphp
 {{-- Two widths, as everywhere: boards end at --wide; the facts, the cards and the archive forms keep --card. --}}
 <div class="entry-page">
@@ -140,7 +144,7 @@
             @if($canEdit)
             <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
                     @if($h['version'] !== $current)
                         <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
                     @endif
@@ -149,11 +153,17 @@
             @endif
         </tr>
     @empty
-        <tr class="is-idle"><td colspan="{{ $canEdit ? 5 : 4 }}" data-label="" class="muted">No versions.</td></tr>
+        <tr class="is-idle"><td colspan="{{ $canEdit ? 5 : 4 }}" data-label="" class="muted">{{ $vPage > 1 ? 'No older versions.' : 'No versions.' }}</td></tr>
     @endforelse
     </tbody>
 </table></div>
-@if(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
+{{-- Older versions: the controller passes $historyPage (1 = newest) and $historyHasMore; ?vpage=N opens page N.
+     Without $historyPage (a controller that lists only the newest) the old note stays. --}}
+@if(isset($historyPage))
+    @if($vPage > 1 || $vMore)
+    <nav class="pager" aria-label="Version pages"><span>@if($vPage > 1)<a href="{{ $vUrl($vPage - 1) }}">← Newer versions</a>@endif</span><span class="muted">@if($history)Versions {{ $history[array_key_last($history)]['version'] }}–{{ $history[array_key_first($history)]['version'] }} of {{ $current }}@endif</span><span>@if($vMore)<a href="{{ $vUrl($vPage + 1) }}">Older versions →</a>@endif</span></nav>
+    @endif
+@elseif(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
 
 @if($isOwner)
 <h2 id="access">Agent access</h2>

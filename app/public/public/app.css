@@ -186,7 +186,7 @@ font-weight:600;padding:0 12px 2px}
 .refresh-row{display:flex;flex-direction:row-reverse;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0}
 .refresh-row .note{margin:0}
 .refresh-row .btn{flex:none;white-space:nowrap}
-.tabs+.section-head{margin-top:20px}
+.tabs+.section-head,.tabs+h2{margin-top:20px}
 .board .line{display:block}
 .board .line+.line{margin-top:3px}
 .board .line b{color:var(--dim);font-weight:600}
@@ -525,8 +525,11 @@ details[open]>summary .fold-act{color:var(--dim)}
 /* Password field inside a long form; hidden until the confirmation is about to end (app.js reveals it). */
 .confirm-inline{margin-top:14px;padding-top:14px;border-top:1px dashed var(--rule)}
 .confirm-inline .note{margin:0 0 8px}
-/* Error page inside the signed-in shell */
+/* Error page inside the signed-in shell. The status code is a chip on a line of its own under the h1. */
 .error-page{max-width:var(--card)}
+.error-status{margin:-8px 0 14px}
+/* A plain box around a form that is no task of the page (Account: Sign out): no amber top. */
+form.action.quiet{border-top:1px solid var(--rule)}
 /* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
    form that was sent, focuses it and links the messages to their fields. Its focus ring is red like the callout. */
 .error-summary{max-width:var(--card);scroll-margin-top:16px}
@@ -629,11 +632,7 @@ a.stat:hover span,a.stat.is-on span{color:var(--amber)}
 a.stat:hover span{text-decoration:underline}
 a.stat.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
 a.stat.has-due b{color:var(--amber)}
-.entry-stats-summary{display:none}
-@media (max-width:600px){
-.entry-stats .secondary{display:none}
-.entry-stats-summary{display:block;grid-column:1/-1;color:var(--dim)}
-}
+.entry-stats-summary{flex-basis:100%;grid-column:1/-1;color:var(--dim)}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
@@ -673,7 +672,10 @@ details.import-ref>.inner .scroll{margin:0}
 .list.import-format td.req{grid-column:2;justify-self:end}
 .list.import-format td.desc{grid-column:1/-1;color:var(--dim)}
 .list.import-ids tr,.list.import-types tr{display:grid;gap:4px;padding:8px 12px;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px}
-.list.import-ids td.env-id code{font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.list.import-ids tr{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.list.import-ids td.env-id,.list.import-ids td.env-id .controls{display:contents}
+.list.import-ids td.env-id button{grid-area:1/2}
+.list.import-ids td.env-id code{grid-column:1/-1;font-size:12px;white-space:normal;overflow-wrap:anywhere}
 .list.import-types tr{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px}
 .list.import-types td.type-name{color:var(--dim);justify-self:end}
 .list.import-types td.type-fields{grid-column:1/-1}
@@ -681,9 +683,12 @@ details.import-ref>.inner .scroll{margin:0}
 }
 
 /* agents area */
+.head:has(+.tabs[aria-label="Agents sections"]){min-height:40px}
+.tabs[aria-label="Agents sections"]+.section-head{margin-top:0}
 .board.grants .when{white-space:normal}
 @media (min-width:901px){
 .board.grants :is(th,td){padding-inline:8px}
+.board.grants :is(th,td):nth-last-child(-n+2){width:1%}
 }
 .board.grants [data-label="Approval"]{white-space:nowrap}
 .board.grants [data-label="Entry"] small,.board.members [data-label="Role"] small{display:block;margin-top:2px;color:var(--dim)}
@@ -709,7 +714,6 @@ details.import-ref>.inner .scroll{margin:0}
 }
 
 /* setup area */
-.setup-first{margin-top:20px}
 .project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;max-width:var(--card)}
 .project-card[id]{scroll-margin-top:16px}
 .card.project-card{border-top-color:var(--rule)}

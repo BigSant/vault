@@ -25,8 +25,8 @@
     if ($navRole === 'owner') {
         $items[] = ['Activity', $base.'/audit', $section === 'audit', 0];
     }
-    // The footer line is about secret values and agents: only the Entries pages and the Agents area carry it.
-    $footer = ! $quiet && ($items[0][2] || in_array($section, ['requests', 'agents', 'grants'], true));
+    // The footer line is about secret values and agents: only the entry list and the Agents area carry it.
+    $footer = ! $quiet && ($path === '/' || in_array($section, ['requests', 'agents', 'grants'], true));
     if ($quiet) {
         $items = array_map(fn ($item) => [$item[0], $item[1], false, $item[3]], $items);
     }
@@ -47,9 +47,10 @@
     @endauth
     {{-- A role with one place to go (a viewer: Entries) gets no nav row; the VAULT mark already leads there.
          A page without a workspace (role unknown) keeps its Entries link.
-         data-refresh: app.js keeps the waiting count current on the pages that poll for requests. --}}
+         data-refresh: app.js keeps the waiting count current on the pages that poll for requests.
+         data-waiting-url (owners): on every other page app.js asks that address for the count once a minute. --}}
     @if(count($items) > 1 || ! $navRole)
-    <nav class="nav" aria-label="Main" data-refresh="nav">
+    <nav class="nav" aria-label="Main" data-refresh="nav"@if($navRole === 'owner') data-waiting-url="{{ $base }}/waiting"@endif>
         @foreach($items as [$text, $href, $active, $count])
             <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="page"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}<span class="sr-only"> {{ $count === 1 ? 'request' : 'requests' }} waiting</span></span>@endif</a>
         @endforeach

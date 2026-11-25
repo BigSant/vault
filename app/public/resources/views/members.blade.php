@@ -20,7 +20,7 @@
             <button class="stop" aria-label="Remove {{ $m->name }}" name="role" value="remove">Remove</button>
         </form>@endif</td></tr>@endforeach</tbody>
 </table></div>
-<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants.</p>
+<p class="note">Viewers see entry metadata. Editors manage and reveal entries and edit Setup. Owners also manage members, agents and grants, approve agent requests, and see workspace activity.</p>
 <h2 id="add-member">Add a member</h2>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
         <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>

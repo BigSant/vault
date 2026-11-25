@@ -24,6 +24,8 @@ Use these words in every UI text. Code names may differ.
 - **Grant** — one agent may run one action with one entry. Not "permission".
 - **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
+- **Password confirmation** — the one name for the 5-minute confirmation before sensitive actions (Account row,
+  the confirm page, the inline field). Not "identity", not "sensitive actions".
 - **Sign out** — not "Lock". Create actions in the signed-in UI: headings and links "Add a/an X", submit
   buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **Expires (UTC)**.
   **rotation due**. Password fields are labelled **Current password**.
@@ -51,7 +53,11 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   | Activity | `/workspaces/{w}/audit` | owner |
 
   The Agents item carries a count chip when requests wait for a decision or an MFA code. A role with a single
-  nav item (viewer) gets no nav row.
+  nav item (viewer) gets no nav row. The count stays current without a reload on every page of an owner: the pages
+  that refresh their requests swap the nav with them; every other page asks `GET /workspaces/{w}/waiting`
+  (`{"waiting": N}`, owners only, 404 otherwise) once a minute while it is visible, changes only the chip, never
+  while the focus is in the nav, and stops after 15 minutes without a key or pointer press so an unattended page
+  does not keep the session alive.
 - The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
   derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
 - **Account menu** (`<details>` under the user's name): Account → `GET /account`, Sign out (POST `/logout`).
@@ -97,7 +103,7 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 Two tabs under the h1 "Setup": **Projects · Entry types**.
 
-- `/workspaces/{w}/structure` — "Environments by project" (each project a card with Edit folds), "Add a
+- `/workspaces/{w}/structure` — "Environments" (each project a card with Edit folds), "Add a
   project", "Environment template".
 - `/workspaces/{w}/types` — entry types and their fields.
 
@@ -107,8 +113,8 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 ### Account (any signed-in user)
 
-- `/account` — who you are, sensitive-action confirmation state (with the confirm form), change password, the
-  workspaces you belong to with your role in each, sign out.
+- `/account` — who you are, the password confirmation state (with the confirm form), change password, the
+  workspaces you belong to with your role in each, sign out (a plain box, no amber top).
 - `/confirm?return=/path` — confirm your password (keeps the signed-in header). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because

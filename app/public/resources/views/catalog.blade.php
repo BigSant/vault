@@ -35,9 +35,7 @@
 @if($space)
 <div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
-    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
-    <div class="stat secondary"><b>{{ $prodCount }}</b><span>production</span></div>
-    <div class="stat secondary"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
+    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true" aria-label="Clear rotation-due filter"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <small class="entry-stats-summary">{{ $prodCount }} production · {{ $usedRecent }} used by agents in 7 days</small>
 </div>
 

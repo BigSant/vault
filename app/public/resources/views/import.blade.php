@@ -27,9 +27,37 @@
 @endif
 
 <h2>Format</h2>
-<p class="note">Each object’s <code>type</code> must exist in this workspace and include every required field for that type.</p>
+<p class="note">Choose a type defined in this workspace. Include its required fields in <code>secret_fields</code>.</p>
 
-<details class="import-ref capped" open>
+<div class="scroll capped"><table class="list import-format">
+    <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
+    <tbody>
+        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
+        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
+        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
+        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
+        <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip">required</span></td><td class="desc">JSON object mapping field keys to string values (or pass <code>secret</code> as a JSON-encoded string).</td></tr>
+        <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>
+        <tr><td class="key"><code>rotate_at</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
+    </tbody>
+</table></div>
+
+<div class="block-label">Example</div>
+<pre class="cmd capped">[
+  {
+    "environment_id": "00000000-0000-0000-0000-000000000000",
+    "name": "Billing API",
+    "alias": "billing-api-prod",
+    "type": "api_key",
+    "secret_fields": {
+      "token": "replace-me"
+    },
+    "tags": "billing, api",
+    "rotate_at": "2026-12-31"
+  }
+]</pre>
+
+<details class="import-ref capped" data-wide-open>
     <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
     <div class="inner">
         @if($environments->isEmpty())
@@ -72,32 +100,4 @@
         @endif
     </div>
 </details>
-
-<div class="scroll capped"><table class="list import-format">
-    <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
-    <tbody>
-        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
-        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
-        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
-        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
-        <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip">required</span></td><td class="desc">JSON object mapping field keys to string values (or pass <code>secret</code> as a JSON-encoded string).</td></tr>
-        <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>
-        <tr><td class="key"><code>rotate_at</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
-    </tbody>
-</table></div>
-
-<div class="block-label">Example</div>
-<pre class="cmd capped">[
-  {
-    "environment_id": "00000000-0000-0000-0000-000000000000",
-    "name": "Billing API",
-    "alias": "billing-api-prod",
-    "type": "api_key",
-    "secret_fields": {
-      "token": "replace-me"
-    },
-    "tags": "billing, api",
-    "rotate_at": "2026-12-31"
-  }
-]</pre>
 @endsection

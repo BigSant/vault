@@ -5,11 +5,11 @@
 <table class="facts">
     <tr><th scope="row">Name</th><td>{{ $user->name }}</td></tr>
     <tr><th scope="row">Email</th><td>{{ $user->email }}</td></tr>
-    <tr><th scope="row">Sensitive actions</th><td>
+    <tr><th scope="row">Password confirmation</th><td>
         @if($confirmedUntil)
-            <span class="chip ok">confirmed</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
+            <span class="chip ok">valid</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
         @else
-            <span class="chip muted">not confirmed</span> <a href="#confirm">Confirm your password</a> to reveal values or change access.
+            <span class="chip muted">needed</span> <a href="#confirm">Confirm your password</a> to reveal values or change access.
         @endif
     </td></tr>
 </table>
@@ -20,7 +20,7 @@
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
         <input type="hidden" name="return" value="/account">
-        <h3>Confirm sensitive actions<small>Lasts 5 minutes. Needed to reveal values and to change entries, access or setup.</small></h3>
+        <h3>Password confirmation<small>Valid for 5 minutes. Needed to reveal values and to change entries, access or setup.</small></h3>
         <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
         <div class="form-foot"><p class="note">Reveals and access changes are written to the activity log.</p><button class="go">Confirm</button></div>
     </form>
@@ -50,8 +50,8 @@
 @endif
 
 <h2>Sign out</h2>
-{{-- A card like the other sections: the note on the left, the plain button in the form foot. --}}
-<form class="action" method="post" action="/logout">@csrf
+{{-- A plain box, not a form card with the amber top: the note on the left, the plain button on the right. --}}
+<form class="action quiet" method="post" action="/logout">@csrf
     <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button class="plain" aria-label="Sign out of this session">Sign out</button></div>
 </form>
 @endsection

@@ -1,7 +1,8 @@
 @extends('layout')
 @section('title', 'Agent added')
 @section('content')
-<h1>Agents</h1>
+{{-- The same head row as Identities, so the tabs stay where they were. --}}
+<div class="head"><h1>Agents</h1><a class="btn" href="/workspaces/{{ $space->id }}/agents#add-agent">+ Add an agent</a></div>
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
 <h2>Agent added</h2>
 <div class="card solo">

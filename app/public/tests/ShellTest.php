@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -63,10 +64,10 @@ final class ShellTest extends TestCase
         $this->signIn($role);
         // A role with one place to go (viewer: Entries) gets no nav row; the VAULT mark leads to the entries.
         $response = $this->get('/')->assertOk()->assertSee('<a class="mark" href="/?workspace='.$this->workspace.'">VAULT</a>', false);
-        $role === 'viewer' ? $response->assertDontSee('aria-label="Main"', false) : $response->assertSee('<nav class="nav" aria-label="Main" data-refresh="nav">', false);
+        $role === 'viewer' ? $response->assertDontSee('aria-label="Main"', false) : $response->assertSee('<nav class="nav" aria-label="Main" data-refresh="nav"'.($role === 'owner' ? ' data-waiting-url="'.$this->base.'/waiting"' : '').'>', false);
         $response
             ->assertSee('href="/account"', false)->assertSee('action="/logout"', false)->assertSee('href="/workspaces/new"', false)
-            ->assertDontSee('Confirm sensitive actions')->assertDontSee('Change sign-in password');
+            ->assertDontSee('<h3>Password confirmation', false)->assertDontSee('Change sign-in password');
         foreach ($shown as $section) {
             $response->assertSee('href="'.$this->base.'/'.$section.'"', false);
         }
@@ -103,8 +104,15 @@ final class ShellTest extends TestCase
         $chip = '<span class="chip warn" title="Requests waiting for you">2<span class="sr-only"> requests waiting</span></span>';
         $this->signIn('owner');
         $this->get('/')->assertOk()->assertSee($chip, false);
+        // The count alone, for app.js on the pages that do not refresh their requests: owners only.
+        $this->getJson($this->base.'/waiting')->assertOk()->assertExactJson(['waiting' => 2]);
+        $this->get('/workspaces/'.$other.'/waiting')->assertNotFound();
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("document.querySelector('nav.nav[data-waiting-url]')", $script);
+        $this->assertStringContainsString('if (stopped || running || document.hidden || Date.now() < due || Date.now() - used > 900000) return;', $script);
         $this->signIn('editor');
-        $this->get('/')->assertOk()->assertDontSee('Requests waiting for you');
+        $this->get('/')->assertOk()->assertDontSee('Requests waiting for you')->assertDontSee('data-waiting-url', false);
+        $this->get($this->base.'/waiting')->assertNotFound();
     }
 
     public function test_workspace_switcher_keeps_the_section_when_the_role_allows_it(): void
@@ -123,9 +131,9 @@ final class ShellTest extends TestCase
     {
         $this->signIn('viewer');
         $this->get('/account')->assertOk()->assertSee('Viewer Person')->assertSee('viewer@example.test')->assertSee('Main space')
-            ->assertSee('confirmed</span> until', false)->assertSee('action="/password"', false)->assertSee('action="/logout"', false)
+            ->assertSee('<th scope="row">Password confirmation</th>', false)->assertSee('valid</span> until', false)->assertSee('action="/password"', false)->assertSee('action="/logout"', false)
             ->assertDontSee('name="return" value="/account"', false);
-        $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()->assertSee('not confirmed')
+        $this->withSession(['confirmed_at' => time() - 301])->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span>', false)->assertSee('<h3>Password confirmation<small>', false)
             ->assertSee('name="return" value="/account"', false);
         $this->get('/workspaces/new')->assertOk()->assertSee('action="/workspaces"', false);
     }
@@ -262,8 +270,8 @@ final class ShellTest extends TestCase
     {
         $this->signIn('owner');
         $this->get('/account')->assertOk();
-        $this->get('/confirm?return='.urlencode($this->base.'/types'))->assertOk()->assertSee('<title>Confirm your identity · Vault</title>', false)
-            ->assertSeeInOrder(['<header', '<h1>Confirm your identity</h1>', '<form class="action" method="post" action="/confirm">'], false)
+        $this->get('/confirm?return='.urlencode($this->base.'/types'))->assertOk()->assertSee('<title>Password confirmation · Vault</title>', false)
+            ->assertSeeInOrder(['<header', '<h1>Password confirmation</h1>', '<form class="action" method="post" action="/confirm">'], false)
             ->assertSee('aria-label="Main"', false)->assertSessionHas('last_page', '/account');
         $this->get('/workspaces/new')->assertOk()->assertSee('<h1>Add a workspace</h1>', false)->assertSee('+ Add a workspace')->assertDontSee('New workspace');
         $this->post('/workspaces', ['name' => str_repeat('n', 101)])->assertStatus(303)->assertRedirect('/workspaces/new');
@@ -403,10 +411,10 @@ final class ShellTest extends TestCase
             ->assertDontSee('>Refresh</a>', false);
         // Polling does not stop while the queue is empty; a hidden tab pauses. An expired row keeps the focus on its status.
         $script = (string) file_get_contents(public_path('app.js'));
-        $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due))) return;', $script);
+        $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;', $script);
         $this->assertStringContainsString('chip.focus({ preventScroll: true })', $script);
         $this->assertStringNotContainsString("getElementById('content')?.focus", $script);
-        $this->get($this->base.'/structure')->assertOk()->assertSee('<h2 class="setup-first">Environments by project</h2>', false)->assertDontSee('<h2>Projects', false)
+        $this->get($this->base.'/structure')->assertOk()->assertSee('</nav>'."\n\n".'<h2>Environments</h2>', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Projects', false)
             ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
         $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
@@ -416,6 +424,7 @@ final class ShellTest extends TestCase
     {
         $this->signIn('owner');
         $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button class="plain" aria-label="Sign out of this session">Sign out</button>', false)
+            ->assertSee('<form class="action quiet" method="post" action="/logout">', false)
             ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
         // The footer line belongs to the Entries pages and the Agents area only.
         $foot = '<p class="foot">Secret values stay in the vault. Agents only get action results.</p>';
@@ -426,6 +435,35 @@ final class ShellTest extends TestCase
         foreach (['members', 'structure', 'types', 'audit'] as $other) {
             $this->get($this->base.'/'.$other)->assertOk()->assertDontSee('class="foot"', false);
         }
+        $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertDontSee('class="foot"', false);
+        // The status code of an error page is a chip under the h1, not inside it.
+        $this->get('/nothing-here')->assertNotFound()->assertSeeInOrder(['<h1>Not found</h1>', '<p class="error-status"><span class="chip bad">Error 404</span></p>'], false);
+        // The one-time token page keeps the head row of Identities, so the tabs do not move.
+        $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
+            ->assertSeeInOrder(['<div class="head"><h1>Agents</h1><a class="btn" href="'.$this->base.'/agents#add-agent">+ Add an agent</a></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false);
+        $this->assertStringContainsString('<th scope="col">Ended (UTC)</th>', (string) file_get_contents(resource_path('views/operations.blade.php')));
+    }
+
+    public function test_entry_versions_are_paged(): void
+    {
+        Http::fake(['*' => Http::response(['data' => ['versions' => []]], 200)]);
+        $this->signIn('editor');
+        $project = (string) Str::uuid();
+        $environment = (string) Str::uuid();
+        $entry = (string) Str::uuid();
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
+        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 60, 'created_at' => now(), 'updated_at' => now()]);
+        // The entry page has no footer line; page 1 lists versions 60 down to 11 and links to the older ones.
+        $this->get('/entries/'.$entry)->assertOk()->assertDontSee('class="foot"', false)
+            ->assertSeeInOrder(['<nav class="pager" aria-label="Version pages">', 'Versions 11–60 of 60', '<a href="/entries/'.$entry.'?vpage=2#versions">Older versions →</a>'], false)
+            ->assertDontSee('← Newer versions');
+        // Page 2 lists the rest and links back.
+        $this->get('/entries/'.$entry.'?vpage=2')->assertOk()
+            ->assertSeeInOrder(['<a href="/entries/'.$entry.'#versions">← Newer versions</a>', 'Versions 1–10 of 60'], false)
+            ->assertDontSee('Older versions →');
+        // A page past the oldest version is empty, not an error.
+        $this->get('/entries/'.$entry.'?vpage=9')->assertOk()->assertSee('No older versions.');
     }
 
     public static function unsafeReturns(): array

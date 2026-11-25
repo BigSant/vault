@@ -74,6 +74,13 @@ final class AppServiceProvider extends ServiceProvider
         return null;
     }
 
+    /** Agent requests in a workspace that wait for a decision or an MFA code and have not expired. */
+    public static function waiting(string $workspace): int
+    {
+        return DB::table('operations')->join('machines', 'machines.id', '=', 'operations.machine_id')->where('machines.workspace_id', $workspace)
+            ->whereIn('operations.state', ['pending', 'requires_user_action'])->where('operations.expires_at', '>', now())->count();
+    }
+
     /**
      * Where the page head ends in a rendered page: after the first h1, the `.head` block around it, and the tabs or
      * jump links right below. The layout puts the error summary there when script cannot move it to its form.
@@ -147,8 +154,7 @@ final class AppServiceProvider extends ServiceProvider
         if ($role === 'owner') {
             $waiting = $request->attributes->get('nav.waiting.'.$id);
             if ($waiting === null) {
-                $waiting = DB::table('operations')->join('machines', 'machines.id', '=', 'operations.machine_id')->where('machines.workspace_id', $id)
-                    ->whereIn('operations.state', ['pending', 'requires_user_action'])->where('operations.expires_at', '>', now())->count();
+                $waiting = self::waiting($id);
                 $request->attributes->set('nav.waiting.'.$id, $waiting);
             }
         }
