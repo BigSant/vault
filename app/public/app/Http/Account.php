@@ -51,6 +51,30 @@ final class Account
         return in_array($path, ['/confirm', '/logout', '/login', '/mfa'], true) ? '/' : $value;
     }
 
+    public static function errorReturnPath(Request $r): ?string
+    {
+        $origin = $r->getSchemeAndHttpHost();
+        $referer = $r->headers->get('referer', '');
+        $paths = [
+            str_starts_with($referer, $origin.'/') ? substr($referer, strlen($origin)) : null,
+            $r->session()->get('last_page'),
+        ];
+        foreach ($paths as $path) {
+            if (! is_string($path) || self::safePath($path) !== $path) {
+                continue;
+            }
+            try {
+                $route = app('router')->getRoutes()->match(Request::create($origin.$path, 'GET'));
+                if (! $route->isFallback && in_array('vault.auth', $route->middleware(), true)) {
+                    return $path;
+                }
+            } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                // Unknown and POST-only addresses cannot serve as recovery pages.
+            }
+        }
+        return null;
+    }
+
     /** Where a blocked sensitive request came from: the same-origin Referer, else the last page shown in this session. */
     public static function returnPath(Request $r): string
     {

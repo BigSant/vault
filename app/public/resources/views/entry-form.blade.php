@@ -35,6 +35,9 @@
                 <span>Type</span>
                 <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
             </div>
+            {{-- As on Add an entry: the detour to Setup opens a new tab, and "Reload fields" (shown by app.js) swaps
+                 only the type field rows. What was typed stays, and so does every "Clear the current … value" box. --}}
+            <p class="type-detour" data-reload-types-row><span class="note">Field missing? <a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types (new tab)</a></span> <button type="button" data-reload-types title="After saving the type in the other tab, reload its fields here. What you typed stays." hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></p>
         @else
             @php $selectedEnv = old('environment_id'); @endphp
             <label><span>Project / environment</span><select name="environment_id" required>
@@ -81,7 +84,7 @@
                         @endif
                     </label>
                 @endif
-                @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> Clear the current “{{ $f['label'] }}” value</label>@endif
+                @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" id="clear-{{ $t->key }}-{{ $f['key'] }}" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> Clear the current “{{ $f['label'] }}” value</label>@endif
             @endforeach
         @endforeach
     </fieldset>

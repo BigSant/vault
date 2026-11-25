@@ -84,7 +84,9 @@
 @if($example)
 <div class="import-example">
     <div class="block-label">Example <button type="button" data-copy="import-example-json" data-copy-name="example">Copy example</button></div>
-    <pre class="cmd capped" id="import-example-json">{{ $example }}</pre>
+    {{-- Two-space indent, and lines are never broken (an environment ID stays whole): the block scrolls sideways
+         where a line is longer than the column, so it takes the focus for the arrow keys. --}}
+    <pre class="cmd capped" id="import-example-json" tabindex="0" role="region" aria-label="Example import JSON">{{ preg_replace_callback('/^(?: {4})+/m', fn ($m) => str_repeat(' ', intdiv(strlen($m[0]), 2)), (string) $example) }}</pre>
 </div>
 @endif
 </section>

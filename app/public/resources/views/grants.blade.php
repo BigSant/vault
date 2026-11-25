@@ -32,6 +32,9 @@
         @endunless
     </div>
 @else
+{{-- Revoke never goes to the confirm page while script runs: one shared password block above the board, as on
+     Members. "Add a grant" names it too and only points to it when the confirmation has expired. --}}
+@include('confirm-inline', ['verb' => 'change grants', 'ask' => 'Enter your current password, then revoke or add a grant below.', 'shared' => 'confirm-grants'])
 <div class="scroll"><table class="board compact-board grants">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
@@ -49,7 +52,7 @@
             <td class="approval" data-label="Approval">{{ $g->approval ? 'asks every time' : 'runs without asking' }}</td>
             <td class="when" data-label="Expires (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
             <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
-            <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?">@csrf<button class="stop" aria-label="{{ $revoke }}">Revoke</button></form>@endif</td>
+            <td data-label="">@if($gState === 'active')<form class="controls" method="post" action="/workspaces/{{ $space->id }}/revoke/grants/{{ $g->id }}" data-confirm="{{ $revoke }}?" data-confirm-from="confirm-grants">@csrf<button class="stop" aria-label="{{ $revoke }}" data-held-name="Revoke grant: {{ $g->action }} for {{ $machine->name }} on {{ $target->name }}">Revoke</button></form>@endif</td>
         </tr>
     @endforeach
     </tbody>
@@ -65,13 +68,17 @@
         @unless($actions)<p>No actions are configured. Ask the operator to register the allowed target systems.</p>@endunless
     </div>
 @else
-    <form class="action" method="post" action="/workspaces/{{ $space->id }}/grants">@csrf
+    <form class="action" method="post" action="/workspaces/{{ $space->id }}/grants"@unless($grants->isEmpty()) data-confirm-from="confirm-grants"@endunless>@csrf
         <label><span>Agent</span><select name="machine_id" required><option value="">Choose an agent</option>@foreach($activeMachines as $m)<option value="{{ $m->id }}"{{ $m->id === old('machine_id', $agent?->id) ? ' selected' : '' }}>{{ $m->name }}</option>@endforeach</select></label>
         <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}{{ $e->production ? ' (production)' : '' }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
         <label><span>Action</span><select name="action" required><option value="">Choose an action</option>@foreach($actions as $id => $a)@php $required = \App\Vault\EntryTypes::actionFields($a['kind']); @endphp<option value="{{ $id }}" data-fields="{{ implode(',', $required) }}" @selected(old('action') === $id)>{{ $id }}</option>@endforeach</select></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 1) }}" required></label>
         <label class="check"><input type="checkbox" name="approval" value="1" @checked(old('approval', !session()->hasOldInput()))> Ask me before every run</label>
-        @include('confirm-inline', ['verb' => 'grant this action'])
+        @if($grants->isEmpty())
+            @include('confirm-inline', ['verb' => 'grant this action'])
+        @else
+            @include('confirm-inline', ['verb' => 'grant this action', 'shared' => 'confirm-add-grant', 'primary' => 'confirm-grants', 'primaryShown' => true, 'primaryWhere' => 'above the grants', 'fallback' => true])
+        @endif
         <div class="form-foot"><p class="note">The entry's type must have the fields the action reads.</p><button class="go">Add grant</button></div>
     </form>
 @endif

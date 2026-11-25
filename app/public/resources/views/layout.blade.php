@@ -14,21 +14,24 @@
     $switchTo = fn ($s) => in_array($s->role, $sectionRoles[$section] ?? [], true) ? '/workspaces/'.$s->id.'/'.$section : '/?workspace='.$s->id;
     // The confirm page and error pages stand in for another page: no nav item is the current one.
     $quiet = $__env->hasSection('quiet-nav');
-    $items = [['Entries', $navSpace ? '/?workspace='.$navSpace->id : '/', $path === '/' || str_starts_with($path, 'entries') || $section === 'import', 0]];
+    // The last value is the item's aria-current: "page" when the item is the page itself; "location" when the page
+    // is inside the item's area (an entry, the import, a tab of Agents or Setup: there the tab is the "page").
+    $items = [['Entries', $navSpace ? '/?workspace='.$navSpace->id : '/', $path === '/' || str_starts_with($path, 'entries') || $section === 'import', 0, $path === '/' ? 'page' : 'location']];
     if ($navRole === 'owner') {
-        $items[] = ['Agents', $base.'/requests', in_array($section, ['requests', 'agents', 'grants', 'machines'], true), $navWaiting];
-        $items[] = ['Members', $base.'/members', $section === 'members', 0];
+        $items[] = ['Agents', $base.'/requests', in_array($section, ['requests', 'agents', 'grants', 'machines'], true), $navWaiting, 'location'];
+        $items[] = ['Members', $base.'/members', $section === 'members', 0, 'page'];
     }
     if (in_array($navRole, ['owner', 'editor'], true)) {
-        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'types'], true), 0];
+        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'types'], true), 0, 'location'];
     }
     if ($navRole === 'owner') {
-        $items[] = ['Activity', $base.'/audit', $section === 'audit', 0];
+        $items[] = ['Activity', $base.'/audit', $section === 'audit', 0, 'page'];
     }
-    // The footer line is about secret values and agents: only the entry list and the Agents area carry it.
-    $footer = ! $quiet && ($path === '/' || in_array($section, ['requests', 'agents', 'grants'], true));
+    // The footer line is about secret values and agents: only the entry list and the Agents area carry it
+    // ("machines" is the page that shows a new agent's token).
+    $footer = ! $quiet && ($path === '/' || in_array($section, ['requests', 'agents', 'grants', 'machines'], true));
     if ($quiet) {
-        $items = array_map(fn ($item) => [$item[0], $item[1], false, $item[3]], $items);
+        $items = array_map(fn ($item) => [$item[0], $item[1], false, $item[3], $item[4]], $items);
     }
 @endphp
 <header class="top">
@@ -51,8 +54,8 @@
          data-waiting-url (owners): on every other page app.js asks that address for the count once a minute. --}}
     @if(count($items) > 1 || ! $navRole)
     <nav class="nav" aria-label="Main" data-refresh="nav"@if($navRole === 'owner') data-waiting-url="{{ $base }}/waiting"@endif>
-        @foreach($items as [$text, $href, $active, $count])
-            <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="page"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}<span class="sr-only"> {{ $count === 1 ? 'request' : 'requests' }} waiting</span></span>@endif</a>
+        @foreach($items as [$text, $href, $active, $count, $current])
+            <a class="btn{{ $active ? ' on' : '' }}" href="{{ $href }}"{!! $active ? ' aria-current="'.$current.'"' : '' !!}>{{ $text }}@if($count) <span class="chip warn" title="Requests waiting for you">{{ $count }}<span class="sr-only"> {{ $count === 1 ? 'request' : 'requests' }} waiting</span></span>@endif</a>
         @endforeach
     </nav>
     @endif

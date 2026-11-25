@@ -80,19 +80,25 @@ final class ShellTest extends TestCase
     {
         $this->signIn('editor');
         $this->get($this->base.'/structure')->assertOk()
-            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
+            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="location">Setup</a>', false)
             ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false)
             // The add form is reached from the head row, as on Members; the tabs follow it directly, with no jump links.
             ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>'."\n".'<nav class="tabs"', false)
             ->assertSee('<h2 id="add-project">', false)->assertDontSee('On this page');
         $this->get($this->base.'/types')->assertOk()
-            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
+            ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="location">Setup</a>', false)
             ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false)
             ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add an entry type</a></div>'."\n".'<nav class="tabs"', false)
             // Headings, links and buttons of this tab say "entry type"; a field label may say "Type".
             ->assertSeeInOrder(['<h2 id="add-type">Add an entry type</h2>', '<span>Type name</span>', '<button class="go">Add entry type</button>'], false)
             ->assertDontSee('Add a type')->assertDontSee('>Add type<', false);
         $this->get('/')->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="page">Entries</a>', false);
+        // Inside an area the nav item is the "location" and the tab is the "page"; a page of its own is the "page".
+        $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="location">Entries</a>', false);
+        $this->signIn('owner');
+        $this->get($this->base.'/grants')->assertOk()->assertSee('<a class="btn on" href="'.$this->base.'/requests" aria-current="location">Agents</a>', false)
+            ->assertSeeInOrder(['aria-label="Agents sections"', 'href="'.$this->base.'/grants"', 'class="on" aria-current="page"', 'Grants'], false);
+        $this->get($this->base.'/members')->assertOk()->assertSee('<a class="btn on" href="'.$this->base.'/members" aria-current="page">Members</a>', false);
     }
 
     public function test_agents_item_counts_waiting_requests_for_owners_only(): void
@@ -158,6 +164,36 @@ final class ShellTest extends TestCase
         $this->get('/confirm?return='.urlencode('//evil.example'))->assertOk()->assertSee('name="return" value="/"', false);
     }
 
+    public function test_pending_revoke_resumes_only_after_an_explicit_post(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->waitingRequest();
+        $path = $this->base.'/revoke/machines/'.DB::table('machines')->value('id');
+        $this->post($path, ['back' => 'agents', 'password_hint' => 'private', 'token' => 'private', 'oversized' => str_repeat('a', 4097)])
+            ->assertForbidden()->assertSee('Revoke agent agent');
+        $pending = session('pending_action');
+        $this->assertSame(['back' => 'agents'], $pending['fields']);
+        $this->post('/confirm', ['pending' => $pending['nonce'], 'current_password' => self::PASSWORD])
+            ->assertOk()->assertSee('action="'.$path.'"', false)->assertSee('Continue: Revoke agent agent')
+            ->assertSee('name="back" value="agents"', false)->assertDontSee('private')->assertSessionMissing('pending_action');
+        $this->assertNull(DB::table('machines')->value('revoked_at'));
+        $this->post($path, $pending['fields'])->assertRedirect($this->base.'/agents');
+        $this->assertNotNull(DB::table('machines')->value('revoked_at'));
+    }
+
+    public function test_pending_action_rejects_external_origin_unknown_route_and_expired_nonce(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $path = $this->base.'/projects';
+        $this->post($path, ['name' => 'billing'], ['Origin' => 'https://other.example'])->assertForbidden()->assertSessionMissing('pending_action');
+        $this->post('/unknown')->assertSessionMissing('pending_action');
+        $this->post($path, ['name' => 'billing'])->assertForbidden()->assertSee('Add project billing');
+        $nonce = session('pending_action.nonce');
+        $this->travel(11)->minutes();
+        $this->post('/confirm', ['pending' => $nonce, 'current_password' => self::PASSWORD])
+            ->assertRedirect('/')->assertSessionMissing('pending_action');
+    }
+
     public function test_confirm_returns_to_a_safe_path_and_then_the_action_works(): void
     {
         $this->signIn('owner', time() - 301);
@@ -187,14 +223,14 @@ final class ShellTest extends TestCase
         // Valid: "Confirmed until HH:MM UTC.", the field hidden and switched off. (The view composer sets $confirmedUntil.)
         $this->signIn('owner', time() - 100);
         $until = time() + 200;
-        $valid = $this->get($this->base.'/structure')->assertOk()->getContent();
+        $valid = $this->get($this->base.'/types')->assertOk()->getContent();
         $block = substr($valid, (int) strpos($valid, '<div class="confirm-inline"'), 900);
         $this->assertMatchesRegularExpression('/Password confirmed until <span class="nobreak">('.gmdate('H:i', $until).'|'.gmdate('H:i', $until + 2).') UTC<\/span>\./', $block);
         $this->assertStringContainsString('<label data-when="expired"  hidden >', $block);
         $this->assertMatchesRegularExpression('/name="confirm_password"[^>]* disabled >/', $block);
         $this->assertStringNotContainsString('is-needed', $valid);
         // Expired inside a form: the field is the form's own and required, with or without script.
-        $expired = $this->withSession(['confirmed_at' => time() - 301])->get($this->base.'/structure')->assertOk()->getContent();
+        $expired = $this->withSession(['confirmed_at' => time() - 301])->get($this->base.'/types')->assertOk()->getContent();
         $this->assertStringContainsString('class="confirm-inline is-needed"', $expired);
         $this->assertMatchesRegularExpression('/name="confirm_password"[^>]* required >/', $expired);
         session()->forget('confirmed_at');
@@ -273,20 +309,33 @@ final class ShellTest extends TestCase
         $dana = User::create(['id' => (string) Str::uuid(), 'name' => 'Dana', 'email' => 'dana@example.test', 'password' => Hash::make(self::PASSWORD), 'mfa_enabled' => true]);
         DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $dana->id, 'role' => 'viewer']);
         $page = $this->get($this->base.'/members')->assertOk();
-        // One shared block above the board; both row forms name it, and each button carries the held wording
-        // ("Change Dana's role to " + the chosen role, "Remove Dana") with the name marked as data.
-        $page->assertSeeInOrder(['id="confirm-members"', 'data-quiet-valid', 'class="board compact-board members"', 'data-confirm-from="confirm-members"'], false)
-            ->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then save a role or remove a member below."', false)
+        // One shared block above the board; both row forms and the add form name it, and each button carries the held
+        // wording ("Change Dana's role to " + the chosen role, "Remove Dana", "Add member: " + the name typed).
+        $page->assertSeeInOrder(['id="confirm-members"', 'class="board compact-board members"', 'data-confirm-from="confirm-members"'], false)
+            ->assertDontSee('data-quiet-valid', false)
+            ->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then save a role, remove a member or add a member below."', false)
+            ->assertSee('/members" data-confirm-from="confirm-members">', false)
+            ->assertSee('<button class="go" data-held-name="Add member: " data-held-field="name">Add member</button>', false)
+            // The add form only points to that field; a field of its own exists without script alone.
+            ->assertSeeInOrder(['id="confirm-add-member"  data-primary="confirm-members"', 'Go to the password field</a> above the members, enter your current password, then add this member.', '<noscript><p class="note">Your password confirmation has expired. Enter your current password to add this member.</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>'], false)
             ->assertSee('data-held-name="Change Dana\'s role to " data-held-field="role" data-held-lead="Change " data-held-data="Dana">Save role</button>', false)
             ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
             ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
             ->assertSee('<small>Add another owner before changing your role.</small>', false)
             ->assertSee('id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small>', false);
         $this->assertSame(1, substr_count($page->getContent(), 'id="confirm-members"'));
-        $this->assertSame(2, substr_count($page->getContent(), 'data-confirm-from="confirm-members"'));
-        // While the confirmation is valid the shared block shows nothing: the Add a member form states it once.
-        $this->withSession(['confirmed_at' => time()])->get($this->base.'/members')->assertOk()
-            ->assertSee('<div class="confirm-inline shared is-quiet" id="confirm-members"', false);
+        $this->assertSame(3, substr_count($page->getContent(), 'data-confirm-from="confirm-members"'));
+        // Outside <noscript> the page has one password field that can be used: the shared block's.
+        $this->assertSame(1, substr_count((string) preg_replace('#<noscript>.*?</noscript>#s', '', $page->getContent()), 'id="confirm-members-password"'));
+        $this->assertSame(0, substr_count((string) preg_replace('#<noscript>.*?</noscript>#s', '', $page->getContent()), 'name="confirm_password" maxlength="200" autocomplete="current-password" required'));
+        // While the confirmation is valid the shared block states it once; the add form's block shows nothing and has no fallback field.
+        $valid = $this->withSession(['confirmed_at' => time()])->get($this->base.'/members')->assertOk()
+            ->assertSee('<div class="confirm-inline shared" id="confirm-members"', false)
+            ->assertSee('<div class="confirm-inline shared is-deferred is-quiet" id="confirm-add-member"', false)->assertDontSee('<noscript>', false);
+        $this->assertSame(1, preg_match_all('#<span data-when="valid" >Password confirmed until#', $valid->getContent()));
+        // Add member reads the password from the same POST: a wrong one is a field error back on Members, never the confirm page.
+        $this->withSession(['confirmed_at' => time() - 301])->post($this->base.'/members', ['form' => 'add', 'name' => 'Eli', 'email' => 'eli@example.test', 'password' => 'a-long-first-password', 'role' => 'viewer', 'confirm_password' => 'wrong-password'])
+            ->assertStatus(303)->assertRedirect($this->base.'/members')->assertSessionHas('form_errors.confirm_password', ['Current password is not right.']);
         $script = (string) file_get_contents(public_path('app.js'));
         // The chosen role is part of the held wording and stays chosen; the held button does not ask "Remove?" again.
         $this->assertStringContainsString('button?.dataset.heldField ? form.elements[button.dataset.heldField] : null', $script);
@@ -484,7 +533,7 @@ final class ShellTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'machine:'.$machine, 'event' => $event, 'subject' => $subject, 'outcome' => $outcome, 'created_at' => now()]);
         }
         $this->get($this->base.'/audit')->assertOk()
-            ->assertSee('<span class="event-name">Agent requested <span class="name">shop.admin-login</span></span> <small class="nobreak event-code">request.open</small>', false)
+            ->assertSee('<span class="event-name">Agent requested <code>shop.admin-login</code></span> <small class="nobreak event-code">request.open</small>', false)
             ->assertSee('<span class="event-name">Agent request</span>', false)->assertSee('<span class="event-name">Rotated entry values</span>', false)
             ->assertSee('<span class="chip bad">denied</span>', false)->assertDontSee('<code class="nobreak event-code">', false)->assertDontSee('Agent requested an action');
     }
@@ -528,7 +577,7 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('if (inUse(region)) { skipped = true; return; }', $script);
         $this->get($this->base.'/structure')->assertOk()->assertDontSee('<h2>Projects', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
             // No h2 repeats the active tab: the project cards follow the tabs, and the two forms keep their h2.
-            ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries by environment.', '<div class="project-list">', '<h2 id="add-project">Add a project</h2>', '<h2 id="template">Environment template</h2>'], false)
+            ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries by environment.', 'id="confirm-setup"', '<div class="deck project-list">', '<h2 id="add-project">Add a project</h2>', '<h2 id="template">Environment template</h2>'], false)
             ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
         $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
@@ -552,8 +601,15 @@ final class ShellTest extends TestCase
             $this->get($this->base.'/'.$other)->assertOk()->assertDontSee('class="foot"', false);
         }
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertDontSee('class="foot"', false);
-        // The status code of an error page is a chip under the h1, not inside it.
-        $this->get('/nothing-here')->assertNotFound()->assertSeeInOrder(['<h1>Not found</h1>', '<p class="error-status"><span class="chip bad">Error 404</span></p>'], false);
+        // The status code of an error page is a dim line under the h1, not inside it; the callout is the one red mark.
+        $this->get('/nothing-here')->assertNotFound()->assertSeeInOrder(['<h1>Not found</h1>', '<p class="error-status">Error 404</p>', '<div class="callout bad">'], false)
+            ->assertDontSee('chip bad', false);
+        // 409 and 422: with a return path the button leads back to the page; without one it and the instruction say "entries".
+        $this->view('error', ['status' => 422, 'shell' => true, 'returnPath' => '/workspaces/w/types'])
+            ->assertSeeInOrder(['Go back to the previous page to correct the form.', '<a class="btn" href="/workspaces/w/types">Back to previous page</a>'], false);
+        $this->view('error', ['status' => 409, 'shell' => true, 'returnPath' => null])
+            ->assertSeeInOrder(['Go back to entries to see the current state. Nothing was changed.', '>Back to entries</a>'], false)->assertDontSee('previous page');
+        $this->view('error', ['status' => 404, 'shell' => true, 'returnPath' => '/x'])->assertSee('>Back to entries</a>', false);
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
             ->assertSeeInOrder(['<div class="head"><h1>Agents</h1></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false)
@@ -704,6 +760,31 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString("document.querySelectorAll('[data-reload-types]')", $script);
         $this->assertStringContainsString('rows.replaceChildren(', $script);
         $this->get($this->base.'/agents')->assertOk()->assertSee('The agent can do nothing until you add a grant.');
+    }
+
+    public function test_update_form_reloads_its_fields_and_keeps_every_clear_box(): void
+    {
+        $this->signIn('owner');
+        $project = (string) Str::uuid();
+        $environment = (string) Str::uuid();
+        $entry = (string) Str::uuid();
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
+        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        // The update form has the Setup detour too; its type is fixed, so the button reloads the fields.
+        $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$entry)->assertOk()
+            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types (new tab)</a>', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
+            // Each "Clear the current … value" box has an id of its type and field, so a reload can give it back its state.
+            ->assertSee('<input type="checkbox" id="clear-ssh-passphrase" name="clear_fields[]" value="passphrase" data-optional', false)
+            ->assertDontSee('id="clear-ssh-private_key"', false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        // Checked and unchecked boxes are restored by id; the status never says "kept" for what was not.
+        $this->assertStringContainsString('boxes.set(el.id, el.checked);', $script);
+        $this->assertStringContainsString('el.checked = boxes.get(el.id);', $script);
+        $this->assertStringContainsString("'What you typed was kept, and the values marked to clear are still marked.'", $script);
+        $this->assertStringContainsString('is no longer marked: its field is gone or is now required.', $script);
+        $this->assertStringContainsString("'The rest of the form is unchanged.'", $script);
+        $this->assertStringNotContainsString("if (el.type === 'checkbox') el.checked = true; else el.value = kept;", $script);
     }
 
     public function test_header_and_page_share_one_right_edge_and_phone_cards_keep_their_lines(): void

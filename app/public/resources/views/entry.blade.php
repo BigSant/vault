@@ -62,7 +62,7 @@
 @if($isOwner)
 <div class="waiting-first">
 @include('operations', ['mode' => 'waiting', 'quietEmpty' => true, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id, 'refreshUrl' => '/entries/'.$entry->id,
-    'confirmAsk' => $canEdit ? 'Enter your current password, then choose a request action or reveal values below.' : null])
+    'confirmAsk' => $canEdit ? 'Enter your current password, then choose a request action, or reveal, restore or archive below.' : null])
 </div>
 @endif
 
@@ -90,7 +90,8 @@
             <p class="note" data-hidden-note="{{ $hiddenNote }}">Current version {{ $current }}. Values hide again after 30 seconds.</p>
         @endif
         @foreach($secret as $field => $value)
-            <div class="secret-row">
+            {{-- The value and its Copy share a row at every width; the field name is the line above. --}}
+            <div class="secret-row compact">
                 <div class="block-label">@if(isset($labels[$field]))<span class="name">{{ $labels[$field] }}</span>@else<code class="name">{{ $field }}</code>@endif
                     @if(!isset($labels[$field]))<span class="chip muted">no longer in type</span>@endif
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
@@ -109,8 +110,9 @@
         {{-- One password field for every Reveal on this page (here and per version): an expired confirmation asks
              here, in place, and never sends a reveal to the confirm page. While requests wait for this owner, their
              block at the top of the page ("confirm-decide") is the page's one confirmation state and one password
-             field: this block then shows nothing while the confirmation is valid, and points up when it expired. --}}
-        @include('confirm-inline', ['verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
+             field: this block then shows nothing while the confirmation is valid, and points up when it expired.
+             Restore (Versions) and Archive entry name this block too, so they are held here like a reveal. --}}
+        @include('confirm-inline', ['verb' => 'reveal, restore or archive', 'ask' => 'Enter your current password, then reveal values, restore a version or archive the entry.', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
             {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice.
@@ -168,7 +170,7 @@
                 @if($h['available'])
                     <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values" data-held-name="Reveal version {{ $h['version'] }}: {{ $entry->name }}">Reveal</button></form>
                     @if($h['version'] !== $current)
-                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
+                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version." data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}" data-held-name="Restore version {{ $h['version'] }}: {{ $entry->name }}">Restore</button></form>
                     @endif
                 @endif
             </div></td>
@@ -223,8 +225,8 @@
 <h2 id="archive">{{ $archiveHeading }}</h2>
 <div class="deck">
     @if($canEdit)
-    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Grants for it are revoked.">@csrf
-        <div class="form-foot"><p class="note">Archiving revokes every grant for this entry and hides its values. You can bring it back later.</p><button class="stop">Archive entry</button></div>
+    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Grants for it are revoked." data-confirm-from="confirm-reveal">@csrf
+        <div class="form-foot"><p class="note">Archiving revokes every grant for this entry and hides its values. You can bring it back later.</p><button class="stop" data-held-name="Archive entry: {{ $entry->name }}">Archive entry</button></div>
     </form>
     @endif
     @if($entry->state === 'archived' && $isEditor)

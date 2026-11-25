@@ -311,6 +311,12 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 .block-label .chip{letter-spacing:.06em}
 .secret-row{margin:0 0 12px}
 .secret-row .controls{margin-top:6px}
+/* A revealed value (the entry page): the field name is a line, then the value with its Copy on the same row, at
+   every width. A note about a failed copy takes the whole row under them. */
+.secret-row.compact{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:start}
+.secret-row.compact>.block-label,.secret-row.compact>.copy-note{grid-column:1/-1}
+.secret-row.compact>.block-label{margin-bottom:0}
+.secret-row.compact>.controls{margin-top:0}
 .note+.secret-row{margin-top:12px}
 /* Copy failed: the note stays under the Copy button until a copy works or the value is hidden. When the button is
    in a form foot (the token card) the note sits under that row, at the right like the button. */
@@ -518,7 +524,8 @@ details.fold{scroll-margin-top:16px}
 details.fold>summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px}
 details.fold>summary::before,details.fold[open]>summary::before{flex:none;content:"\25B8"}
 details.fold[open]>summary::before{content:"\25BE"}
-/* One affordance per fold: a summary that says "Edit" has no marker; the marker stays where no word names the toggle. */
+/* One affordance per fold: a summary with an "Edit" control (.fold-act) carries the marker inside that control; the
+   summary's own marker stays where no word names the toggle. */
 details.fold>summary:has(.fold-act)::before{content:none}
 details.fold>summary:hover .fold-name{color:var(--amber)}
 details.fold[open]{border-top:2px solid var(--amber)}
@@ -543,7 +550,13 @@ h2 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacin
 /* No margin on the key: when it wraps it starts flush left, like .event-code. */
 .fold-name code{font-weight:400}
 .fold-meta{color:var(--dim);font-size:13px;font-weight:400;white-space:nowrap}
-.fold-act{color:var(--amber);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+/* The toggle of a fold, as a compact control with an edge: the marker (▸ closed, ▾ open) and "Edit" or "Close".
+   It is the look only; the whole summary is what is pressed. */
+.fold-act{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:28px;padding:5px 10px;border:1px solid var(--edge);border-radius:3px;
+color:var(--ink);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.fold-act::before{content:"\25B8";color:var(--amber)}
+details[open]>summary .fold-act::before{content:"\25BE"}
+details.fold>summary:hover .fold-act{border-color:var(--amber);color:var(--amber)}
 /* An open fold says "Close" where a closed one says "Edit". */
 details:not([open])>summary .when-open,details[open]>summary .when-closed{display:none}
 /* One environment per row inside a project card. */
@@ -551,7 +564,11 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .card details.fold>summary{gap:6px 16px}
 .card details.fold .form-foot{align-items:center}
 /* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
-@media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}details.fold>summary:has(.fold-act) .fold-name{flex-basis:100%}.fold-act{margin-left:auto}}
+@media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}details.fold>summary:has(.fold-act) .fold-name{flex-basis:100%}.fold-act{margin-left:auto}
+/* A project's head and each environment row stay one line: the name or sign, the count, Edit. A long name wraps
+   inside its own share. */
+details.fold:is(.env,.project-edit)>summary{flex-wrap:nowrap;gap:6px 10px}
+details.fold:is(.env,.project-edit)>summary:has(.fold-act) .fold-name{flex:1 1 0;min-width:0}}
 /* Password confirmation inside the page (confirm-inline). Valid: one quiet line, "Confirmed until HH:MM UTC.".
    Expired (.is-needed, set by the server or app.js): the legend, the reason and the field under a dashed rule.
    .shared stands outside the forms it serves: above the form foot of the Secret values card, and as a panel of
@@ -575,13 +592,16 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .confirm-inline.is-deferred .note{font-size:13px;color:var(--dim)}
 .confirm-inline.shared{margin:0 0 12px;scroll-margin-top:16px}
 .confirm-inline.shared label{margin-bottom:0}
+/* A block inside a form card that only points to the page's one password field (Add a member, the template). */
+form.action>.confirm-inline.shared{margin:14px 0 0}
 .card>.confirm-inline.shared.is-needed{margin-top:14px}
 :not(.card)>.confirm-inline.shared{max-width:var(--card);margin-bottom:10px}
 .head+.confirm-inline.shared.is-needed{margin-top:10px}
 :not(.card)>.confirm-inline.shared.is-needed{padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px}
-/* Error page inside the signed-in shell. The status code is a chip on a line of its own under the h1. */
+/* Error page inside the signed-in shell. The status code is a dim line of its own under the h1: the callout is
+   the page's one red mark. */
 .error-page{max-width:var(--card)}
-.error-status{margin:-8px 0 14px}
+.error-status{margin:-8px 0 14px;color:var(--dim);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 /* A plain box around a form that is no task of the page (Account: Sign out): no amber top. */
 form.action.quiet{border-top:1px solid var(--rule)}
 /* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
@@ -725,6 +745,8 @@ details.import-ref>.inner .scroll{margin:0}
 form.action label+details.import-ref{margin-top:12px}
 form.action details.import-ref{background:var(--panel-2)}
 .import-example{max-width:var(--card);margin:0 0 14px}
+/* The example's lines are never broken (an environment ID stays whole): the block scrolls sideways instead. */
+.import-example pre.cmd{white-space:pre;overflow-wrap:normal;font-size:12px}
 /* Import: the form and the Format reference are two columns of a deck where both fit; each starts with its h2.
    "Format ↓" in the intro is for the stacked page only: two columns need 1052 px, plus the page padding. */
 .import-deck>section>:last-child{margin-bottom:0}
@@ -874,7 +896,8 @@ form.action details.import-ref{background:var(--panel-2)}
 }
 
 /* setup area */
-.project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;max-width:var(--card)}
+/* The project cards are a .deck: two side by side where --wide has room for them (2 x 520 + 12), one column below. */
+.project-list{max-width:var(--wide)}
 .project-card[id]{scroll-margin-top:16px}
 .card.project-card{border-top-color:var(--rule)}
 .card details.fold.project-edit{background:transparent;border:1px solid transparent;border-bottom-color:var(--rule);border-radius:0;margin:-4px 0 10px}

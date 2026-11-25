@@ -27,7 +27,8 @@
     @endunless
     <form class="action" method="post" action="/password">@csrf
         <h3>Change sign-in password</h3>
-        <label><span>Current password</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
+        {{-- Two "Current password" fields stand side by side while the confirmation is needed: this one says what it is for. --}}
+        <label><span>Current password @unless($confirmedUntil)<small>to change it</small>@endunless</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
         <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
         <label><span>Repeat new password</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
         <div class="form-foot"><p class="note">At least 14 characters. Signs out every session, this one too.</p><button>Change password and sign out</button></div>

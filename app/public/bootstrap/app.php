@@ -48,7 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 // The header keeps the workspace the blocked action belongs to (its membership is checked by the header composer).
                 $workspace = AppServiceProvider::requestWorkspace($r);
 
-                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => ! $error->failed, 'failed' => $error->failed,
+                return response()->view('confirm', ['return' => Account::returnPath($r), 'pending' => \App\Vault\PendingAction::remember($r), 'blocked' => ! $error->failed, 'failed' => $error->failed,
                     'navFirst' => true] + ($workspace === null ? [] : ['space' => (object) ['id' => $workspace]]), 403);
             }
 
@@ -82,7 +82,7 @@ return Application::configure(basePath: dirname(__DIR__))
             if (! in_array($status, [401, 419, 503], true)) {
                 try {
                     if (Auth::check() && $r->hasSession() && $r->session()->get('mfa_at')) {
-                        return response()->view('error', ['status' => $status, 'messages' => $messages, 'shell' => true], $status);
+                        return response()->view('error', ['status' => $status, 'messages' => $messages, 'shell' => true, 'returnPath' => in_array($status, [409, 422], true) ? Account::errorReturnPath($r) : null], $status);
                     }
                 } catch (Throwable) {
                     // The header needs the database; fall through to the page that needs nothing.

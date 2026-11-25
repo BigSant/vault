@@ -136,14 +136,19 @@ final class Identity
     public function confirm(Request $r)
     {
         $d = $r->validate(['current_password' => 'required|string|max:200']);
-        $return = Account::safePath($r->input('return'));
+        $pending = \App\Vault\PendingAction::forConfirmation($r);
+        $return = $pending['return'] ?? Account::safePath($r->input('return'));
         if (! Hash::check($d['current_password'], $r->user()->password)) {
             abort_if($r->expectsJson(), 401);
 
-            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true, 'navFirst' => true], 401);
+            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true, 'pending' => $pending, 'navFirst' => true], 401);
         }
         $r->session()->put('confirmed_at', time());
 
+        if ($pending) {
+            $r->session()->forget(\App\Vault\PendingAction::KEY);
+            return view('confirm', compact('pending', 'return') + ['ready' => true, 'navFirst' => true]);
+        }
         return redirect($return);
     }
 

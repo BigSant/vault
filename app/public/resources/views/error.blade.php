@@ -9,6 +9,9 @@
     // Back to the workspace last opened in this session; the entries page checks membership again.
     $last = $shell ? session('last_workspace') : null;
     $home = is_string($last) && $last !== '' ? '/?workspace='.rawurlencode($last) : '/';
+    // 409 and 422 for a signed-in person: the controller may pass $returnPath, a safe same-origin GET path to the
+    // page the action came from. The button then leads there; without it the button and the instruction say "entries".
+    $returnPath = $shell && in_array($status, [409, 422], true) && isset($returnPath) && is_string($returnPath) && $returnPath !== '' ? $returnPath : null;
 @endphp
 @section('title', $title)
 @section('quiet-nav', '1')
@@ -18,7 +21,8 @@
 @section('content')
 <div class="{{ $shell ? 'error-page' : 'card' }}">
     <h1>{{ $title }}</h1>
-    <p class="error-status"><span class="chip bad">Error {{ $status }}</span></p>
+    {{-- The status code is plain dim text: the callout below is the page's one red mark. --}}
+    <p class="error-status">Error {{ $status }}</p>
     <div class="callout bad">
         <p>{{ match($status) {
             401 => 'Check your sign-in details or the authenticator code.',
@@ -34,8 +38,8 @@
     </div>
     {{-- One recovery instruction, in the order it is done; its first step is the button below. --}}
     @if($status === 419)<p class="note">Sign in again, then open the form and fill it in again. Secret fields are not refilled.</p>
-    @elseif($status === 422)<p class="note">Go back to correct the form. Secret fields are not refilled.</p>
-    @elseif($status === 409)<p class="note">Go back and reload the page to see the current state. Nothing was changed.</p>@endif
-    <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : $home }}">{{ $signIn ? 'Sign in' : 'Back to entries' }}</a></div>
+    @elseif($status === 422)<p class="note">{{ $returnPath ? 'Go back to the previous page to correct the form.' : ($signIn ? 'Sign in, then open the form again to correct it.' : 'Go back to entries, then open the form again to correct it.') }} Secret fields are not refilled.</p>
+    @elseif($status === 409)<p class="note">{{ $returnPath ? 'Go back to the previous page to see the current state.' : ($signIn ? 'Sign in to see the current state.' : 'Go back to entries to see the current state.') }} Nothing was changed.</p>@endif
+    <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : ($returnPath ?? $home) }}">{{ $signIn ? 'Sign in' : ($returnPath ? 'Back to previous page' : 'Back to entries') }}</a></div>
 </div>
 @endsection

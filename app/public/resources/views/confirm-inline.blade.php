@@ -27,6 +27,11 @@
      primary block is on screen ($primaryShown at render time; app.js follows it afterwards) this one is deferred.
      It shows nothing while the confirmation is valid, and when it expired a line that points to the primary field,
      whose password then serves this block's forms too. Without script a deferred block shows nothing.
+     $primaryWhere says where that field is, in the pointer's words ("above the members"; default "above the
+     waiting requests"). $fallback (a deferred block inside a form: Add a member, Add an agent, Add a grant, the
+     environment template): without script the primary field cannot be sent, so the block prints a field of its
+     own in <noscript> when the confirmation has expired. With script that field does not exist and the page has
+     one password field.
      Access::recent() accepts confirm_password from the POST body.
      The title looks like the form's section legends (.legend) and is not a heading. --}}
 @php
@@ -40,11 +45,14 @@
     $primary = $primary ?? null;
     $deferred = $shared && $primary && ! empty($primaryShown);
     $quietValid = $shared && ! empty($quietValid);
-    $quiet = $deferred || ($quietValid && ! $expired);
+    $fallback = $deferred && $expired && ! empty($fallback);
+    $quiet = ($deferred && ! $fallback) || ($quietValid && ! $expired);
+    $primaryWhere = $primaryWhere ?? 'above the waiting requests';
 @endphp
 <div class="confirm-inline{{ $shared ? ' shared' : '' }}{{ $fieldHidden ? '' : ' is-needed' }}{{ $deferred ? ' is-deferred' : '' }}{{ $quiet ? ' is-quiet' : '' }}"@if($shared) id="{{ $shared }}"@endif @if($shared && $primary) data-primary="{{ $primary }}"@endif data-confirmed-until="{{ (int) $until }}" data-now="{{ time() }}" data-verb="{{ $verb }}" data-ask="{{ $ask }}"@if($quietValid) data-quiet-valid @endif @isset($shownWith) data-shown-with="{{ $shownWith }}" data-shown-rows @if(! empty($shownHidden)) hidden @endif @endisset>
     <p class="legend" data-when="expired" @if($fieldHidden) hidden @endif>Password confirmation</p>
-    <p class="note"><span data-when="valid" @if($expired || $deferred) hidden @endif>Password confirmed until <span class="nobreak">{{ $until ? gmdate('H:i', $until) : '' }} UTC</span>.</span><span data-when="expired"@if($shared) data-script-text="{{ $ask }}"@endif @if(! $expired || $deferred) hidden @endif>{{ $shared ? $noScript : $ask }}</span>@if($shared && $primary)<span data-when="deferred" hidden>Your password confirmation has expired. <a class="more-link" href="#{{ $primary }}-password" data-confirm-goto="{{ $primary }}">Go to the password field</a> above the waiting requests, enter your current password, then {{ $verb }}.</span>@endif @if($shared) <span class="pending" data-pending hidden></span>@endif</p>
+    <p class="note"><span data-when="valid" @if($expired || $deferred) hidden @endif>Password confirmed until <span class="nobreak">{{ $until ? gmdate('H:i', $until) : '' }} UTC</span>.</span><span data-when="expired"@if($shared) data-script-text="{{ $ask }}"@endif @if(! $expired || $deferred) hidden @endif>{{ $shared ? $noScript : $ask }}</span>@if($shared && $primary)<span data-when="deferred" hidden>Your password confirmation has expired. <a class="more-link" href="#{{ $primary }}-password" data-confirm-goto="{{ $primary }}">Go to the password field</a> {{ $primaryWhere }}, enter your current password, then {{ $verb }}.</span>@endif @if($shared) <span class="pending" data-pending hidden></span>@endif</p>
     <label data-when="expired" @if($fieldHidden) hidden @endif><span>Current password</span><input type="password" name="confirm_password"@if($shared) id="{{ $shared }}-password"@endif maxlength="200" autocomplete="current-password" @if($expired && ! $shared) required @else disabled @endif></label>
+    @if($fallback)<noscript><p class="note">{{ $ask }}</p><label><span>Current password</span><input type="password" name="confirm_password" maxlength="200" autocomplete="current-password" required></label></noscript>@endif
     @if($shared)<p class="held" data-held-row hidden><span class="held-what" id="{{ $shared }}-held-what" data-held-what hidden></span><button type="button" class="go" data-held></button></p>@endif
 </div>

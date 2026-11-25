@@ -87,9 +87,10 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
   ("Request activity for this entry →", "All activity for this entry →").
 - `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
-  "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script) fetches the
-  form again and swaps only the Type options and the type field rows; typed values stay in the fields that still
-  exist.
+  "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
+  update form, where the type is fixed) fetches the form again and swaps only the Type options and the type field
+  rows; typed values stay in the fields that still exist, and every "Clear the current … value" box
+  (`clear-<type>-<key>`) keeps its state, checked or not. The status line says what was kept and what was not.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
   reference (field table, example) stand side by side; below that they stack and "Format ↓" in the intro jumps
   to the reference. The form's Environment IDs and Type keys folds open from the links in the Format table, also
@@ -123,19 +124,22 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 ### Members (owner)
 
 - `/workspaces/{w}/members` — people in the workspace with a role select and Remove on each row, the "Add a
-  member" form, and a short role explanation. Save role and Remove use the held-action pattern (house rule 4):
-  one shared password block (`confirm-members`) above the board, shown only once the confirmation has expired
-  (while it is valid the "Add a member" form states it). A row action pressed then is held under a button that
-  names it, "Change Dana's role to Editor" (the role chosen in the row, which stays chosen and can still be
-  changed) or "Remove Dana"; Remove still asks its two-step question first, and the held button does not ask again.
+  member" form, and a short role explanation. Save role, Remove and Add member use the held-action pattern (house
+  rule 4): one shared password block (`confirm-members`) above the board is the page's one confirmation state
+  ("Password confirmed until …") and, once expired, its one password field. An action pressed then is held under a
+  button that names it, "Change Dana's role to Editor" (the role chosen in the row, which stays chosen and can
+  still be changed), "Remove Dana" or "Add member: Dana"; Remove still asks its two-step question first, and the
+  held button does not ask again. The "Add a member" form only points to that field when the confirmation has expired.
 
 ### Setup (owner, editor)
 
 Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 - `/workspaces/{w}/structure` — the project cards right under the tabs, with no h2 of their own (each project a
-  card with Edit folds; an open fold's summary reads "Close"), then the h2 sections "Add a project" and
-  "Environment template".
+  card with Edit folds; the cards are a `.deck`, two side by side at `--wide` and one column below), then the h2
+  sections "Add a project" and "Environment template". A fold's toggle is a compact control with an edge
+  (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open; on phone an environment row is one line (sign,
+  count, Edit). One shared password block (`confirm-setup`) above the cards serves every form of the page.
 - `/workspaces/{w}/types` — the entry types as folds under the tabs, then the h2 section "Add an entry type".
 
 ### Activity (owner)
@@ -184,7 +188,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    only when it is required. **Row and time-critical actions** never go to the confirm page while script runs: Reveal
    (current and per version), the waiting requests' Allow once / Deny / Continue sign-in and the Members rows'
    Save role / Remove use one shared block each (`'shared' => 'confirm-reveal'` in the Secret values card,
-   `'confirm-decide'` above the waiting board, `'confirm-members'` above the members board);
+   `'confirm-decide'` above the waiting board, `'confirm-members'` above the members board). Where a page has
+   such a block, its other sensitive actions use it too, so the page has one password field: Restore (Versions)
+   and Archive entry on the entry page; every form of Setup › Projects (`'confirm-setup'` above the project
+   cards); Revoke and the add form on Identities (`'confirm-agents'`) and Grants (`'confirm-grants'`), above the
+   board. A form card on such a page (Add a member, Add an agent, Add a grant, the environment template) holds a
+   deferred block (`'primary' => '<id>'`, `'fallback' => true`): nothing while valid, a pointer to the one field
+   when expired, and a field of its own only in `<noscript>`. Everything else goes to the confirm page, which
+   offers "Continue: <action>" after the password, so no action has to be repeated;
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
    submit without the password is held and stays visible: the focus moves to the field and a button under it names
    the held action ("Allow once: shop.admin-login, request 1a2b3c4d"); that button, or Enter in the field, sends
@@ -192,10 +203,11 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    <action> · <entry> · <project> / <environment> · Request <id>", from the row's `<template data-held-summary>`),
    and that summary is the button's description (`aria-describedby`, set only while the summary holds something).
    A held Reveal names the entry in its own case ("Reveal current: Shop admin panel"). While an action is held,
-   the held button is the page's only solid button. A password entered first gets the visible line "Now choose an
+   the held button is the page's only solid button: every other solid button or link in `main` is plain until
+   the hold ends. A password entered first gets the visible line "Now choose an
    action below." The waiting requests' block asks "Enter your current password, then choose a request action
-   below."; on the entry page, where it also serves Reveal, "…then choose a request action or reveal values
-   below." A password that is not right is a validation error on `confirm_password` (303 back to the page, never
+   below."; on the entry page, where it also serves Reveal, Restore and Archive, "…then choose a request action,
+   or reveal, restore or archive below." A password that is not right is a validation error on `confirm_password` (303 back to the page, never
    the confirm page): for a form with `data-confirm-from` the summary stands above the shared block (the primary
    one while a block is deferred), its message links to and is repeated under that block's field, the focus goes
    to the field and the action that failed is held again under its name. Without script
@@ -235,7 +247,13 @@ label), `.confirm-inline` (password confirmation in the page: a line while valid
 `data-confirm` form) and `.field-error` (message under an invalid field: placed after the field's `<label>`, never
 inside it, and tied to the field with `aria-describedby`, so the accessible name is the same before and after a
 failed submit), `.legend` (form section titles; sections inside a card are
-`fieldset`/`legend`, not headings) and `.capped` (short lists capped at the card width).
+`fieldset`/`legend`, not headings), `.capped` (short lists capped at the card width), `details.fold` (a collapsed
+editor, one per thing: a project, an environment, an entry type) with `.fold-act` (its toggle as a compact control
+with an edge: ▸ "Edit" closed, ▾ "Close" open), `.filter-status` (the "Showing N of M" line under a filter bar, with
+Clear filters and one `.chip.filter` per active filter), `.held` (the row in a shared `.confirm-inline` that names
+the action waiting for the password, as the page's one solid button, with `.held-what` beside it) and `.more-link`
+(a link on a line of its own or after a note that leads to more of the same thing elsewhere, "Manage grants →";
+40 px to the finger on phones), and `.secret-row.compact` (a revealed value with its Copy on the same row).
 
 Validation messages use the visible labels from `lang/en/validation.php` (`attributes`, plus `form_attributes`
 keyed by request path for labels that differ per form). Messages thrown by hand with

@@ -168,16 +168,20 @@ const wireReveal = (root = document) => root.querySelectorAll('.with-button > in
   addEventListener('pagehide', mask);
 });
 wireReveal();
-// "Reload types" on the Add an entry form. Entry types are edited in Setup, which the form's link opens in a new
-// tab; back here the button fetches this page again and swaps only the Type options and the type field rows
-// (#type-fields). Nothing else is touched, so the draft stays, and a value typed into a type field is put back
-// into the field with the same id (the same type and key) or, for the chosen type, the same name. Values never
-// leave this page: they are copied from the old fields to the new ones.
+// "Reload types" on the Add an entry form, "Reload fields" on the Edit entry form. Entry types are edited in Setup,
+// which the form's link opens in a new tab; back here the button fetches this page again and swaps only the Type
+// options (Add) and the type field rows (#type-fields). Nothing else is touched, so the draft stays: a value typed
+// into a type field is put back into the field with the same id (the same type and key) or, for the chosen type,
+// the same name, and every "Clear the current … value" box (id clear-<type>-<key>) gets back the state it had,
+// checked or not. Values never leave this page: they are copied from the old fields to the new ones. The status
+// line says what was kept and what could not be: it never claims more than happened.
 document.querySelectorAll('[data-reload-types]').forEach(button => {
   const row = button.closest('[data-reload-types-row]');
   const status = row?.querySelector('[data-reload-status]');
   const rows = document.getElementById('type-fields');
-  if (!type || !type.matches('select') || !rows) return;
+  if (!type || !rows) return;
+  // Add: the type is a select. Edit: the type is fixed (a hidden input) and only its fields are reloaded.
+  const select = type.matches('select');
   button.hidden = false;
   const tell = text => { if (status) status.textContent = text; say(text); };
   let busy = false;
@@ -190,41 +194,65 @@ document.querySelectorAll('[data-reload-types]').forEach(button => {
       const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
       const nextType = fresh.getElementById('entry-type');
       const nextRows = fresh.getElementById('type-fields');
-      if (!nextType?.matches('select') || !nextRows) throw new Error('reload failed');
+      if (!nextType || nextType.matches('select') !== select || !nextRows) throw new Error('reload failed');
       const controls = scope => [...scope.querySelectorAll('input, textarea')].filter(el => el.name && el.type !== 'hidden');
       const byId = new Map();
       const byName = new Map();
+      // Every clear box by id: checked or not. marked: the checked ones of the type on screen.
+      const boxes = new Map();
+      const marked = new Set();
       controls(rows).forEach(el => {
-        const kept = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
-        if (kept === '') return;
-        if (el.id) byId.set(el.id, kept);
-        if (!el.disabled && el.type !== 'checkbox') byName.set(el.name, kept);
+        if (el.type === 'checkbox') {
+          if (!el.id) return;
+          boxes.set(el.id, el.checked);
+          if (el.checked && !el.disabled) marked.add(el.id);
+          return;
+        }
+        if (el.value === '') return;
+        if (el.id) byId.set(el.id, el.value);
+        if (!el.disabled) byName.set(el.name, el.value);
       });
       const chosen = type.value;
-      const before = [...type.options].filter(option => option.value).length;
-      type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
-      type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
+      const before = select ? [...type.options].filter(option => option.value).length : 0;
+      if (select) {
+        type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
+        type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
+      }
       rows.replaceChildren(...[...nextRows.childNodes].map(node => document.importNode(node, true)));
-      let lost = 0;
       const placed = new Set();
+      let stillMarked = 0;
       controls(rows).forEach(el => {
+        if (el.type === 'checkbox') {
+          if (!el.id || !boxes.has(el.id)) return;
+          el.checked = boxes.get(el.id);
+          if (marked.has(el.id)) stillMarked++;
+          return;
+        }
         const mine = (el.closest('[data-types]')?.dataset.types || '').split(',').includes(type.value);
-        const kept = el.id && byId.has(el.id) ? byId.get(el.id) : mine && el.type !== 'checkbox' ? byName.get(el.name) : undefined;
+        const kept = el.id && byId.has(el.id) ? byId.get(el.id) : mine ? byName.get(el.name) : undefined;
         if (kept === undefined) return;
-        if (el.type === 'checkbox') el.checked = true; else el.value = kept;
+        el.value = kept;
         placed.add(el.name);
       });
+      let lost = 0;
       byName.forEach((value, name) => { if (!placed.has(name)) lost++; });
+      const unmarked = marked.size - stillMarked;
       wireGenerate(rows);
       wireReveal(rows);
       fields();
-      const after = [...type.options].filter(option => option.value).length;
-      const count = after === 1 ? '1 type' : after + ' types';
-      tell('Types reloaded: ' + count + (after > before ? ', ' + (after - before) + ' new' : '') + '. '
-        + (chosen && !type.value ? 'The type you chose is gone: choose a type. ' : '')
-        + (lost ? (lost === 1 ? '1 typed value belonged to a field that no longer exists.' : lost + ' typed values belonged to fields that no longer exist.') : 'What you typed was kept.'));
+      const after = select ? [...type.options].filter(option => option.value).length : 0;
+      const parts = [select ? 'Types reloaded: ' + (after === 1 ? '1 type' : after + ' types') + (after > before ? ', ' + (after - before) + ' new' : '') + '.' : 'Fields reloaded.'];
+      if (chosen && !type.value) parts.push('The type you chose is gone: choose a type.');
+      if (lost) parts.push(lost === 1 ? '1 typed value belonged to a field that no longer exists.' : lost + ' typed values belonged to fields that no longer exist.');
+      if (unmarked) parts.push(unmarked === 1 ? '1 value marked to clear is no longer marked: its field is gone or is now required.' : unmarked + ' values marked to clear are no longer marked: their fields are gone or are now required.');
+      const typed = byName.size - lost;
+      if (typed && stillMarked) parts.push('What you typed was kept, and the values marked to clear are still marked.');
+      else if (typed) parts.push(lost ? 'The other typed values were kept.' : 'What you typed was kept.');
+      else if (stillMarked) parts.push(stillMarked === 1 ? 'The value marked to clear is still marked.' : 'The values marked to clear are still marked.');
+      else if (!lost && !unmarked) parts.push('The rest of the form is unchanged.');
+      tell(parts.join(' '));
     } catch {
-      tell('Could not reload the types. Nothing was changed. Check the connection and try again.');
+      tell('Could not reload' + (select ? ' the types' : ' the fields') + '. Nothing was changed. Check the connection and try again.');
     } finally { busy = false; }
   });
 });
@@ -279,8 +307,8 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // The held button's wording: the pressed button's data-held-name, plus the chosen option of the form field named by
 // data-held-field ("Change Dana's role to " + "Editor"; a change of that field while held changes the wording).
 // Data in it keeps its case: what follows ": ", or the data-held-data text after data-held-lead ("Change " + "Dana").
-// While an action is held, the held button is the page's one solid button: the solid buttons of the forms that use
-// a shared block ("Reveal current") are plain until the hold ends.
+// While an action is held, the held button is the page's one solid button: every other solid button or link in the
+// page ("Reveal current", "Add member", "Add project") is plain until the hold ends, and solid again after it.
 const confirmBoxes = new Map();
 document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box => {
   const input = box.querySelector('input[type=password]');
@@ -366,8 +394,8 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');
   };
   const solid = on => {
-    if (on) document.querySelectorAll('form[data-confirm-from] button.go').forEach(button => { button.classList.remove('go'); button.dataset.heldGo = '1'; });
-    else document.querySelectorAll('button[data-held-go]').forEach(button => { button.classList.add('go'); delete button.dataset.heldGo; });
+    if (on) document.querySelectorAll('main :is(button, .btn).go:not([data-held])').forEach(button => { button.classList.remove('go'); button.dataset.heldGo = '1'; });
+    else document.querySelectorAll('main [data-held-go]').forEach(button => { button.classList.add('go'); delete button.dataset.heldGo; });
   };
   const line = text => { if (hint) { hint.textContent = text; hint.hidden = !text; } };
   const showHeld = (name, button) => {
@@ -863,7 +891,9 @@ const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {
   if (menu.open) menus.forEach(other => { if (other !== menu) other.open = false; });
 }));
-addEventListener('click', event => menus.forEach(menu => { if (menu.open && !menu.contains(event.target)) menu.open = false; }));
+// composedPath, not contains: a press on something inside the menu that the press itself removed (Cancel of a
+// two-step question on the token page) is still a press inside, so the menu stays open and the focus stays on its item.
+addEventListener('click', event => menus.forEach(menu => { if (menu.open && !event.composedPath().includes(menu)) menu.open = false; }));
 addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   menus.forEach(menu => {
@@ -951,7 +981,8 @@ if (summary) {
       // Inside the card, under its heading.
       const heading = form.querySelector(':scope > h3');
       if (heading) heading.after(summary); else form.prepend(summary);
-    } else (form.closest('.card-head, .fold-foot, .controls') || form).before(summary);
+    // A form among the buttons of a form foot (Remove project): the summary stands above the foot, never inside it.
+    } else (form.closest('.form-foot') || form.closest('.card-head, .fold-foot, .controls') || form).before(summary);
   }
   const seen = new Set();
   items.forEach((item, index) => {
@@ -992,7 +1023,8 @@ if (summary) {
     // The password is typed again right away: the focus goes to the field (the message is its description), and
     // the action that failed is held again under its name, so the new password and Enter send it. Not when the
     // form needs something else that was not refilled (a site MFA code): then the row is filled in first.
-    const buttons = [...form.querySelectorAll('button:not([type=button])')];
+    // form.elements: a submit button may stand outside its form (form="…": Save project in a form foot).
+    const buttons = [...form.elements].filter(candidate => candidate.matches('button:not([type=button])'));
     const button = buttons.find(candidate => candidate.name && values[candidate.name] === candidate.value) || (buttons.length === 1 ? buttons[0] : null);
     const message = items.find(item => item.dataset.field === 'confirm_password')?.textContent.trim().replace(/\.$/, '') || 'Current password is not right';
     if (button && !button.disabled && form.checkValidity()) wrongPassword.hold(form, button, message + '. Enter your current password again');

@@ -27,7 +27,11 @@
 {{-- No h2 here: it would repeat the active tab. The project cards follow the tabs; the forms below keep their h2. --}}
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
-<div class="project-list">
+{{-- One password block for the page, above the projects: every form below names it (data-confirm-from), so an
+     expired confirmation asks here and holds the action under its name. The template form only points to it. --}}
+@include('confirm-inline', ['verb' => 'change projects', 'ask' => 'Enter your current password, then save, add or remove below.', 'shared' => 'confirm-setup'])
+{{-- The documented deck: two project cards side by side at --wide, one column below that. --}}
+<div class="deck project-list">
 @forelse($projects as $project)
     @php
         $envs = $environments[$project->id] ?? collect();
@@ -46,14 +50,14 @@
                 <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> project {{ $project->name }}</span></span>
             </summary>
             <div class="inner">
-                <form id="{{ $projFormId }}" method="post" action="{{ $projPath }}">@csrf
+                <form id="{{ $projFormId }}" method="post" action="{{ $projPath }}" data-confirm-from="confirm-setup">@csrf
                     <label><span>Name</span><input name="name" value="{{ $oldRename && is_string(old('name')) ? old('name') : $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"></label>
                 </form>
                 <div class="form-foot">
                     <p class="note">@if($projectEntries > 0)Holds {{ $entries($projectEntries) }}, so it cannot be removed.@endif</p>
                     <div class="controls">
-                        @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>@endif
-                        <button form="{{ $projFormId }}" aria-label="Save project {{ $project->name }}">Save project</button>
+                        @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}" data-held-name="Remove project: {{ $project->name }}">Remove project</button></form>@endif
+                        <button form="{{ $projFormId }}" aria-label="Save project {{ $project->name }}" data-held-name="Save project: {{ $project->name }}">Save project</button>
                     </div>
                 </div>
             </div>
@@ -76,15 +80,15 @@
                     <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> environment {{ $where }}</span></span>
                 </summary>
                 <div class="inner">
-                    <form id="{{ $formId }}" method="post" action="{{ $envPath }}">@csrf
+                    <form id="{{ $formId }}" method="post" action="{{ $envPath }}" data-confirm-from="confirm-setup">@csrf
                         <label><span>Name</span><input name="name" value="{{ $envName }}" required maxlength="60" aria-label="Name of environment {{ $where }}"></label>
                         <label class="check"><input type="checkbox" name="production" value="1" @checked($envProd) aria-label="Production for environment {{ $where }}"> Production</label>
                     </form>
                     <div class="form-foot">
                         <p class="note">@if($n > 0)Holds {{ $entries($n) }}, so it cannot be removed.@endif</p>
                         <div class="controls">
-                            @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment “{{ $env->name }}”?">@csrf<button class="stop" aria-label="Remove environment {{ $where }}">Remove</button></form>@endif
-                            <button form="{{ $formId }}" aria-label="Save environment {{ $where }}">Save environment</button>
+                            @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment “{{ $env->name }}”?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove environment {{ $where }}" data-held-name="Remove environment: {{ $project->name }} / {{ $env->name }}">Remove</button></form>@endif
+                            <button form="{{ $formId }}" aria-label="Save environment {{ $where }}" data-held-name="Save environment: {{ $project->name }} / {{ $env->name }}">Save environment</button>
                         </div>
                     </div>
                 </div>
@@ -95,11 +99,11 @@
         <details class="env-add"@if($oldAddEnv) open @endif>
             <summary>+ Add an environment<span class="sr-only"> to project {{ $project->name }}</span></summary>
             <div class="inner">
-                <form method="post" action="/workspaces/{{ $space->id }}/environments">@csrf
+                <form method="post" action="/workspaces/{{ $space->id }}/environments" data-confirm-from="confirm-setup">@csrf
                     <input type="hidden" name="project_id" value="{{ $project->id }}"><input type="hidden" name="back" value="structure">
                     <label><span>Name</span><input name="name" value="{{ $oldAddEnv && is_string(old('name')) ? old('name') : '' }}" required maxlength="60" placeholder="staging" aria-label="Environment name for project {{ $project->name }}"></label>
                     <label class="check"><input type="checkbox" name="production" value="1" @checked($oldAddEnv && old('production') === '1') aria-label="Production for environment in project {{ $project->name }}"> Production</label>
-                    <div class="form-foot"><button aria-label="Add environment to project {{ $project->name }}">Add environment</button></div>
+                    <div class="form-foot"><button aria-label="Add environment to project {{ $project->name }}" data-held-name="Add environment to project: {{ $project->name }}">Add environment</button></div>
                 </form>
             </div>
         </details>
@@ -110,14 +114,14 @@
 </div>
 
 <h2 id="add-project">Add a project</h2>
-<form class="action" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
+<form class="action" method="post" action="/workspaces/{{ $space->id }}/projects" data-confirm-from="confirm-setup">@csrf<input type="hidden" name="back" value="structure">
     <label><span>Name</span><input name="name" value="{{ $oldAddProject ? old('name') : '' }}" required maxlength="100" placeholder="e.g. billing"></label>
-    <div class="form-foot"><p class="note">Projects you add start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go">Add project</button></div>
+    <div class="form-foot"><p class="note">Projects you add start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go" data-held-name="Add project: " data-held-field="name">Add project</button></div>
 </form>
 
 <h2 id="template">Environment template</h2>
 <p class="note">The environments each project starts with. Existing projects keep theirs.</p>
-<form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
+<form class="action" method="post" action="/workspaces/{{ $space->id }}/template" data-confirm-from="confirm-setup">@csrf
     <table class="list edit env-template">
         <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
         <tbody id="template-rows">
@@ -128,7 +132,7 @@
             <tr data-row-template><td data-label="Environment"><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="Add an environment" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
         </tbody>
     </table>
-    @include('confirm-inline', ['verb' => 'save this template'])
-    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Environment</button><button>Save template</button></div></div>
+    @include('confirm-inline', ['verb' => 'save this template', 'shared' => 'confirm-template', 'primary' => 'confirm-setup', 'primaryShown' => true, 'primaryWhere' => 'above the projects', 'fallback' => true])
+    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Environment</button><button data-held-name="Save environment template">Save template</button></div></div>
 </form>
 @endsection
