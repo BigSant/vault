@@ -24,7 +24,7 @@
 @endphp
 {{-- Two widths, as everywhere: boards end at --wide; the facts, the cards and the archive forms keep --card. --}}
 <div class="entry-page">
-<a class="back" href="/?workspace={{ $entry->workspace_id }}">← Entries</a>
+<a class="back" href="{{ $backUrl }}">← Entries</a>
 <div class="head">
     <div>
         <div class="title-row">

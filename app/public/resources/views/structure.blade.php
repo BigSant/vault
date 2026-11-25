@@ -24,7 +24,7 @@
 <div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
 
-<h2>Environments</h2>
+<h2>Projects and environments</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 <div class="project-list">
@@ -43,7 +43,7 @@
             <summary>
                 <span class="fold-name"><span class="name">{{ $project->name }}</span></span>
                 <span class="fold-meta">{{ $entries($projectEntries) }}</span>
-                <span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span>
+                <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> project {{ $project->name }}</span></span>
             </summary>
             <div class="inner">
                 <form id="{{ $projFormId }}" method="post" action="{{ $projPath }}">@csrf
@@ -73,7 +73,7 @@
                 <summary>
                     <span class="fold-name">@include('sign', ['name' => $env->name, 'production' => $env->production])</span>
                     <span class="fold-meta">{{ $entries($n) }}</span>
-                    <span class="fold-act">Edit<span class="sr-only"> environment {{ $where }}</span></span>
+                    <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> environment {{ $where }}</span></span>
                 </summary>
                 <div class="inner">
                     <form id="{{ $formId }}" method="post" action="{{ $envPath }}">@csrf

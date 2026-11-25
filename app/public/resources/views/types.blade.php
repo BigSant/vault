@@ -68,7 +68,7 @@
         $nextEditIdx = count($editRows);
     @endphp
     <details class="fold type-fold capped" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
-        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act">Edit<span class="sr-only"> type {{ $type->name }}</span></span></summary>
+        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> type {{ $type->name }}</span></span></summary>
         <div class="inner">
             <form method="post" action="{{ $typePath }}">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset

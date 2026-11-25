@@ -22,6 +22,8 @@ final class Workspace
     public function __construct(private Access $access, private Catalog $catalog, private Operations $ops, private Secrets $secrets,
         private EntryTypes $types, private Structure $structure) {}
 
+    private const LIST_FILTERS = ['q', 'project', 'environment', 'type', 'state', 'page'];
+
     public function index(Request $r)
     {
         $spaces = DB::table('workspaces')->join('members', 'members.workspace_id', '=', 'workspaces.id')->where('members.user_id', $r->user()->id)->select('workspaces.*', 'members.role')->orderBy('workspaces.name')->get();
@@ -65,7 +67,7 @@ final class Workspace
             'used' => (clone $active)->whereExists(fn ($q) => $q->from('operations')->whereColumn('operations.entry_id', 'entries.id')->where('operations.state', 'succeeded')->where('operations.updated_at', '>=', now()->subDays(7)))->count(),
         ] : ['active' => 0, 'due' => 0, 'production' => 0, 'used' => 0];
 
-        return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
+        return view('catalog', ['from' => http_build_query(['workspace' => $id] + $r->only(self::LIST_FILTERS)), 'spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
             'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'archivedCount' => $archivedCount, 'scopeCount' => $scopeCount, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
     }
 
@@ -224,6 +226,21 @@ final class Workspace
         return $this->entryView($id);
     }
 
+    private function catalogBackUrl(string $workspace, mixed $from): string
+    {
+        $fallback = '/?'.http_build_query(['workspace' => $workspace]);
+        if (! is_string($from)) {
+            return $fallback;
+        }
+        parse_str($from, $query);
+        if (($query['workspace'] ?? null) !== $workspace || array_diff(array_keys($query), ['workspace', ...self::LIST_FILTERS])
+            || array_filter($query, 'is_array')) {
+            return $fallback;
+        }
+
+        return '/?'.http_build_query($query);
+    }
+
     private function entryView(string $id, ?array $secret = null, ?int $shownVersion = null, array $differs = [])
     {
         $entry = $this->access->entry($id);
@@ -255,7 +272,9 @@ final class Workspace
             $this->resolveEvents($space->id, $events);
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
+        $backUrl = $this->catalogBackUrl($space->id, request()->input('from'));
+
+        return view('entry', compact('backUrl', 'entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)

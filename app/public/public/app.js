@@ -522,7 +522,10 @@ if (summary) {
   try { values = JSON.parse(summary.dataset.sent || '{}') || {}; } catch { values = {}; }
   const hiddenMatch = form => [...form.elements].every(el => el.type !== 'hidden' || !el.name || el.name === '_token' || !(el.name in values) || values[el.name] === el.value);
   const posted = [...document.forms].filter(form => { try { return new URL(form.action).pathname === summary.dataset.form; } catch { return false; } });
-  const matching = posted.filter(hiddenMatch);
+  // A form that names itself (hidden "form": Members' add form and each row) is picked by that name alone: its other
+  // hidden values may differ from what was sent.
+  const named = 'form' in values ? posted.filter(form => form.querySelector('input[type=hidden][name="form"]')?.value === values.form) : [];
+  const matching = named.length ? named : posted.filter(hiddenMatch);
   const sent = matching.length ? matching : posted;
   // A control the person can reach: not hidden, not disabled, not inside a hidden block.
   const usable = el => el.type !== 'hidden' && !el.disabled && !el.closest('[hidden]');
@@ -551,7 +554,9 @@ if (summary) {
     // A form inside a collapsed editor is opened, so the summary and the field can be seen.
     for (let el = form.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS' && !el.classList.contains('menu')) el.open = true;
     const table = form.closest('table');
-    if (table) (table.closest('.scroll') || table).before(summary);
+    // Members: the summary stays in the row, right before the form that failed.
+    if (table?.matches('.members')) form.before(summary);
+    else if (table) (table.closest('.scroll') || table).before(summary);
     else if (form.matches('form.action') || form.parentElement.matches('.inner')) {
       // Inside the card, under its heading.
       const heading = form.querySelector(':scope > h3');
@@ -571,10 +576,15 @@ if (summary) {
       note.className = 'field-error';
       note.id = field.id + '-error';
       note.textContent = item.textContent;
+      // Never inside the <label>: the field keeps the name it had before the submit, and the message is its
+      // description. It follows the label, or the row the label shares with a button (.with-button, .inline).
       const holder = field.closest('label, .field, td');
-      if (holder) holder.append(note); else field.after(note);
-      // Inside a label the message is already part of the field's name, unless an aria-label names the field.
-      if (!holder?.matches('label') || field.hasAttribute('aria-label')) field.setAttribute('aria-describedby', [field.getAttribute('aria-describedby'), note.id].filter(Boolean).join(' '));
+      if (holder?.matches('label')) {
+        let anchor = holder;
+        while (anchor.parentElement?.matches('.inline:not(form), .with-button, .toolbar:not(form), .controls:not(form)')) anchor = anchor.parentElement;
+        if (anchor.parentElement?.matches('form.inline, form.toolbar, form.controls')) anchor.parentElement.after(note); else anchor.after(note);
+      } else if (holder) holder.append(note); else field.after(note);
+      field.setAttribute('aria-describedby', [field.getAttribute('aria-describedby'), note.id].filter(Boolean).join(' '));
     }
     const link = document.createElement('a');
     link.href = '#' + field.id;

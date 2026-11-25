@@ -103,8 +103,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 Two tabs under the h1 "Setup": **Projects · Entry types**.
 
-- `/workspaces/{w}/structure` — "Environments" (each project a card with Edit folds), "Add a
-  project", "Environment template".
+- `/workspaces/{w}/structure` — "Projects and environments" (each project a card with Edit folds; an open fold's
+  summary reads "Close"), "Add a project", "Environment template".
 - `/workspaces/{w}/types` — entry types and their fields.
 
 ### Activity (owner)
@@ -113,7 +113,8 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 ### Account (any signed-in user)
 
-- `/account` — who you are, the password confirmation state (with the confirm form), change password, the
+- `/account` — who you are, the password confirmation state, "Security" (the confirm form while a confirmation
+  is needed, and change password; the h2 is the same in both states), the
   workspaces you belong to with your role in each, sign out (a plain box, no amber top).
 - `/confirm?return=/path` — confirm your password (keeps the signed-in header). A sensitive POST without a fresh confirmation throws
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
@@ -150,9 +151,11 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    filter is set, a `.filter-status` line says "Showing N of M", shows one chip per active filter and holds the
    only **Clear filters** link.
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
-   inline label: "Requested …", "Finished …", "Expires …", "Expired …" (`small.k`; `.k.keep` also shows on desktop
-   where no column head names the value). Approval reads "asks every time" or
-   "runs without asking".
+   inline label: "Requested …", "Finished …", "Expires …", "Expired …", "Revoked …" (`small.k`; `.k.keep` also shows
+   on desktop where no column head names the value; the Requests history head reads "Finished (UTC)"). Approval
+   reads "asks every time" or "runs without asking". Requests and Grants need the whole `--wide` for their
+   columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
+   never behind a sideways scroll. Every other board switches at 900 px.
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished, inactive, or no health state) and
    `is-wait` (waiting for a decision or still running). Every row carries one.
 8. **Repeated buttons** get an `aria-label` naming their item.
@@ -167,13 +170,16 @@ Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request),
 links labelled "On this page"; on the entry page they sit in a `details.jump` that is a closed drawer on phones), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
 label), `.confirm-inline` (password field inside a long form), the compact phone card for boards, `.card.solo`
 (a capped standalone card), `.confirm-step` (inline two-step confirmation that replaces `confirm()` for every
-`data-confirm` form) and `.field-error` (message under an invalid field), `.legend` (form section titles; sections inside a card are
+`data-confirm` form) and `.field-error` (message under an invalid field: placed after the field's `<label>`, never
+inside it, and tied to the field with `aria-describedby`, so the accessible name is the same before and after a
+failed submit), `.legend` (form section titles; sections inside a card are
 `fieldset`/`legend`, not headings) and `.capped` (short lists capped at the card width).
 
 Validation messages use the visible labels from `lang/en/validation.php` (`attributes`, plus `form_attributes`
 keyed by request path for labels that differ per form). Messages thrown by hand with
 `ValidationException::withMessages` must use the visible label themselves. Activity event codes get readable
-names in one mapping in `activity.blade.php`; the code stays as secondary text.
+names in one mapping in `activity.blade.php`; the code stays as secondary text (visually hidden on phones, where
+the card leads with the readable name and the subject). Date fields carry "UTC" only, no format hint.
 
 
 ## Known gaps

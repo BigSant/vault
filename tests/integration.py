@@ -101,6 +101,11 @@ def run():
         assert all(value not in human.last for value in payload.values()), 'plaintext in initial entry page'
         human.request('/entries/'+ids[typ]+'/reveal', {})
         assert all(value in human.last for value in payload.values()), 'owner reveal failed'
+    listing = '/?' + urllib.parse.urlencode({'workspace': workspace, 'q': 'Private api_key', 'page': 1})
+    human.request(listing)
+    detail = html.unescape(re.search(r'href="(/entries/' + ids['api_key'] + r'\?from=[^"]+)"', human.last)[1])
+    human.request(detail)
+    assert html.unescape(re.search(r'<a class="back" href="([^"]+)"', human.last)[1]) == listing
     print('PASS: encrypted backend write, metadata-only detail, audited owner reveal')
     human.request('/workspaces/'+workspace+'/machines', {'name': 'ai-os integration', 'days': '1'})
     token = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]

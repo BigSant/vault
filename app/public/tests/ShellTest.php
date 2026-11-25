@@ -414,7 +414,7 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;', $script);
         $this->assertStringContainsString('chip.focus({ preventScroll: true })', $script);
         $this->assertStringNotContainsString("getElementById('content')?.focus", $script);
-        $this->get($this->base.'/structure')->assertOk()->assertSee('</nav>'."\n\n".'<h2>Environments</h2>', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Projects', false)
+        $this->get($this->base.'/structure')->assertOk()->assertSee('</nav>'."\n\n".'<h2>Projects and environments</h2>', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
             ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
         $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
@@ -441,7 +441,23 @@ final class ShellTest extends TestCase
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
         $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])
             ->assertSeeInOrder(['<div class="head"><h1>Agents</h1><a class="btn" href="'.$this->base.'/agents#add-agent">+ Add an agent</a></div>', '<nav class="tabs"', '<h2>Agent added</h2>'], false);
-        $this->assertStringContainsString('<th scope="col">Ended (UTC)</th>', (string) file_get_contents(resource_path('views/operations.blade.php')));
+        $operations = (string) file_get_contents(resource_path('views/operations.blade.php'));
+        $this->assertStringContainsString('<th scope="col">Finished (UTC)</th>', $operations);
+        $this->assertStringContainsString('data-label="Finished (UTC)"', $operations);
+        $this->assertStringNotContainsString('Ended (UTC)', $operations);
+        // An open fold reads "Close"; the token page warns beside its buttons; the Account h2 does not change.
+        foreach (['structure', 'types'] as $view) {
+            $this->assertStringContainsString('<span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span>', (string) file_get_contents(resource_path('views/'.$view.'.blade.php')));
+        }
+        $this->view('token', ['space' => (object) ['id' => $this->workspace], 'name' => 'deploy-bot', 'id' => 'a1', 'token' => 't', 'expiresAt' => now()])->assertSee('Leaving this page loses the token.');
+        foreach ([time(), time() - 301] as $confirmedAt) {
+            $this->withSession(['confirmed_at' => $confirmedAt])->get('/account')->assertOk()->assertSeeInOrder(['<h2 id="security">Security</h2>', '<h3>Change sign-in password</h3>'], false);
+        }
+        // A field error follows the label and is the field's description, never part of its name; Requests and Grants are cards below 1180 px.
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString('anchor.after(note)', $script);
+        $this->assertStringNotContainsString('holder.matches(\'label\') || field.hasAttribute', $script);
+        $this->assertStringContainsString('@media (max-width:1180px){'."\n".'.board:is(.requests,.grants),', (string) file_get_contents(public_path('app.css')));
     }
 
     public function test_entry_versions_are_paged(): void

@@ -101,6 +101,41 @@ final class VaultTest extends TestCase
         return app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => $this->sentinel])]);
     }
 
+    public function test_catalog_entry_link_restores_only_same_workspace_list_filters(): void
+    {
+        $id = $this->entry();
+        $query = http_build_query(['workspace' => $this->workspace, 'q' => 'Private name',
+            'project' => DB::table('projects')->value('id'), 'environment' => $this->environment,
+            'type' => 'api_key', 'state' => 'active', 'page' => 1]);
+        $entry = '/entries/'.$id.'?from=';
+        $this->get('/?'.$query.'&unknown=1')->assertOk()->assertSee($entry.rawurlencode($query), false);
+        $this->get($entry.rawurlencode($query))->assertOk()->assertViewHas('backUrl', '/?'.$query);
+        foreach (['https://example.org', '//example.org', 'workspace=another', $query.'&next=/logout', $query.'&q[]=bad'] as $invalid) {
+            $this->get($entry.rawurlencode($invalid))->assertOk()->assertViewHas('backUrl', '/?workspace='.$this->workspace);
+        }
+    }
+
+    public function test_members_refill_only_the_form_that_failed(): void
+    {
+        $member = User::create(['id' => (string) Str::uuid(), 'name' => 'Reader', 'email' => 'reader@example.test', 'password' => 'unused']);
+        DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'viewer']);
+        $path = '/workspaces/'.$this->workspace.'/members';
+        foreach (['row:'.$member->id, 'add'] as $form) {
+            $this->get($path)->assertOk();
+            $this->post($path, ['form' => $form, 'name' => $member->name, 'email' => 'invalid', 'role' => 'editor'])
+                ->assertRedirect($path)->assertSessionHas('form_errors');
+            $dom = new \DOMDocument;
+            @$dom->loadHTML($this->get($path)->assertOk()->getContent());
+            $xpath = new \DOMXPath($dom);
+            $row = "//form[input[@name='form' and @value='row:".$member->id."']]";
+            $add = "//form[input[@name='form' and @value='add']]";
+            $this->assertSame($form === 'add' ? 'viewer' : 'editor', $xpath->evaluate("string($row//option[@selected]/@value)"));
+            $this->assertSame($form === 'add' ? 'editor' : 'viewer', $xpath->evaluate("string($add//option[@selected]/@value)"));
+            $this->assertSame($form === 'add' ? 'invalid' : '', $xpath->evaluate("string($add//input[@name='email']/@value)"));
+            $this->assertSame($form === 'add' ? 'Reader' : '', $xpath->evaluate("string($add//input[@name='name']/@value)"));
+        }
+    }
+
     private function machine(string $entry, bool $approval = false): array
     {
         $id = (string) Str::uuid();

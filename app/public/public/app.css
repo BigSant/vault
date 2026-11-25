@@ -411,9 +411,14 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 /* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
 /* Phone: the time left follows the deadline on its line. Wide: it is a line of its own under the deadline. */
 .board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
-@media (max-width:900px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
-@media (min-width:901px){.board.requests .left{display:block;margin-top:3px}}
+@media (max-width:1180px){.board.requests .left::before{content:"\00B7  ";color:var(--faint);font-weight:400}}
+@media (min-width:1181px){.board.requests .left{display:block;margin-top:3px}}
+/* Allow once and Deny: full-size buttons with room between them, so the wrong one is not hit. */
 @media (min-width:901px){
+.board.requests td.decision .controls{gap:12px}
+.board.requests td.decision .controls button{min-height:32px;padding:7px 13px}
+}
+@media (min-width:1181px){
 /* Six columns fit --wide: tighter cells, and the MFA field never gets narrower than eight digits (8ch plus its padding). */
 .board.requests :is(th,td):not(:first-child){padding-left:8px;padding-right:8px}
 .board.requests form.mfa input{min-width:calc(8ch + 24px)}
@@ -515,7 +520,8 @@ h2 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacin
 .fold-name code{font-weight:400}
 .fold-meta{color:var(--dim);font-size:13px;font-weight:400;white-space:nowrap}
 .fold-act{color:var(--amber);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
-details[open]>summary .fold-act{color:var(--dim)}
+/* An open fold says "Close" where a closed one says "Edit". */
+details:not([open])>summary .when-open,details[open]>summary .when-closed{display:none}
 /* One environment per row inside a project card. */
 .card details.fold{background:var(--panel-2);margin:0 0 6px}
 .card details.fold>summary{gap:6px 16px}
@@ -545,6 +551,12 @@ form.action>.error-summary,.inner>.error-summary{max-width:none}
 input:is([type=checkbox],[type=radio])[aria-invalid="true"]{outline:2px solid var(--stop);outline-offset:2px}
 .field-error{display:block;grid-column:-2/-1;margin:0;color:var(--stop);font:400 12px/1.4 var(--mono);letter-spacing:0;text-transform:none}
 td>.field-error{margin-top:4px}
+/* The message of a labelled field follows its <label> (never inside it, so the field's name does not change) and
+   starts under the control: the label column is 14em of the label's 13px, plus the gap. */
+form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error{margin:-4px 0 8px calc(13px*14 + 10px)}
+main.login form>.field-error{margin-left:calc(13px*10.5 + 10px)}
+label.stack+.field-error,label.check+.field-error{margin-left:0}
+@media (max-width:900px){form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error,main.login form>.field-error{margin-left:0}}
 /* A standalone card that is not a form (revealed values, the one-time token) keeps the form card width. */
 .card.solo{max-width:var(--card);margin-bottom:14px}
 .card.danger>.block-label:first-child{margin-bottom:10px}
@@ -581,9 +593,11 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .board.activity .event-name{font-weight:600}
 .board.activity .event-code{font-size:12px;color:var(--dim)}
 @media (max-width:900px){
-.board.activity td.when{order:1}.board.activity td.event{order:0;flex-basis:100%}
-.board.activity td.actor{order:2}.board.activity td.subject{order:3}.board.activity td.outcome{order:4;margin-left:auto}
-.board.activity td.actor,.board.activity td.subject{flex:0 1 auto}
+/* Phone card: what happened, to what, then when, who and the outcome. The code is for screen readers only. */
+.board.activity td.event{order:0;flex-basis:100%}.board.activity td.subject{order:1;flex-basis:100%}
+.board.activity td.when{order:2}.board.activity td.actor{order:3;flex:0 1 auto}.board.activity td.outcome{order:4;margin-left:auto}
+.board.activity td.subject.is-empty{display:none}
+.board.activity .event-code{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 }
 .board .line.expires{color:var(--dim)}
 
@@ -609,14 +623,6 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .board.compact-board td>b.nobreak{white-space:normal;overflow-wrap:anywhere}
 .board .k,.board td.when small.k,.board td.name small.k{display:inline;font-size:12px;color:var(--faint)}
 .board.compact-board .controls{margin-top:4px}
-/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", the state, the times one per
-   line from the left, the controls, and the request id as the last quiet line. */
-.board.requests td.who{order:0}.board.requests td.action{order:1;flex:1 1 40%}.board.requests td.entry{order:2;flex-basis:100%}
-.board.requests td.state{order:3;flex-basis:100%}.board.requests td.when{order:4;flex-basis:100%}.board.requests td.decision{order:5;flex-basis:100%}
-.board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
-.board.requests td.action small.rid{display:none}
-.board.requests td:is(.when,.decision) small.rid{display:block;margin-top:6px;color:var(--faint)}
-.board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
 /* Entry page: versions and agent access */
 .board.compact-board td.act{margin-left:0}
 .board.versions td.act:not(:has(button)){display:none}
@@ -648,7 +654,7 @@ details.import-ref>.inner .scroll{margin:0}
 .board.entries td.name{display:contents}
 .board.entries td.name>a{order:0}
 .board.entries td.name>small:not(.entry-tags),.board.entries td.name>.chip{order:0}
-.board.entries td.name .entry-tags{order:4;flex-basis:100%}
+.board.entries td.name .entry-tags{order:4;flex-basis:auto}
 .board.entries tr::before{content:"";flex-basis:100%;order:1;height:0;margin-bottom:-4px}
 .board.entries td.name small{margin-top:2px}
 .board.entries td.proj{order:2;color:var(--dim)}
@@ -659,7 +665,7 @@ details.import-ref>.inner .scroll{margin:0}
 .board.entries td.updated{order:5;color:var(--dim)}
 .board.entries td:is(.updated,.used){font-size:12px}
 .board.entries td.when small.k{font-size:inherit}
-.board.entries tr:not(:has(.entry-tags))::after{content:"";order:4;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.entries tr::after{content:"";order:3;flex-basis:100%;height:0;margin-bottom:-4px}
 .board.entries td.updated small:not(.k){margin-top:2px}
 .board.entries td.used{order:5;color:var(--dim)}
 .board.entries td.used.is-empty{display:none}
@@ -686,11 +692,10 @@ details.import-ref>.inner .scroll{margin:0}
 .head:has(+.tabs[aria-label="Agents sections"]){min-height:40px}
 .tabs[aria-label="Agents sections"]+.section-head{margin-top:0}
 .board.grants .when{white-space:normal}
-@media (min-width:901px){
+@media (min-width:1181px){
 .board.grants :is(th,td){padding-inline:8px}
 .board.grants :is(th,td):nth-last-child(-n+2){width:1%}
 }
-.board.grants [data-label="Approval"]{white-space:nowrap}
 .board.grants [data-label="Entry"] small,.board.members [data-label="Role"] small{display:block;margin-top:2px;color:var(--dim)}
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
@@ -699,6 +704,44 @@ details.import-ref>.inner .scroll{margin:0}
 .board.members [data-label="Name"]{flex:0 1 auto}
 .board.members [data-label="Email"]{flex:1 1 55%}
 .board.members [data-label="Role"]{flex:1 1 52%}
+.members td[data-label=""]:empty{display:none}
+}
+
+/* Requests and Grants need the whole --wide for their columns. Below a 1180 px window (1100 px plus the page
+   padding and a scrollbar) they are compact cards already, so the action column is never behind a sideways scroll.
+   The generic card rules of the 900 px block are repeated here for these two boards; their own card rules live
+   here only. */
+@media (max-width:1180px){
+.board:is(.requests,.grants),.board:is(.requests,.grants) tbody,.board:is(.requests,.grants) tr,.board:is(.requests,.grants) td{display:block;width:100%}
+.board:is(.requests,.grants) thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.board:is(.requests,.grants) tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px;overflow:hidden}
+.board:is(.requests,.grants) tr.is-ok{border-left-color:var(--go)}.board:is(.requests,.grants) tr.is-bad{border-left-color:var(--stop)}.board:is(.requests,.grants) tr.is-idle{border-left-color:var(--faint)}.board:is(.requests,.grants) tr.is-wait{border-left-color:var(--amber)}
+.board:is(.requests,.grants) td,.board:is(.requests,.grants) td:first-child,.board:is(.requests,.grants) td:last-child{width:auto;min-width:0;max-width:100%;padding:0;background:transparent;border:none;border-radius:0;overflow-wrap:anywhere;text-align:left;white-space:normal}
+.board:is(.requests,.grants) td:last-child:not(.decision):has(.controls,>form){width:auto;white-space:normal;text-align:left}
+.board:is(.requests,.grants) td[data-label]::before{content:none}
+.board:is(.requests,.grants) td:empty{display:none}
+.board:is(.requests,.grants) .when{color:var(--dim)}
+.board:is(.requests,.grants) td[data-label=""]{margin-left:auto}
+.board:is(.requests,.grants) td.full{flex-basis:100%;margin-left:0}
+.board:is(.requests,.grants) td.end{margin-left:auto}
+.board:is(.requests,.grants) td>b.nobreak{white-space:normal;overflow-wrap:anywhere}
+.board:is(.requests,.grants) .k,.board:is(.requests,.grants) td.when small.k,.board:is(.requests,.grants) td.name small.k{display:inline;font-size:12px;color:var(--faint)}
+.board:is(.requests,.grants) .controls{margin-top:4px}
+.board:is(.requests,.grants) .confirm-size{display:none}
+/* On a wide card the MFA field keeps a field's width instead of running across the card. */
+.board.requests form.mfa{max-width:34em}
+.board:is(.requests,.grants) tr:has(.confirm-step) td:has(.confirm-step){grid-area:auto/1/auto/-1!important;flex:1 1 100%!important;width:100%;max-width:100%;margin-left:0!important;justify-self:stretch!important;text-align:right}
+.board:is(.requests,.grants) :is(.controls,form):has(>.confirm-step,>form>.confirm-step){display:flex;flex-wrap:wrap;justify-content:flex-end;width:100%}
+.board:is(.requests,.grants) .confirm-step{display:flex;width:100%}
+.board:is(.requests,.grants) .confirm-step .confirm-note{flex:1 1 100%;width:auto;min-width:0}
+/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", the state, the times one per
+   line from the left, the controls, and the request id as the last quiet line. */
+.board.requests td.who{order:0}.board.requests td.action{order:1;flex:1 1 40%}.board.requests td.entry{order:2;flex-basis:100%}
+.board.requests td.state{order:3;flex-basis:100%}.board.requests td.when{order:4;flex-basis:100%}.board.requests td.decision{order:5;flex-basis:100%}
+.board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
+.board.requests td.action small.rid{display:none}
+.board.requests td:is(.when,.decision) small.rid{display:block;margin-top:6px;color:var(--faint)}
+.board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
 .board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
 .board.grants [data-label="Agent"]{grid-area:1/1}
 .board.grants [data-label="Agent"]>b{white-space:normal;overflow-wrap:anywhere}
@@ -710,7 +753,6 @@ details.import-ref>.inner .scroll{margin:0}
 .board.grants tr:has(td:last-child:empty) .when{grid-column:1/-1}
 .board.grants td:last-child{grid-area:4/2;justify-self:end}
 .board.grants [data-label="Entry"] small{display:inline}
-.members td[data-label=""]:empty{display:none}
 }
 
 /* setup area */
@@ -726,7 +768,8 @@ details.import-ref>.inner .scroll{margin:0}
 .card details.fold.env:last-of-type{margin-bottom:0}
 .card>.note{margin:0 0 4px}
 .card details.env-add{background:transparent;border:none;border-radius:0;margin:8px 0 0}
-.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0;font:600 13px/1.4 var(--mono);color:var(--amber)}
+/* The closed link starts where the environment names above it start (a fold's border plus its padding). */
+.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0 4px 15px;font:600 13px/1.4 var(--mono);color:var(--amber)}
 .card details.env-add>summary::before,.card details.env-add[open]>summary::before{content:none}
 .card details.env-add>summary:hover{text-decoration:underline}
 .card details.env-add[open]{background:var(--panel-2);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;margin-top:10px}
