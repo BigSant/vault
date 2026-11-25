@@ -79,6 +79,7 @@ button.go,.btn.go{background:var(--amber-fill);border-color:var(--amber-edge);co
 button.go:hover,.btn.go:hover{background:var(--amber-hover);color:var(--on-accent);box-shadow:0 0 18px var(--amber-glow)}
 button.stop{color:var(--stop);border-color:var(--stop-line)}
 button.stop:hover{color:var(--stop);border-color:var(--stop)}
+button:disabled,button:disabled:hover{opacity:.5;cursor:not-allowed;color:var(--dim);border-color:var(--edge);box-shadow:none}
 .controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .controls form{margin:0}
 /* Compact buttons belong to table rows only; header actions and form submits keep the normal size. */
@@ -88,6 +89,8 @@ button.stop:hover{color:var(--stop);border-color:var(--stop)}
 main{padding:22px 28px 60px;max-width:1760px;margin:0 auto}
 h1{font:700 20px/1.25 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:0 0 16px;overflow-wrap:anywhere}
 h1.name{text-transform:none;letter-spacing:.02em}
+/* Data (project, entry, agent names) is never uppercased: wrap it in .name inside any uppercase label. */
+:is(h1,h2,h3,summary,th,.block-label,.menu-head,.tabs a,.btn,button,.chip,.toolbar label) .name{text-transform:none;letter-spacing:.02em}
 h2{display:flex;align-items:center;gap:12px;font:700 13px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;
 color:var(--amber);margin:34px 0 12px}
 h2::after{content:"";flex:1;border-top:1px solid var(--rule)}
@@ -145,6 +148,7 @@ font-weight:600;padding:0 12px 2px}
 .board tr.is-ok td:first-child{border-left-color:var(--go)}
 .board tr.is-bad td:first-child{border-left-color:var(--stop)}
 .board tr.is-idle td:first-child{border-left-color:var(--faint)}
+.board tr.is-wait td:first-child{border-left-color:var(--amber)}
 .board td.name{min-width:14em;max-width:26em}
 .board td.name a{font-weight:700;font-size:14px}
 .board td.name small{display:block;margin-top:3px;color:var(--faint);overflow-wrap:anywhere}
@@ -173,7 +177,10 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 form.action,.card{margin:0;background:var(--panel);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;padding:14px 16px}
 form.action.danger,.card.danger{border-top:7px solid transparent;
 background:linear-gradient(var(--panel),var(--panel)) padding-box,repeating-linear-gradient(-45deg,var(--hazard) 0 10px,#111 10px 20px) border-box}
-.stats,.list,.facts,.deck,main>form.action,.scroll,.box{margin-bottom:14px}
+/* One width for every standalone form card: a form outside a deck, or alone in one. Pages add no width classes. */
+form.action:not(.deck>form.action),.deck>form.action:only-child{max-width:760px}
+main.login form.action{max-width:none}
+.stats,.list,.facts,.deck,form.action:not(.deck>form.action),.scroll,.box{margin-bottom:14px}
 .board,.scroll:has(>.board){margin-bottom:8px}
 .scroll>.board,.scroll>.list,form.action .scroll,.card .scroll{margin-bottom:0}
 label{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
@@ -188,15 +195,20 @@ input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
 input[type=date]{color-scheme:dark}
 textarea{min-height:7em;resize:vertical;font-size:13px}
 input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px;height:16px;margin:2px 0 0;flex:none}
+/* Form foot: the note on the left (above on phones), submit buttons at the right at their natural width. */
 .form-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-top:12px}
 .form-foot .note{margin:0}
+.form-foot .note:empty{display:none}
 .form-foot .controls{flex:none;justify-content:flex-end}
+.form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
 /* A plain submit is outlined in amber; a helper such as "+ Row" is not a submit and stays secondary. */
 .form-foot button:not(.go):not(.stop):not([type=button]){border-color:var(--amber);color:var(--amber)}
 .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 8px}
 .toolbar label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 .toolbar label.grow{flex:1;min-width:16em}
 .toolbar select{width:auto;max-width:18em}
+.toolbar :is(button,.btn){min-height:36px}
+.toolbar>a:not(.btn),.toolbar .clear{display:inline-flex;align-items:center;min-height:36px;font-size:13px}
 .toolbar .count{margin-left:auto;color:var(--dim);font-size:13px;align-self:center}
 .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0}
 .inline label{margin:0}
@@ -219,6 +231,7 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 .block-label .chip{letter-spacing:.06em}
 .secret-row{margin:0 0 12px}
 .secret-row .controls{margin-top:6px}
+.note+.secret-row{margin-top:12px}
 pre[data-hidden]{color:var(--faint)}
 .masked{font:700 22px/1 var(--mono);letter-spacing:.3em;color:var(--faint);margin:6px 0 12px}
 .empty{padding:30px;text-align:center;color:var(--dim);border:1px dashed var(--edge);border-radius:4px}
@@ -251,14 +264,14 @@ main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
-.form-foot{flex-direction:column;align-items:stretch}.form-foot .controls{align-self:flex-end}
+.form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
 label,main.login label{grid-template-columns:1fr;gap:4px}
-.toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}
+.toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}.toolbar :is(button,.btn){min-height:40px}.toolbar>a:not(.btn),.toolbar .clear{min-height:40px}
 .board,.board tbody,.board tr,.board td{display:block;width:100%}
 /* Column heads stay for screen readers (app.js adds the table roles the block layout takes away). */
 .board thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .board tr{margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px;overflow:hidden}
-.board tr.is-ok{border-left-color:var(--go)}.board tr.is-bad{border-left-color:var(--stop)}.board tr.is-idle{border-left-color:var(--faint)}
+.board tr.is-ok{border-left-color:var(--go)}.board tr.is-bad{border-left-color:var(--stop)}.board tr.is-idle{border-left-color:var(--faint)}.board tr.is-wait{border-left-color:var(--amber)}
 .board td{background:transparent;border-radius:0!important;border-top:none;border-bottom:none;padding:6px 14px}
 .board td:first-child{border-left:none;padding-top:12px}.board td:last-child{padding-bottom:12px}
 .board td.name{max-width:none}.board td.when{white-space:normal}
@@ -266,7 +279,7 @@ label,main.login label{grid-template-columns:1fr;gap:4px}
 .board td[data-label=""]::before{content:none}
 .facts,.facts tbody,.facts tr,.facts th,.facts td{display:block;width:100%}
 .facts th{padding:10px 12px 2px;border-bottom:none}.facts td{padding:2px 12px 10px}
-.inline{flex-direction:column;align-items:stretch}.inline input:not([type=checkbox]){width:100%}.board.versions td.act{padding-top:4px}}
+.inline{flex-direction:column;align-items:stretch}.inline input:not([type=checkbox]){width:100%}.inline>button{align-self:flex-start}}
 @media (max-width:600px){.top{position:relative}.top details.menu{position:static}
 .top details.menu .menu-list,.top details.menu.account .menu-list{left:16px;right:16px;top:auto;width:auto;max-width:none;margin-top:4px}
 details.menu.account>summary{padding:6px 4px}
@@ -311,7 +324,7 @@ font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
 .skip:focus{top:8px}
 main:focus{outline:none}
 /* A role is a fact about a person, not a state: no state colour. */
-.chip.role{color:var(--ink);border-color:var(--rule);background:var(--panel-2)}
+.chip.role{color:var(--ink);border-color:var(--edge);background:var(--panel-2)}
 h2 .chip{flex:none}
 form.action>h2,.card>h2{margin-top:0}
 label span small{display:block;margin-top:2px;font-weight:400;letter-spacing:0;text-transform:none}
@@ -344,18 +357,45 @@ details[open]>summary .fold-act{color:var(--dim)}
 .card details.fold{background:var(--panel-2);margin:0 0 6px}
 .card details.fold>summary{gap:6px 16px}
 .card details.fold .form-foot{align-items:center}
-form.action.narrow{max-width:760px}
 /* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
 @media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}.fold-act{margin-left:auto}}
 /* Error page inside the signed-in shell */
 .error-page{max-width:760px}
 
+/* Compact phone cards (house rule 6). Add .compact-board to a .board: on phones each row becomes a 2-3 line card,
+   cells flow inline and the column heads are gone, so a value that needs its head carries an inline label:
+   <small class="k">Expires</small> 2026-12-01 <small class="k">UTC</small>. The .k labels show on phones only.
+   Helpers for cells: .full = own line, .end = pushed to the right edge. */
+.board .k,.board td.when small.k{display:none}
+@media (max-width:900px){
+.board.compact-board tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px}
+.board.compact-board td{width:auto;min-width:0;max-width:100%;padding:0;overflow-wrap:anywhere}
+.board.compact-board td:first-child,.board.compact-board td:last-child{padding:0}
+.board.compact-board td[data-label]::before{content:none}
+.board.compact-board td:empty{display:none}
+.board.compact-board .when{color:var(--dim)}
+.board.compact-board td[data-label=""]{margin-left:auto}
+.board.compact-board td.full{flex-basis:100%;margin-left:0}
+.board.compact-board td.end{margin-left:auto}
+.board .k,.board td.when small.k{display:inline;font-size:12px;color:var(--faint)}
+.board.compact-board .controls{margin-top:4px}
+/* Requests */
+.board.requests td.who{order:0}.board.requests td.action{order:1}.board.requests td.entry{order:2;flex-basis:100%}
+.board.requests td.state{order:3}.board.requests td.when{order:4}.board.requests td.decision{order:5;flex-basis:100%}
+.board.requests td.name small{display:inline;margin-left:6px}
+.board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline input{flex:1 1 9em;width:auto}
+/* Entry page: versions and agent access */
+.board.compact-board td.act{margin-left:0}
+.board.versions td.act:not(:has(button)){display:none}
+.board.access td.state{order:-1;margin-left:auto}.board.access td.end{order:-2;margin-left:0}.board.access td:first-child{order:-3}
+}
 
 /* entries area */
 a.stat{display:block;color:inherit;text-decoration:none;border-radius:3px}
 a.stat:hover{text-decoration:none}
 a.stat:hover span,a.stat.is-on span{color:var(--amber)}
 a.stat:hover span{text-decoration:underline}
+a.stat.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
 a.stat.has-due b{color:var(--amber)}
 .catalog-filter{margin:0 0 12px}
 .catalog-filter .search-row{display:flex;gap:8px;align-items:stretch;margin:0 0 8px}
@@ -367,8 +407,8 @@ details.filters .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,
 details.filters .filter-grid label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--dim)}
 details.filters .filter-grid label.check{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;color:var(--ink);min-height:36px}
 details.filters .filter-grid .filter-actions{display:flex;align-items:center;justify-content:flex-end}
-.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;font-size:13px;color:var(--dim)}
-.filter-status .chip.filter{font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
+.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:none;font-size:13px;color:var(--dim)}
+.filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
 .subnav a{display:inline-flex;align-items:center;min-height:32px;padding:4px 10px;border:1px solid var(--edge);border-radius:3px;background:var(--panel);color:var(--dim);font:600 12px/1.3 var(--mono)}
 .subnav a:hover{border-color:var(--amber);color:var(--amber);text-decoration:none}
 .head+.subnav{margin-top:4px}
@@ -387,61 +427,48 @@ details.filters>summary{min-height:40px}
 .subnav a{min-height:40px;padding:8px 12px}
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
-.board.entries tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 12px;align-items:baseline}
-.board.entries td{padding:0;width:auto}
-.board.entries td:first-child,.board.entries td:last-child{padding:0}
-.board.entries td.name{grid-column:1/-1;min-width:0}
+.board.entries td.name{order:0}
 .board.entries td.name small{margin-top:2px}
-.board.entries td.proj{grid-column:1;min-width:0;color:var(--dim);overflow-wrap:anywhere}
-.board.entries td.env{grid-column:2;justify-self:end;align-self:center}
-.board.entries td.proj::before,.board.entries td.env::before,.board.entries td.type::before{content:none}
-.board.entries td.type{grid-column:1;min-width:0;color:var(--dim)}
-.board.entries td.updated{grid-column:2;justify-self:end;text-align:right;color:var(--dim)}
-.board.entries td.updated::before{display:inline;margin:0 6px 0 0;color:var(--faint)}
-.board.entries td.updated small{margin-top:2px}
-.board.entries td.used{grid-column:1/-1;color:var(--dim)}
-.board.entries td.used::before{display:inline;margin:0 6px 0 0;color:var(--faint)}
+.board.entries td.proj{order:1;color:var(--dim)}
+.board.entries td.type{order:2;color:var(--dim)}
+.board.entries td.env{order:3;align-self:center}
+.board.entries td.updated{order:4;color:var(--dim)}
+.board.entries td.updated small:not(.k){margin-top:2px}
+.board.entries td.used{order:5;color:var(--dim)}
 .board.entries td.used.is-empty{display:none}
 .list.import-format,.list.import-ids,.list.import-types{display:block;overflow:visible}
 .list.import-format thead,.list.import-ids thead,.list.import-types thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-.list.import-format tbody,.list.import-ids tbody,.list.import-types tbody{display:grid;gap:8px}
-.list.import-format tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+.list.import-format tbody,.list.import-ids tbody,.list.import-types tbody{display:grid;gap:6px}
+.list.import-format tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:center;padding:8px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
 .list.import-format td,.list.import-ids td,.list.import-types td{display:block;padding:0;border:none}
 .list.import-format td.key{grid-column:1}
 .list.import-format td.req{grid-column:2;justify-self:end}
 .list.import-format td.desc{grid-column:1/-1;color:var(--dim)}
-.list.import-ids tr,.list.import-types tr{display:grid;gap:4px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px}
+.list.import-ids tr,.list.import-types tr{display:grid;gap:4px;padding:8px 12px;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px}
 .list.import-ids td.env-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .list.import-ids td.env-id code{font-size:12px;white-space:normal;overflow-wrap:anywhere}
 .list.import-types tr{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px}
 .list.import-types td.type-name{color:var(--dim);justify-self:end}
 .list.import-types td.type-fields{grid-column:1/-1}
+.list.import-types td.type-fields::before{content:"Required: ";font-size:12px;color:var(--faint)}
 }
 
 /* agents area */
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
 @media (max-width:900px){
-.board.compact-board tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px}
-.board.compact-board td{width:auto;min-width:0;max-width:100%;padding:0;overflow-wrap:anywhere}
-.board.compact-board td[data-label]::before{content:none}
-.board.compact-board td:empty{display:none}
-.board.compact-board .when{color:var(--dim)}
-.board.compact-board td[data-label=""]{margin-left:auto}
-.board.requests [data-label="Agent"]{order:0;overflow:auto}
-.board.requests [data-label="Action"]{order:1}
-.board.requests [data-label="Entry"]{order:2;flex-basis:100%}
-.board.requests .name small{display:inline;margin-left:6px}
-.board.requests [data-label="State"]{order:3}
-.board.requests .when{order:4}
-.board.requests td[data-label="Finished (UTC)"]::before{content:"Finished ";display:inline}
-.board.requests [data-label="Decision"]{order:5;flex-basis:100%}
-.board.activity [data-label="Actor"],.board.grants [data-label="Action"]{margin-left:auto}
-.board.activity [data-label="Event"],.board.grants [data-label="Entry"]{flex-basis:100%}
-.board.activity code{white-space:normal}
-.board.activity [data-label="Outcome"]{margin-left:auto}
 .board.identities [data-label="Agent"]{flex:1 1 45%}
-.board.identities [data-label="Active grants"]::after{content:" active grants"}
-.board.identities td.when::before,.board.grants td.when::before{content:"Expires ";display:inline}
+.board.members [data-label="Name"]{flex:0 1 auto}
+.board.members [data-label="Email"]{flex:1 1 55%}
+.board.members [data-label="Role"]{flex:1 1 52%}
+.board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center}
+.board.grants [data-label="Agent"]{grid-area:1/1}
+.board.grants [data-label="Action"]{grid-area:1/2/2/4}
+.board.grants [data-label="Entry"]{grid-area:2/1}
+.board.grants [data-label="State"]{grid-area:3/2;justify-self:end}
+.board.grants [data-label="Approval"]{grid-area:2/2/3/4;justify-self:end}
+.board.grants .when{grid-area:3/1;white-space:normal}
+.board.grants td:last-child{grid-area:3/3;justify-self:end}
+.board.grants [data-label="Entry"] small{display:inline}
 .members td[data-label=""]:empty{display:none}
 }

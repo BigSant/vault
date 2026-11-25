@@ -1,5 +1,5 @@
 @extends('layout')
-@section('title', 'Entries')
+@section('title', request('state') === 'archived' ? 'Archived entries' : 'Entries')
 @section('content')
 @php
     $canEdit = $space && $space->role !== 'viewer';
@@ -25,7 +25,11 @@
 @endphp
 <div class="head">
     <h1>{{ $archived ? 'Archived entries' : 'Entries' }}</h1>
-    @if($canEdit)
+    @if($archived && $space)
+    <div class="controls">
+        <a class="btn" href="/?workspace={{ $space->id }}">Back to active entries</a>
+    </div>
+    @elseif($canEdit)
     <div class="controls">
         <a class="btn" href="/workspaces/{{ $space->id }}/import">Import</a>
         <a class="btn go" href="/entries/new?workspace={{ $space->id }}">+ Add an entry</a>
@@ -34,10 +38,14 @@
 </div>
 @if($space)
 <div class="stats">
-    <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active entries</span></div>
-    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="/?workspace={{ $space->id }}&due=1"><b>{{ $dueCount }}</b><span>rotation due →</span></a>
+    @if($archived)
+        <a class="stat stat-link" href="/?workspace={{ $space->id }}"><b>{{ $activeCount ?? '—' }}</b><span>active entries →</span></a>
+    @else
+        <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active entries</span></div>
+    @endif
+    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ $dueOnly ? '/?workspace='.$space->id : '/?workspace='.$space->id.'&due=1' }}"{!! $dueOnly ? ' aria-current="page"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <div class="stat"><b>{{ $prodCount }}</b><span>production</span></div>
-    <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents · 7 days</span></div>
+    <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
 </div>
 
 <form method="get" class="catalog-filter">
@@ -49,12 +57,12 @@
     <details class="filters">
         <summary>Filters @if($drawerCount)<span class="chip warn">{{ $drawerCount }}</span>@endif</summary>
         <div class="inner filter-grid">
-            <label>Project<select name="project"><option value="">all</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
-            <label>Environment<select name="environment"><option value="">all</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $projects->firstWhere('id', $e->project_id)?->name }} / {{ $e->name }}</option>@endforeach</select></label>
-            <label>Type<select name="type"><option value="">all</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
-            <label>State<select name="state"><option value="active">active</option><option value="archived" @selected($archived)>archived</option></select></label>
+            <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
+            <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $projects->firstWhere('id', $e->project_id)?->name }} / {{ $e->name }}</option>@endforeach</select></label>
+            <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
+            <label>State<select name="state"><option value="active">Active</option><option value="archived" @selected($archived)>Archived</option></select></label>
             <label class="check"><input type="checkbox" name="due" value="1" @checked($dueOnly)> Rotation due only</label>
-            <div class="filter-actions"><button>Apply filters</button></div>
+            <div class="filter-actions"><button>Apply</button></div>
         </div>
     </details>
 </form>
@@ -63,7 +71,7 @@
 <div class="filter-status">
     <span>
         @if($archived)
-            {{ $entries->total() }} archived
+            Showing {{ $entries->total() }} archived
         @elseif($activeCount !== null)
             Showing {{ $entries->total() }} of {{ $activeCount }}
         @else
@@ -101,18 +109,18 @@
         @endif
     </div>
 @else
-<div class="scroll"><table class="board entries">
+<div class="scroll"><table class="board compact-board entries">
     <thead><tr><th scope="col">Entry · tags</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated (UTC)</th><th scope="col">Last used (UTC)</th></tr></thead>
     <tbody>
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
-        <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? '' : 'is-ok') }}">
-            <td class="name" data-label=""><a href="/entries/{{ $e->id }}">{{ $e->name }}</a>@if($e->tags)<small>{{ $e->tags }}</small>@endif</td>
+        <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
+            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}">{{ $e->name }}</a>@if($e->tags)<small>{{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
-            <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
-            <td class="type" data-label="Type">{{ $typeNames[$e->type] ?? $e->type }}</td>
-            <td class="when updated" data-label="Updated (UTC)">{{ substr($e->updated_at, 0, 10) }}@if($due)<small><span class="chip warn">rotate</span> due {{ substr($e->rotate_at, 0, 10) }}</small>@endif</td>
-            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">{{ $e->last_used_at ? substr($e->last_used_at, 0, 16) : '—' }}</td>
+            <td class="env end" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
+            <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
+            <td class="when updated full" data-label="Updated (UTC)"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}@if($due)<small><span class="chip warn">rotate</span> due {{ substr($e->rotate_at, 0, 10) }}</small>@endif</td>
+            <td class="when used full{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">@if($e->last_used_at)<small class="k">Last used</small> {{ substr($e->last_used_at, 0, 16) }} <small class="k">UTC</small>@else—@endif</td>
         </tr>
     @endforeach
     </tbody>

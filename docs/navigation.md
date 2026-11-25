@@ -112,3 +112,33 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 | Entries | `catalog`, `entry`, `entry-form`, `import` | `Workspace::index`, `entryForm`, `detail`, `importForm` |
 | Agents, members | `requests`, `agents`, `grants`, `members`, `token`, `operations` partial | `Workspace::requests`, `agents`, `grants`, `members`, `settings` |
 | Setup | `structure`, `types` | `Workspace::structurePage`, `typesPage` |
+
+## House rules
+
+Every page follows these, so the same kind of thing looks and behaves the same everywhere.
+
+1. **Form width.** A standalone form card is capped at one width; only a multi-column `.deck` changes it.
+2. **Headings.** h1 is the page or area, h2 a section. A form card has its own h3 only when its h2 names something
+   broader. No h2 that repeats the active tab, no h1→h3 skips, no h2 inside a card.
+3. **Form foot.** The note sits left or above; buttons sit right at natural width on every screen size.
+4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
+5. **Filter bars** (Entries, Grants, Activity): labelled selects, an **Apply** button, **Clear filters** only when
+   a filter is set, and "Showing N of M" with one chip per active filter.
+6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
+   inline label: "Requested …", "Finished …", "Expires …", "Expired …". Approval reads "asks every time" or
+   "runs without asking".
+7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle`. A row without a class means "needs a look".
+8. **Repeated buttons** get an `aria-label` naming their item.
+9. **Words**: "Reveal" for anything that shows a secret value; names are never uppercased.
+10. **Actions only when possible**: no Revoke on inactive items; a form whose required choice is empty shows an
+    empty state linking to where to fix it instead of an enabled submit.
+
+## Additions to the ops design system
+
+Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request), `nav.subnav` (quiet in-page jump
+links on the entry page), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
+label), `.confirm-inline` (password field inside a long form) and the compact phone card for boards.
+
+## Known gaps
+
+- A workspace cannot be renamed or deleted from the web UI yet.

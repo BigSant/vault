@@ -3,6 +3,5 @@
 @section('content')
 <h1>Agents</h1>
 @include('tabs', ['area' => 'agents', 'current' => 'requests', 'space' => $space])
-@include('operations', ['heading' => 'Waiting for you', 'operations' => $waiting, 'workspace' => $space->id, 'empty' => 'No requests need your attention.'])
-@include('operations', ['heading' => 'Recent history', 'sectionId' => 'history', 'historyOnly' => true, 'operations' => $history, 'workspace' => $space->id, 'empty' => 'No recent requests.', 'refreshUrl' => '/workspaces/'.$space->id.'/requests'])
+@include('operations', ['mode' => 'both', 'operations' => $waiting->concat($history), 'workspace' => $space->id, 'refreshUrl' => '/workspaces/'.$space->id.'/requests'])
 @endsection

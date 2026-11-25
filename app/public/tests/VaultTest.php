@@ -156,7 +156,7 @@ final class VaultTest extends TestCase
         $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
             ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[1]['id'], $rows[0]['id']])
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
-            ->assertSeeInOrder(['Waiting for you', 'ai-os', 'Private name', 'stage', 'test.http', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent history'])
+            ->assertSeeInOrder(['2 requests waiting for you', 'ai-os', 'Private name', 'stage', 'test.http', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent requests'])
             ->assertDontSee($rows[2]['id']);
         $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
             ->assertSee($rows[0]['id'])->assertSee($rows[1]['id']);
@@ -246,15 +246,55 @@ final class VaultTest extends TestCase
         $entry = $this->entry();
         [$machine, , $grant] = $this->machine($entry, true);
         $url = '/workspaces/'.$this->workspace.'/grants';
-        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('every time');
+        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters');
+        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
+            ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
-        $this->get($url)->assertOk()->assertSeeText('no approval')->assertSee('/revoke/grants/'.$grant);
+        $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
         $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
-        $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
+        $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
+    }
+
+    public function test_catalog_remembers_only_a_workspace_the_user_can_access(): void
+    {
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Zebra']);
+        DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->withSession(['last_workspace' => $other])->get('/')->assertViewHas('space', fn ($space) => $space->id === $other);
+        DB::table('members')->where('workspace_id', $other)->delete();
+        $this->get('/')->assertViewHas('space', fn ($space) => $space->id === $this->workspace);
+    }
+
+    public function test_expired_agent_and_missing_grant_prerequisites(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertSeeText('No active entries.')
+            ->assertDontSee('name="machine_id"', false);
+        [$agent] = $this->machine($this->entry());
+        $this->get($base.'/agents')->assertSee('/revoke/machines/'.$agent);
+        DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->subDay()]);
+        $this->get($base.'/agents')->assertDontSee('/revoke/machines/'.$agent)->assertSee('Expired');
+        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertDontSeeText('No active entries.');
+        DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->addDay()]);
+        file_put_contents($this->temp.'/connectors.json', '{"actions":{}}');
+        $this->get($base.'/grants')->assertSeeText('No actions are configured.')->assertDontSee('name="machine_id"', false);
+    }
+
+    public function test_activity_uses_event_time_before_id_on_both_pages(): void
+    {
+        $entry = $this->entry();
+        $audit = app(\App\Vault\Access::class);
+        $audit->audit($this->workspace, 'entry.older', $entry);
+        $audit->audit($this->workspace, 'entry.newer', $entry);
+        DB::table('audit')->where('event', 'entry.older')->update(['created_at' => now()->addDays(2)]);
+        DB::table('audit')->where('event', 'entry.newer')->update(['created_at' => now()->addDay()]);
+        foreach (['/workspaces/'.$this->workspace.'/audit', '/entries/'.$entry] as $url) {
+            $this->get($url)->assertOk()->assertViewHas('events', fn ($events) => $events->first()->event === 'entry.older');
+        }
     }
 
     public function test_member_row_role_change_and_removal(): void

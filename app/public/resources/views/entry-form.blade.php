@@ -9,10 +9,14 @@
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
-@if($environments->isEmpty())<div class="callout warn"><p>Create a project first in <a href="/workspaces/{{ $workspace }}/structure">Setup</a>.</p></div>@endif
-<h2>Entry</h2>
+@if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
+<div class="empty">
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $workspace }}/structure">Create a project in Setup</a> first.</p>@endif
+    @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
+</div>
+@else
+<h2>Entry details</h2>
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
-    <h3>Entry details</h3>
     <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>
     <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ $entry?->alias }}" required maxlength="100" placeholder="shop-stage-admin"></label>
     @if($entry)
@@ -32,7 +36,7 @@
         </div>
     @else
         <label><span>Project / environment</span><select name="environment_id" required>
-            <option value="">Choose a project / environment</option>
+            <option value="">Choose an environment</option>
             @foreach($environments as $e)
                 <option value="{{ $e->id }}">{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
             @endforeach
@@ -79,4 +83,5 @@
         <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
     </div>
 </form>
+@endif
 @endsection

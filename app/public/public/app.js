@@ -1,8 +1,12 @@
 // Screen readers hear short status changes through the polite live region in the layout.
 const say = text => { const live = document.getElementById('live'); if (live) { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); } };
-const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(selector).forEach(el => { el.textContent = 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1'; });
+// A hidden value cannot be copied any more, so its Copy button is switched off too.
+const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(selector).forEach(el => {
+  el.textContent = 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1';
+  if (el.id) document.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.copy === el.id) { button.disabled = true; button.textContent = 'Copy'; } });
+});
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
-if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again'); }, 30000);
+if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again. Copy is off until you reveal them again.'); }, 30000);
 // The enrollment QR encodes the same key, so it goes too.
 addEventListener('pagehide', () => { hideSecrets(); document.querySelectorAll('.totp-qr').forEach(img => img.remove()); });
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
@@ -23,9 +27,32 @@ document.querySelectorAll('[data-generate]').forEach(button => button.addEventLi
   if (!input) return;
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   input.value = btoa(String.fromCharCode(...bytes));
+  input.dispatchEvent(new Event('input', { bubbles: true }));
   button.textContent = 'Generated';
-  say('Value generated');
+  say('Value generated. Use Show to check it.');
 }));
+// Every Generate button gets a Show/Hide companion, so a generated or typed value can be checked before saving.
+document.querySelectorAll('[data-generate]').forEach(button => {
+  const input = document.getElementById(button.dataset.generate);
+  if (!input || input.type !== 'password') return;
+  const name = input.closest('.field, label')?.querySelector('label span, span')?.firstChild?.textContent?.trim() || 'value';
+  const show = document.createElement('button');
+  show.type = 'button';
+  show.textContent = 'Show';
+  show.setAttribute('aria-pressed', 'false');
+  show.setAttribute('aria-label', 'Show ' + name);
+  show.addEventListener('click', () => {
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    show.textContent = visible ? 'Hide' : 'Show';
+    show.setAttribute('aria-pressed', String(visible));
+    say(name + (visible ? ' shown' : ' hidden'));
+  });
+  button.before(show);
+  // A shown value never stays on screen through a submit or a page change.
+  input.form?.addEventListener('submit', () => { input.type = 'password'; });
+  addEventListener('pagehide', () => { input.type = 'password'; });
+});
 // Entry type editor: add another empty field row.
 document.querySelectorAll('[data-add-row]').forEach(button => button.addEventListener('click', () => {
   const rows = document.getElementById(button.dataset.addRow);
@@ -65,9 +92,9 @@ const openTarget = () => {
   fold.open = true;
   target.scrollIntoView();
 };
-// On phones a board row is a card (display:block), which drops the table semantics. Explicit roles keep
-// the column heads tied to their cells for screen readers.
-document.querySelectorAll('table.board, table.list.edit').forEach(table => {
+// On phones the rows of these tables are cards (display:block/grid/flex), which drops the table semantics.
+// Explicit roles keep the column and row heads tied to their cells for screen readers.
+document.querySelectorAll('table.board, table.facts, table.list.edit, table.list.import-format, table.list.import-ids, table.list.import-types').forEach(table => {
   table.setAttribute('role', 'table');
   table.querySelectorAll('thead, tbody, tfoot').forEach(el => el.setAttribute('role', 'rowgroup'));
   table.querySelectorAll('tr').forEach(el => el.setAttribute('role', 'row'));

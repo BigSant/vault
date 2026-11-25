@@ -12,6 +12,8 @@
     $stateChip = ['active' => 'ok', 'archived' => 'muted', 'destroyed' => 'bad'][$entry->state] ?? 'muted';
     $current = (int) $entry->version;
     $dash = fn ($v) => $v === null || $v === '' ? '—' : $v;
+    $shownCurrent = isset($secret) && (! $shownVersion || $shownVersion === $current);
+    $day = fn ($value) => substr(str_replace('T', ' ', (string) $value), 0, 16);
     $waitingCount = isset($waitingCount) ? (int) $waitingCount : ($isOwner
         ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
         : 0);
@@ -25,7 +27,13 @@
     @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Update</a>@endif
 </div>
 @if($isEditor)
-<nav class="subnav" aria-label="Entry sections"><a href="#data">Secret values</a><a href="#versions">Versions</a>@if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Requests</a><a href="#activity">Activity</a>@endif</nav>
+{{-- Jump links: the sections in page order, each named like its heading. --}}
+<nav class="subnav" aria-label="Entry sections">
+    @if($isOwner && $waitingCount > 0)<a href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif
+    <a href="#values">Secret values</a><a href="#versions">Versions</a>
+    @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
+    @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
+</nav>
 @endif
 
 <table class="facts">
@@ -36,15 +44,16 @@
 </table>
 
 @if($isOwner && $waitingCount > 0)
-<div class="callout warn"><p><span class="lamp warn"></span> <a href="#requests">{{ $waitingCount === 1 ? '1 request waits for you' : $waitingCount.' requests wait for you' }}</a></p></div>
+@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
 @endif
 
-<h2 id="data">Secret values</h2>
+<h2 id="values">Secret values</h2>
 @if($environment->production && $canEdit)<div class="tape"><span>Production credentials</span></div>@endif
 <div class="card">
     @isset($secret)
         @if($shownVersion && $shownVersion !== $current)
             <div class="callout warn"><p>Showing an <b>older version {{ $shownVersion }}</b> (current is {{ $current }}). Fields marked <span class="chip warn">differs</span> are not the same as now.</p></div>
+            <p class="note">Version {{ $shownVersion }}. Values hide again after 30 seconds.</p>
         @else
             <p class="note">Current version {{ $current }}. Values hide again after 30 seconds.</p>
         @endif
@@ -55,7 +64,7 @@
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
                 </div>
                 <pre data-secret class="secret" id="secret-{{ $loop->index }}">{{ $value }}</pre>
-                <div class="controls"><button type="button" data-copy="secret-{{ $loop->index }}">Copy</button></div>
+                <div class="controls"><button type="button" data-copy="secret-{{ $loop->index }}" aria-label="Copy {{ $label($field) }}">Copy</button></div>
             </div>
         @endforeach
         @php $onlyCurrent = array_diff($differs, array_keys($secret)); @endphp
@@ -71,22 +80,22 @@
     @if($canEdit)
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. You may be asked to confirm your password first. Older versions are under Versions.</p>
-            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<button class="go">Reveal current</button></form>
+            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal">@csrf @if($shownCurrent)<button aria-label="Reveal the current values of {{ $entry->name }} again">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
         </div>
     @endif
 </div>
 
 <h2 id="versions">Versions</h2>
 <p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when. Secret values are hidden from the viewer role.@endif</p>
-<div class="scroll"><table class="board versions">
-    <thead><tr><th scope="col">Version</th><th scope="col">When (UTC)</th><th scope="col">Who</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"><span class="sr-only">Actions</span></th>@endif</tr></thead>
+<div class="scroll"><table class="board compact-board versions">
+    <thead><tr><th scope="col">Version</th><th scope="col">Saved (UTC)</th><th scope="col">By</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"><span class="sr-only">Actions</span></th>@endif</tr></thead>
     <tbody>
     @forelse($history as $h)
         <tr class="{{ $h['version'] === $current ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Version"><b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
-            <td class="when" data-label="When (UTC)">{{ $h['at'] ? substr(str_replace('T', ' ', $h['at']), 0, 16) : '—' }}</td>
-            <td data-label="Who">{{ $h['user'] ?? '—' }}</td>
-            <td data-label="Changes"><div class="changes">
+            <td data-label="Version"><small class="k">Version</small> <b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
+            <td class="when" data-label="Saved (UTC)">@if($h['at'])<small class="k">Saved</small> {{ $day($h['at']) }} <small class="k">UTC</small>@else<span class="muted">save time unknown</span>@endif</td>
+            <td data-label="By">@if($h['user'] ?? null)<small class="k">by</small> {{ $h['user'] }}@else<span class="muted">author unknown</span>@endif</td>
+            <td class="changes-cell full" data-label="Changes"><div class="changes">
                 @if($h['changes'] === null)
                     <span class="muted">No details (created before the change log existed)</span>
                 @else
@@ -111,11 +120,11 @@
                 @endif
             </div></td>
             @if($canEdit)
-            <td class="act" data-label=""><div class="controls">
+            <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button>View</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
                     @if($h['version'] !== $current)
-                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button>Restore</button></form>
+                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
                     @endif
                 @endif
             </div></td>
@@ -128,19 +137,46 @@
 </table></div>
 @if(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
 
+@if($isOwner)
+<h2 id="access">Agent access</h2>
+@if($grants->isEmpty())
+    <div class="empty">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
+@else
+<div class="scroll"><table class="board compact-board access">
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
+    <tbody>
+    @foreach($grants as $grant)
+        @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
+        <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
+            <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
+            <td class="end" data-label="Action"><code>{{ $grant->action }}</code></td>
+            <td class="full" data-label="Approval">{{ $grant->approval ? 'asks every time' : 'runs without asking' }}</td>
+            <td class="when" data-label="Expires (UTC)"><small class="k">{{ strtotime((string) $grant->expires_at) <= time() ? 'Expired' : 'Expires' }}</small> {{ $day($grant->expires_at) }} <small class="k">UTC</small></td>
+            <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
+        </tr>
+    @endforeach
+    </tbody>
+</table></div>
+<p class="note">Read-only summary. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
+@endif
+@include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
+<h2 id="activity">Activity</h2>
+<p class="note">The last 30 events for this entry and its requests.</p>
+@include('activity', ['events' => $events, 'hideSubject' => $entry->id])
+@endif
+
 @if($showLifecycle)
 <h2 id="archive">{{ $archiveHeading }}</h2>
 <div class="deck">
     @if($canEdit)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Grants for it are revoked.">@csrf
-        <h3>Move to archive</h3>
-        <div class="form-foot"><p class="note">Revokes every grant for this entry. You can bring it back later.</p><button class="stop">Archive entry</button></div>
+        <div class="form-foot"><p class="note">Archiving revokes every grant for this entry and hides its values. You can bring it back later.</p><button class="stop">Archive entry</button></div>
     </form>
     @endif
     @if($entry->state === 'archived' && $isEditor)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/unarchive">@csrf
-        <h3>Restore from archive</h3>
-        <div class="form-foot"><p class="note">Grants have to be created again.</p><button>Restore</button></div>
+        @if($isOwner)<h3>Restore from archive</h3>@endif
+        <div class="form-foot"><p class="note">Makes the entry active again. Grants have to be created again.</p><button>Restore from archive</button></div>
     </form>
     @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf
@@ -151,33 +187,5 @@
     @endif
     @endif
 </div>
-@endif
-
-@if($isOwner)
-<h2 id="access">Agent access</h2>
-@if($grants->isEmpty())
-    <div class="empty">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
-@else
-<div class="scroll"><table class="board">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
-    <tbody>
-    @foreach($grants as $grant)
-        @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
-        <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
-            <td data-label="Action"><code>{{ $grant->action }}</code></td>
-            <td data-label="Approval">{{ $grant->approval ? 'every time' : 'not asked' }}</td>
-            <td class="when" data-label="Expires (UTC)">{{ substr((string) $grant->expires_at, 0, 16) }}</td>
-            <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
-        </tr>
-    @endforeach
-    </tbody>
-</table></div>
-<p class="note">Read-only summary. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
-@endif
-@include('operations', ['workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'heading' => 'Requests', 'empty' => 'No requests yet.', 'hideEntry' => true])
-<h2 id="activity">Activity</h2>
-<p class="note">The last 30 events for this entry and its requests.</p>
-@include('activity', ['events' => $events, 'hideSubject' => $entry->id])
 @endif
 @endsection

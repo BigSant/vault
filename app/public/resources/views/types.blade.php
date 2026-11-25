@@ -19,19 +19,22 @@
     <div class="stat"><b>{{ $types->sum(fn ($t) => count($t->fields)) }}</b><span>fields</span></div>
     <div class="stat"><b>{{ array_sum($usage) }}</b><span>entries</span></div>
 </div>
-<p class="note">A type lists the fields an entry has. Every field value is kept in the encrypted store, whatever its kind; the kind only changes the input. Agents can see type and field keys, so keep sensitive data out of names.</p>
+<p class="note">A type defines an entry’s fields. Field kind controls the input. All values are encrypted.</p>
+<p class="note">Agents see type and field keys. Keep sensitive data out of names.</p>
 
 @if($types->isEmpty())
     <div class="empty"><b>No entry types yet</b>An entry needs a type. <a href="#add-type">Add the first type</a></div>
 @else
-<h2>Types</h2>
-<p class="note">Removed fields keep their values in older versions. A new required field is asked for at the next update of an entry.
-    Agent actions need these required fields: browser <code>username</code> + <code>password</code>, API/CLI <code>token</code>, DB <code>role</code>.
-    A type used by entries (archived ones too) cannot be removed.</p>
+<h2>Field changes</h2>
+<ul class="note">
+    <li>Older versions keep removed fields. Entries need new required fields on their next update.</li>
+    <li>Browser actions require <code>username</code> and <code>password</code>. API and CLI actions require <code>token</code>. Database actions require <code>role</code>.</li>
+    <li>Removing a type requires zero entries, including archived entries.</li>
+</ul>
 @foreach($types as $type)
     @php $used = $usage[$type->key] ?? 0; @endphp
     <details class="fold" id="type-{{ $type->key }}">
-        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="fold-meta">{{ $plural($used, 'entry', 'entries') }}</span></summary>
+        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="fold-meta">{{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act">Edit<span class="sr-only"> type {{ $type->name }}</span></span></summary>
         <div class="inner">
             <form method="post" action="/workspaces/{{ $space->id }}/types/{{ $type->key }}">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
@@ -54,6 +57,7 @@
                         </tr>
                     </tbody>
                 </table>
+                @include('confirm-inline', ['verb' => 'save this type'])
                 <div class="form-foot"><p class="note">Leave the last row empty if you add no field.</p>
                     <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}">+ Field</button><button aria-label="Save type {{ $type->name }}">Save type</button></div></div>
             </form>
@@ -66,7 +70,7 @@
 @endif
 
 <h2>Add a type</h2>
-<div class="deck wide">
+
     <form class="action" id="add-type" method="post" action="/workspaces/{{ $space->id }}/types">@csrf
         <label><span>Type name</span><input name="name" required maxlength="80" placeholder="FTP server"></label>
         <table class="list edit">
@@ -75,7 +79,7 @@
                 <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[]" value=""><input name="field_label[]" maxlength="80" placeholder="Server address" aria-label="Field label"></td><td data-label="Kind">{!! $kindSelect() !!}</td><td data-label="Required">{!! $required(true) !!}</td></tr>
             </tbody>
         </table>
+        @include('confirm-inline', ['verb' => 'create this type'])
         <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new">+ Field</button><button class="go">Create type</button></div></div>
     </form>
-</div>
 @endsection

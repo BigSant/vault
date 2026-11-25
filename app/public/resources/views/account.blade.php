@@ -14,7 +14,8 @@
     </td></tr>
 </table>
 
-<h2>Security</h2>
+{{-- Two cards sit under "Security". With the confirmation done only one form is left, so the heading is its name. --}}
+<h2 id="security">{{ $confirmedUntil ? 'Change sign-in password' : 'Security' }}</h2>
 <div class="deck">
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
@@ -25,7 +26,7 @@
     </form>
     @endunless
     <form class="action" method="post" action="/password">@csrf
-        <h3>Change sign-in password</h3>
+        @unless($confirmedUntil)<h3>Change sign-in password</h3>@endunless
         <label><span>Current password</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
         <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
         <label><span>Repeat</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>

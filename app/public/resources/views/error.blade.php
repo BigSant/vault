@@ -1,10 +1,13 @@
 @extends('layout')
 @php
-    $title = [401 => 'Sign-in failed', 403 => 'Not allowed', 404 => 'Not found', 409 => 'Changed meanwhile', 419 => 'Session expired',
+    $title = [401 => 'Sign-in failed', 403 => 'Not allowed', 404 => 'Not found', 409 => 'Not possible now', 419 => 'Session expired',
         422 => 'Check the form', 429 => 'Too many attempts'][$status] ?? 'Not available';
     $signIn = in_array($status, [401, 419], true);
     // $shell: a signed-in person sees the error under the normal header. Guests and a failing service get the bare page.
     $shell = ! empty($shell);
+    // Back to the workspace last opened in this session; the entries page checks membership again.
+    $last = $shell ? session('last_workspace') : null;
+    $home = is_string($last) && $last !== '' ? '/?workspace='.rawurlencode($last) : '/';
 @endphp
 @section('title', $title)
 @unless($shell)
@@ -18,7 +21,7 @@
             401 => 'Check your sign-in details or the authenticator code.',
             403 => 'Your role in this workspace does not allow it, or the code you entered was wrong.',
             404 => 'This page does not exist, or is not available to you.',
-            409 => 'The entry or grant changed meanwhile. Reload the page and try again.',
+            409 => 'It changed meanwhile, or it is still in use. Reload and try again.',
             419 => 'The session expired. Sign in again.',
             422 => 'Check required fields, value formats and password length.',
             429 => 'Wait a minute, then try again.',
@@ -26,7 +29,8 @@
         } }}</p>
         @if(!empty($messages))<ul>@foreach($messages as $message)<li>{{ $message }}</li>@endforeach</ul>@endif
     </div>
-    @if(in_array($status, [409, 419, 422], true))<p class="note">Go back to correct the form. Secret fields are deliberately not refilled.</p>@endif
-    <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : '/' }}">{{ $signIn ? 'Sign in' : 'Back to entries' }}</a></div>
+    @if(in_array($status, [419, 422], true))<p class="note">Go back to correct the form. Secret fields are deliberately not refilled.</p>
+    @elseif($status === 409)<p class="note">Go back and reload the page to see the current state. Nothing was changed.</p>@endif
+    <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : $home }}">{{ $signIn ? 'Sign in' : 'Back to entries' }}</a></div>
 </div>
 @endsection

@@ -16,9 +16,10 @@
 
 @forelse($projects as $project)
     @php $envs = $environments[$project->id] ?? collect(); $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0); @endphp
-    <h2 id="p-{{ $project->id }}">{{ $project->name }} <span class="count">{{ $entries($projectEntries) }}</span></h2>
+    <h2 id="p-{{ $project->id }}"><span class="name">{{ $project->name }}</span> <span class="count">{{ $entries($projectEntries) }}</span></h2>
     <div class="card">
-        <div class="card-head">
+        <details class="fold"><summary>Project settings <span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span></summary>
+        <div class="inner">
             <form class="inline" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}">@csrf
                 <input name="name" value="{{ $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"><button aria-label="Rename project {{ $project->name }}">Rename</button>
             </form>
@@ -26,6 +27,7 @@
                 <form class="controls" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
             @endif
         </div>
+        </details>
         @forelse($envs as $env)
             @php $formId = 'env-'.$env->id; $n = $counts[$env->id] ?? 0; $where = $env->name.' in project '.$project->name; @endphp
             <details class="fold env">
@@ -64,14 +66,14 @@
 @endforelse
 
 <h2>Add a project</h2>
-<form class="action narrow" id="add-project" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
+<form class="action" id="add-project" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
     <label><span>Name</span><input name="name" required maxlength="100" placeholder="shop"></label>
     <div class="form-foot"><p class="note">New projects start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go">Add project</button></div>
 </form>
 
 <h2>Environment template</h2>
 <p class="note">The environments a new project starts with. Existing projects keep theirs.</p>
-<form class="action narrow" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
+<form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
     <table class="list edit">
         <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
         <tbody id="template-rows">
@@ -81,6 +83,7 @@
             <tr data-row-template><td data-label="Environment"><input name="env_name[]" maxlength="60" placeholder="new environment" aria-label="Environment"></td><td data-label="Production">{!! str_replace('<select ', '<select aria-label="Production" ', $yesNo('env_production[]', false)) !!}</td></tr>
         </tbody>
     </table>
+    @include('confirm-inline', ['verb' => 'save this template'])
     <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Row</button><button>Save template</button></div></div>
 </form>
 @endsection

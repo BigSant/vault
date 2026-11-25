@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>@yield('title','Vault') · Vault</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head><body>
 <a class="skip" href="#content">Skip to content</a>
 @hasSection('bare')
-<main class="login" id="content"><a class="mark" href="/">VAULT<small>credential store</small></a>@yield('content')</main>
+<main class="login" id="content" tabindex="-1"><a class="mark" href="/">VAULT<small>credential store</small></a>@yield('content')</main>
 @else
 @php
     $navSpace = $navSpaces->firstWhere('id', $navSpaceId);
@@ -54,7 +54,7 @@
     </details>
     @endauth
 </header>
-<main id="content">
+<main id="content" tabindex="-1">
 @yield('content')
 @auth<p class="foot"><span class="lamp ok"></span> Secret values stay in the vault. Agents only get action results.</p>@endauth
 </main>

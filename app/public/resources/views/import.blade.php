@@ -9,16 +9,21 @@
 <h1>Import entries</h1>
 <p class="note">Paste a JSON array of 1 to 50 entries for <b>{{ $space->name }}</b>. Every row is validated before any secret is written to the encrypted store.</p>
 
-<h2>Entries to import</h2>
+<h2>Paste entries</h2>
+@if($environments->isEmpty())
+<div class="empty">
+    <p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Create a project in Setup</a> first.</p>
+</div>
+@else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
-    <h3>JSON payload<small>Up to 50 entries per import.</small></h3>
-    <label class="stack"><span>Entries JSON</span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret":"{\"token\":\"...\"}"}]'></textarea></label>
+    <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret":"{\"token\":\"...\"}"}]'></textarea></label>
     @include('confirm-inline', ['verb' => 'import'])
     <div class="form-foot">
         <p class="note">The import text is never logged and is not refilled after an error.</p>
         <div class="controls"><a class="btn" href="/?workspace={{ $space->id }}">Cancel</a><button class="go">Import</button></div>
     </div>
 </form>
+@endif
 
 <h2>Format</h2>
 <p class="note">Send a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>

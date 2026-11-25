@@ -1,5 +1,5 @@
 @extends('layout')
-@section('title', $setup ? 'Set up' : 'Sign in')
+@section('title', $setup ? 'Create the first owner' : 'Sign in')
 @section('bare', '1')
 @section('content')
 <form class="action" method="post" action="{{ $setup ? '/setup' : '/login' }}">@csrf

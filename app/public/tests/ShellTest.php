@@ -210,7 +210,7 @@ final class ShellTest extends TestCase
     {
         $this->signIn('owner');
         $this->get($this->base.'/agents')->assertOk()
-            ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content">', 'id="live"'], false)
+            ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content" tabindex="-1">', 'id="live"'], false)
             ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button>Sign out</button>', false)->assertDontSee('Lock');
         $this->get('/account')->assertOk()->assertSee('Change password and sign out')->assertSee('<span class="chip role">owner</span>', false)->assertDontSee('>Lock<', false);
         // A signed-in person keeps the header on an error page; a guest gets the bare page.
