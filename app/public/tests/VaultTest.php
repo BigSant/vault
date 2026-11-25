@@ -248,7 +248,7 @@ final class VaultTest extends TestCase
         $url = '/workspaces/'.$this->workspace.'/grants';
         $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters')
             ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
-            ->assertSeeText('test.http (token)');
+            ->assertSeeText('test.http');
         $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
             ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
@@ -256,21 +256,40 @@ final class VaultTest extends TestCase
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
         $this->get('/?project=missing')->assertSeeText('Showing 0 of 1')->assertViewHas('archivedCount', 0);
-        $this->get('/?due=1')->assertViewHas('scopeCount', 0)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+        $this->get('/?due=1')->assertSeeText('Showing 0 of 1')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
         $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
             'environment' => $this->environment, 'q' => 'Private', 'type' => 'api_key'];
         foreach ([false, true] as $due) {
             $current = $filters + ($due ? ['due' => 1] : []) + ['page' => 2];
-            $target = $filters + ($due ? [] : ['due' => 1]);
+            $target = $filters + ($due ? [] : ['state' => 'due']);
             $this->get('/?'.http_build_query($current))->assertOk()
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
+        $this->get('/?state=due')->assertSeeText('State: rotation due')->assertSeeText('Showing 1 of 1');
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
         $this->get('/?state=archived')->assertDontSee('name="due"', false);
+    }
+
+    public function test_grants_order_by_effective_state_then_agent_and_action(): void
+    {
+        $entry = $this->entry();
+        [$agent, , $first] = $this->machine($entry);
+        $other = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $other, 'workspace_id' => $this->workspace, 'name' => 'zebra',
+            'token_hash' => hash('sha256', $other), 'expires_at' => now()->addDay()]);
+        $ids = [];
+        foreach ([[$other, 'aaa', false], [$agent, 'zzz', false], [$agent, 'aaa', true]] as [$machine, $action, $expired]) {
+            $id = (string) Str::uuid();
+            $ids[] = $id;
+            DB::table('grants')->insert(['id' => $id, 'machine_id' => $machine, 'entry_id' => $entry,
+                'action' => $action, 'expires_at' => $expired ? now()->subDay() : now()->addDay()]);
+        }
+        $this->get('/workspaces/'.$this->workspace.'/grants')->assertViewHas('grants',
+            fn ($grants) => $grants->pluck('id')->all() === [$first, $ids[1], $ids[0], $ids[2]]);
     }
 
     public function test_catalog_remembers_only_a_workspace_the_user_can_access(): void
@@ -319,7 +338,7 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
-            ->assertSee('<label for="first-password">First password <small>new user only</small></label>', false)
+            ->assertSee('<label for="first-password"><span>First password <small>new user only</small></span></label>', false)
             ->assertSee('aria-label="Generate first password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
         $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);

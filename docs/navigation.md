@@ -24,8 +24,8 @@ Use these words in every UI text. Code names may differ.
 - **Grant** — one agent may run one action with one entry. Not "permission".
 - **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
-- **Sign out** — not "Lock". Create actions: headings and links "Add a/an X", submit buttons "Add X", never
-  "New" or "Create". **Edit entry**. **Expires (UTC)**.
+- **Sign out** — not "Lock". Create actions in the signed-in UI: headings and links "Add a/an X", submit
+  buttons "Add X" ("Add entry", "Add grant"), never "New" or "Create". The sign-in pages may say "Create account". **Edit entry**. **Expires (UTC)**.
   **rotation due**. Password fields are labelled **Current password**.
 - Roles are shown as neutral `chip role`, never with state colours.
 - A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it.
@@ -61,8 +61,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - `/` — the entry list for the current workspace: header with `+ Add an entry` (the one `go`) and `Import`
   (editor+), search and filters (project, environment, type, state), the board, pager. No workspace or project
   forms on this page; empty states link to Setup.
-- `/entries/{id}` — one entry: facts, values (reveal), versions, lifecycle, and for owners the agent grants for
-  this entry (read-only, with a link to Grants filtered by this entry), its requests and its activity.
+- `/entries/{id}` — one entry, in this order: title, requests waiting for a decision (owners, only when any wait),
+  jump links, facts, secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
+  filtered by this entry), recent requests, activity, and Archive last.
 - `/entries/new`, `/entries/new?entry=` — add / update form.
 - `/workspaces/{w}/import` — paste a JSON import (editor+).
 
@@ -77,7 +78,7 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page,
   whose next step links to Grants for that agent.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
-  and the "Grant an action" form (pre-selected from the filter).
+  and the "Add a grant" form (pre-selected from the filter).
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)
@@ -145,7 +146,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 
 Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request), `nav.subnav` (quiet in-page jump
 links on the entry page), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
-label), `.confirm-inline` (password field inside a long form) and the compact phone card for boards.
+label), `.confirm-inline` (password field inside a long form), the compact phone card for boards, `.card.solo`
+(a capped standalone card), `.confirm-step` (inline two-step confirmation that replaces `confirm()` for every
+`data-confirm` form) and `.field-error` (message under an invalid field).
+
+Validation messages use the visible labels from `lang/en/validation.php` (`attributes`, plus `form_attributes`
+keyed by request path for labels that differ per form). Messages thrown by hand with
+`ValidationException::withMessages` must use the visible label themselves. Activity event codes get readable
+names in one mapping in `activity.blade.php`; the code stays as secondary text.
 
 ## Known gaps
 

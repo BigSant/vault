@@ -12,8 +12,14 @@
     $required = fn (bool $on) => '<select name="field_required[]" aria-label="Required"><option value="1"'.($on ? ' selected' : '').'>yes</option><option value="0"'.($on ? '' : ' selected').'>no</option></select>';
     $plural = fn (int $n, string $one, string $many) => $n.' '.($n === 1 ? $one : $many);
 @endphp
-<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-type">+ Add a type</a></div></div>
+<h1>Setup</h1>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
+<nav class="subnav" aria-label="On this page">
+    <span class="subnav-label" aria-hidden="true">On this page</span>
+    <a href="#add-type">Add a type</a>
+</nav>
+
+<h2 class="setup-first">Types</h2>
 <p class="note">A type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 
 @if($types->isEmpty())

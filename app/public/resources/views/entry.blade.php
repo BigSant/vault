@@ -25,14 +25,19 @@
             <h1 class="name">{{ $entry->name }}</h1>
             @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
         </div>
-        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span>@if($isOwner && $waitingCount > 0) <a class="chip warn" href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif</p>
+        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
     </div>
 </div>
+{{-- Requests that wait for this owner come first, right under the title. Their count is said once, by the section heading. --}}
+@if($isOwner && $waitingCount > 0)
+<div class="waiting-first">
+@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
+</div>
+@endif
 @if($isEditor)
 {{-- Jump links: the sections in page order, each named like its heading. Links, not actions. --}}
 <nav class="subnav" aria-label="Entry sections">
     <span class="subnav-label" aria-hidden="true">On this page</span>
-    @if($isOwner && $waitingCount > 0)<a class="is-wait" href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif
     <a href="#values">Secret values</a><a href="#versions">Versions</a>
     @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
     @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
@@ -46,13 +51,14 @@
     <tr><th scope="row">Rotation reminder</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
 
-@if($isOwner && $waitingCount > 0)
-@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
-@endif
-
 <h2 id="values">Secret values</h2>
-@if($environment->production && $canEdit)<div class="tape"><span>Production credentials</span></div>@endif
-<div class="card">
+@if(!isset($secret) && !$canEdit)
+    {{-- Nothing can be done here: a plain note, not an action card. --}}
+    <p class="note">@if(!$isEditor)Your viewer role sees entry metadata only. Secret values cannot be revealed.@else Secret values cannot be revealed while this entry is {{ $entry->state }}.@endif</p>
+@else
+{{-- Production shows as the card's own hazard edge, so the warning is exactly as wide as the values. --}}
+<div class="card solo{{ $environment->production && $canEdit ? ' danger' : '' }}">
+    @if($environment->production && $canEdit)<p class="block-label"><span class="chip warn">Production credentials</span></p>@endif
     @isset($secret)
         @if($shownVersion && $shownVersion !== $current)
             <div class="callout warn"><p>Showing an <b>older version {{ $shownVersion }}</b> (current is {{ $current }}). Fields marked <span class="chip warn">differs</span> are not the same as now.</p></div>
@@ -72,10 +78,6 @@
         @endforeach
         @php $onlyCurrent = array_diff($differs, array_keys($secret)); @endphp
         @if($onlyCurrent)<p class="note">The current version also has: {{ implode(', ', array_map($label, $onlyCurrent)) }}.</p>@endif
-    @elseif(!$isEditor)
-        <p class="note">Your viewer role sees entry metadata only. Secret values cannot be revealed.</p>
-    @elseif(!$canEdit)
-        <p class="note">Secret values cannot be revealed while this entry is {{ $entry->state }}.</p>
     @else
         <div class="masked" aria-hidden="true">••••••••••••</div>
         <p class="note">Values are not sent to this page until you reveal them.</p>
@@ -87,6 +89,7 @@
         </div>
     @endif
 </div>
+@endif
 
 <h2 id="versions">Versions</h2>
 <p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when. Secret values are hidden from the viewer role.@endif</p>
@@ -179,7 +182,7 @@
     @if($entry->state === 'archived' && $isEditor)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/unarchive">@csrf
         @if($isOwner)<h3>Restore from archive</h3>@endif
-        <div class="form-foot"><p class="note">Makes the entry active again. Grants have to be created again.</p><button>Restore from archive</button></div>
+        <div class="form-foot"><p class="note">Makes the entry active again. Grants have to be added again.</p><button>Restore from archive</button></div>
     </form>
     @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf

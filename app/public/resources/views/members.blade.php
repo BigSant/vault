@@ -25,7 +25,7 @@
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/members">@csrf
         <label><span>Name</span><input name="name" value="{{ old('name') }}" required maxlength="100"></label>
         <label><span>Email</span><input name="email" type="email" value="{{ old('email') }}" required></label>
-        <div class="field"><label for="first-password">First password <small>new user only</small></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate first password">Generate</button></span></div>
+        <div class="field"><label for="first-password"><span>First password <small>new user only</small></span></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate first password">Generate</button></span></div>
         <label><span>Role</span><select name="role">@foreach($roles as $value => $text)<option value="{{ $value }}" @selected(old('role', 'viewer') === $value)>{{ $text }}</option>@endforeach</select></label>
         @include('confirm-inline', ['verb' => 'add this member'])
         <div class="form-foot"><p class="note">Hand the password over privately. MFA is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>

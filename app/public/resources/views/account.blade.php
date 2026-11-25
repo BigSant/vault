@@ -29,7 +29,7 @@
         @unless($confirmedUntil)<h3>Change sign-in password</h3>@endunless
         <label><span>Current password</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
         <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
-        <label><span>Repeat</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
+        <label><span>Repeat new password</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
         <div class="form-foot"><p class="note">At least 14 characters. Signs out every session, this one too.</p><button class="stop">Change password and sign out</button></div>
     </form>
 </div>
@@ -51,6 +51,6 @@
 
 <h2>Sign out</h2>
 <form class="action" method="post" action="/logout">@csrf
-    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button>Sign out</button></div>
+    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button aria-label="Sign out of this session">Sign out</button></div>
 </form>
 @endsection

@@ -20,31 +20,32 @@
         }
     }
 @endphp
-<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#template">Environment template</a><a class="btn" href="#add-project">+ Add a project</a></div></div>
+<h1>Setup</h1>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
-<div class="stats">
-    <div class="stat"><b>{{ $projects->count() }}</b><span>projects</span></div>
-    <div class="stat"><b>{{ $environments->flatten()->count() }}</b><span>environments</span></div>
-    <div class="stat"><b>{{ $counts->sum() }}</b><span>entries</span></div>
-</div>
+<nav class="subnav" aria-label="On this page">
+    <span class="subnav-label" aria-hidden="true">On this page</span>
+    <a href="#add-project">Add a project</a>
+    <a href="#template">Environment template</a>
+</nav>
+
+<h2 class="setup-first">Projects</h2>
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
-<p class="block-label setup-section">Projects ({{ $projects->count() }})</p>
 <div class="project-list">
 @forelse($projects as $project)
-    @php $envs = $environments[$project->id] ?? collect(); $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0); $oldAddEnv = old('project_id') === $project->id; @endphp
-    <h2 id="p-{{ $project->id }}"><span class="name">{{ $project->name }}</span> <span class="count">{{ $entries($projectEntries) }}</span></h2>
-    <div class="card">
-        <details class="fold"><summary><span class="fold-name">Project settings</span> <span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span></summary>
-        <div class="inner">
+    @php
+        $envs = $environments[$project->id] ?? collect();
+        $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0);
+        $oldAddEnv = old('project_id') === $project->id;
+        $oldRename = session('error_form') === '/workspaces/'.$space->id.'/projects/'.$project->id;
+    @endphp
+    <div class="card project-card" id="p-{{ $project->id }}">
+        <div class="card-head project-head">
+            <h3><span class="name">{{ $project->name }}</span> <span class="count">{{ $entries($projectEntries) }}</span></h3>
             <form class="inline" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}">@csrf
-                <input name="name" value="{{ $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"><button aria-label="Rename project {{ $project->name }}">Rename</button>
+                <input name="name" value="{{ $oldRename ? old('name', $project->name) : $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"><button aria-label="Rename project {{ $project->name }}">Rename</button>
             </form>
-            @if($projectEntries === 0)
-                <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
-            @endif
         </div>
-        </details>
         @forelse($envs as $env)
             @php $formId = 'env-'.$env->id; $n = $counts[$env->id] ?? 0; $where = $env->name.' in project '.$project->name; @endphp
             <details class="fold env">
@@ -84,6 +85,9 @@
                 </form>
             </div>
         </details>
+        @if($projectEntries === 0)
+            <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
+        @endif
     </div>
 @empty
     <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>

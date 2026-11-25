@@ -4,6 +4,7 @@ use App\Http\Account;
 use App\Http\MachineAuth;
 use App\Http\OwnerSession;
 use App\Http\SecurityHeaders;
+use App\Providers\AppServiceProvider;
 use App\Vault\ConfirmationRequired;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -44,7 +45,11 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($error instanceof ConfirmationRequired) {
-                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => ! $error->failed, 'failed' => $error->failed], 403);
+                // The header keeps the workspace the blocked action belongs to (its membership is checked by the header composer).
+                $workspace = AppServiceProvider::requestWorkspace($r);
+
+                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => ! $error->failed, 'failed' => $error->failed,
+                    'navFirst' => true] + ($workspace === null ? [] : ['space' => (object) ['id' => $workspace]]), 403);
             }
 
             // A form that fails validation is shown again with its messages and its non-secret input, instead of an error page.
@@ -58,7 +63,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
                         // Sessions are stored as JSON, which the usual ViewErrorBag ($errors) does not survive: the layout reads
                         // the plain form_errors array instead.
-                        return redirect(Account::returnPath($r), 303)->withErrors($error->errors())->withInput($old)->with(['form_errors' => array_slice($error->errors(), 0, 8, true), 'error_form' => $r->getPathInfo()]);
+                        // error_unfilled: something was typed into a secret field, so the summary says it is not refilled.
+                        $typed = fn ($value) => is_array($value) ? array_filter($value, fn ($v) => is_string($v) && $v !== '') !== [] : is_string($value) && $value !== '';
+                        $secrets = array_filter($r->except(['_token']), fn ($value, $key) => (in_array($key, $secretInputs, true)
+                            || preg_match('/secret|password|token|code|import/i', (string) $key)) && $typed($value), ARRAY_FILTER_USE_BOTH) !== [];
+
+                        return redirect(Account::returnPath($r), 303)->withErrors($error->errors())->withInput($old)->with(['form_errors' => array_slice($error->errors(), 0, 8, true), 'error_form' => $r->getPathInfo(), 'error_unfilled' => $secrets]);
                     }
                 } catch (Throwable) {
                     // Without the session or the database the error page below still works.

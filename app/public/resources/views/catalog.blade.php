@@ -4,7 +4,7 @@
 @php
     $canEdit = $space && $space->role !== 'viewer';
     $archived = request('state') === 'archived';
-    $dueOnly = request()->boolean('due');
+    $dueOnly = request('state') === 'due';
     $now = time();
     $activeCount = array_key_exists('active', $stats) ? (int) $stats['active'] : ($archived ? null : $entries->total());
     $dueCount = (int) ($stats['due'] ?? 0);
@@ -38,7 +38,7 @@
         <div class="stat"><b>{{ $archivedCount }}</b><span>archived {{ Str::plural('entry', $archivedCount) }}</span></div>
     @else
         <div class="stat"><b>{{ $activeCount ?? '—' }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
-    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['due' => 1])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
+    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
     <div class="stat secondary"><b>{{ $prodCount }}</b><span>production</span></div>
     <div class="stat secondary"><b>{{ $usedRecent }}</b><span>used by agents <span class="nobreak">(7 days)</span></span></div>
     @endif
@@ -52,10 +52,7 @@
         <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
         <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->project }} / {{ $e->name }}</option>@endforeach</select></label>
         <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
-        <label>State<select name="state"><option value="active">Active</option><option value="archived" @selected($archived)>Archived</option></select></label>
-        @unless($archived)
-        <label>Rotation<select name="due"><option value="">All entries</option><option value="1" @selected($dueOnly)>Rotation due only</option></select></label>
-        @endunless
+        <label>State<select name="state"><option value="active" @selected(!$dueOnly && !$archived)>Active</option><option value="due" @selected($dueOnly)>Rotation due</option><option value="archived" @selected($archived)>Archived</option></select></label>
         <button>Apply</button>
     </form>
 </details>
@@ -67,9 +64,9 @@
     @if($activeProject)<span class="chip filter">Project: {{ $activeProject->name }}</span>@endif
     @if($activeEnvLabel)<span class="chip filter">Environment: {{ $activeEnvLabel }}</span>@endif
     @if($activeType)<span class="chip filter">Type: {{ $activeType }}</span>@endif
-    @if($dueOnly)<span class="chip warn">Rotation: due</span>@endif
-    @if($archived)<span class="chip muted">State: archived</span>@endif
-    <a href="/?workspace={{ $space->id }}">{{ $archived && $filterCount === 1 ? 'Back to active entries' : 'Clear filters' }}</a>
+    @if($dueOnly)<span class="chip filter">State: rotation due</span>@endif
+    @if($archived)<span class="chip filter">State: archived</span>@endif
+    <a href="/?workspace={{ $space->id }}">Clear filters</a>
 </div>
 @endif
 @endif

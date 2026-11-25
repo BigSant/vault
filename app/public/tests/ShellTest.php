@@ -269,6 +269,71 @@ final class ShellTest extends TestCase
         $this->actingAs($user)->get('/nothing-here')->assertNotFound()->assertSee('credential store')->assertDontSee('aria-label="Main"', false);
     }
 
+    public function test_confirm_page_shows_the_workspace_of_the_blocked_action_and_no_active_nav_item(): void
+    {
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Another space']);
+        $user = $this->signIn('owner', time() - 301);
+        DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $user->id, 'role' => 'owner']);
+        $project = (string) Str::uuid();
+        $environment = (string) Str::uuid();
+        $entry = (string) Str::uuid();
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
+        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        // The last workspace opened is another one; the blocked action still decides the header.
+        $this->get('/?workspace='.$other)->assertOk()->assertSee('aria-label="Workspace: Another space"', false);
+        $this->post($this->base.'/projects', ['name' => 'shop'])->assertForbidden()->assertSee('action="/confirm"', false)
+            ->assertSee('aria-label="Workspace: Main space"', false)->assertSee('href="'.$this->base.'/requests"', false)->assertDontSee('class="btn on"', false);
+        $this->get('/?workspace='.$other)->assertOk();
+        $this->post('/entries/'.$entry.'/reveal')->assertForbidden()->assertSee('action="/confirm"', false)
+            ->assertSee('aria-label="Workspace: Main space"', false)->assertDontSee('class="btn on"', false)->assertDontSee('aria-current="page"', false);
+        // A workspace the person is not in is never shown: the header falls back to the last one.
+        $this->get('/?workspace='.$other)->assertOk();
+        $this->post('/workspaces/'.Str::uuid().'/projects', ['name' => 'shop'])->assertNotFound()->assertSee('aria-label="Workspace: Another space"', false);
+        // Without a route workspace and without a last one, the confirm page shows the first workspace instead of none.
+        $this->withSession(['last_workspace' => null])->get('/confirm')->assertOk()->assertSee('aria-label="Workspace: Another space"', false)->assertDontSee('class="btn on"', false);
+        // Error pages mark no nav item either, whatever their address.
+        $this->get('/entries/'.Str::uuid())->assertNotFound()->assertSee('aria-label="Main"', false)->assertDontSee('class="btn on"', false);
+    }
+
+    public function test_validation_messages_use_the_visible_labels_and_the_summary_sits_under_the_page_head(): void
+    {
+        $this->signIn('owner');
+        $this->get($this->base.'/agents')->assertOk();
+        $this->post($this->base.'/machines', ['name' => 'agent', 'days' => 99])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['days'][0], 'Valid for (days)'))->assertSessionHas('error_unfilled', false);
+        // Under the h1 and the tabs, never above them; no secret was typed, so nothing is said about refilling.
+        $this->get($this->base.'/agents')->assertOk()->assertSeeInOrder(['<h1>Agents</h1>', 'aria-label="Agents sections"', '</nav>', 'id="form-errors"', 'Valid for (days)'], false)
+            ->assertDontSee('not refilled');
+        // A label that differs on one form: "First password" for a new member, "New password" on the account page.
+        $this->post($this->base.'/members', ['name' => 'New Person', 'email' => 'new@example.test', 'password' => 'short', 'role' => 'viewer'])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['password'][0], 'First password'))->assertSessionHas('error_unfilled', true);
+        $this->get($this->base.'/agents')->assertOk()->assertSee('Secret fields are not refilled.');
+        $this->post('/password', ['current_password' => self::PASSWORD, 'password' => 'short', 'password_confirmation' => 'short'])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['password'][0], 'New password'));
+        $this->post($this->base.'/operations/'.Str::uuid().'/mfa', ['code' => 'abc'])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => str_contains($errors['code'][0], 'Site MFA code'));
+    }
+
+    public function test_page_head_end_is_after_the_h1_its_head_block_and_the_tabs(): void
+    {
+        $end = fn (string $html) => substr($html, 0, \App\Providers\AppServiceProvider::headEnd($html));
+        $this->assertSame('<h1>Account</h1>', $end('<h1>Account</h1><table></table>'));
+        $this->assertSame('<a>Back</a><div class="head"><div><div class="title-row"><h1 class="name">A</h1><a>Edit</a></div><p>sub</p></div></div>',
+            $end('<a>Back</a><div class="head"><div><div class="title-row"><h1 class="name">A</h1><a>Edit</a></div><p>sub</p></div></div><div>next</div>'));
+        $this->assertSame("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>",
+            $end("<h1>Setup</h1>\n<nav class=\"tabs\" aria-label=\"x\"><a>1</a></nav>\n<nav class=\"subnav\"><a>2</a></nav>\n<h2>Projects</h2>"));
+        $this->assertSame('', $end('<p>No heading</p>'));
+    }
+
+    public function test_account_wording_and_plain_footer(): void
+    {
+        $this->signIn('owner');
+        $this->get('/account')->assertOk()->assertSee('<span>Repeat new password</span>', false)->assertSee('<button aria-label="Sign out of this session">Sign out</button>', false)
+            ->assertSee('<p class="foot">Secret values stay in the vault. Agents only get action results.</p>', false)->assertDontSee('class="lamp', false);
+    }
+
     public static function unsafeReturns(): array
     {
         return [['//evil.example'], ['https://evil.example'], ['/\\evil'], ['/ok//evil.example'], ["/a\nb"], ['evil'], ['/confirm?return=/'], [''], [['/a']]];

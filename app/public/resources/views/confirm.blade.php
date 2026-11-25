@@ -1,5 +1,6 @@
 @extends('layout')
 @section('title', 'Confirm your identity')
+@section('quiet-nav', '1')
 @section('content')
 <h1>Confirm your identity</h1>
 <form class="action" method="post" action="/confirm">@csrf

@@ -12,6 +12,8 @@
     $sectionRoles = ['requests' => ['owner'], 'agents' => ['owner'], 'grants' => ['owner'], 'members' => ['owner'], 'audit' => ['owner'],
         'structure' => ['owner', 'editor'], 'types' => ['owner', 'editor'], 'import' => ['owner', 'editor']];
     $switchTo = fn ($s) => in_array($s->role, $sectionRoles[$section] ?? [], true) ? '/workspaces/'.$s->id.'/'.$section : '/?workspace='.$s->id;
+    // The confirm page and error pages stand in for another page: no nav item is the current one.
+    $quiet = $__env->hasSection('quiet-nav');
     $items = [['Entries', $navSpace ? '/?workspace='.$navSpace->id : '/', $path === '/' || str_starts_with($path, 'entries') || $section === 'import', 0]];
     if ($navRole === 'owner') {
         $items[] = ['Agents', $base.'/requests', in_array($section, ['requests', 'agents', 'grants', 'machines'], true), $navWaiting];
@@ -22,6 +24,9 @@
     }
     if ($navRole === 'owner') {
         $items[] = ['Activity', $base.'/audit', $section === 'audit', 0];
+    }
+    if ($quiet) {
+        $items = array_map(fn ($item) => [$item[0], $item[1], false, $item[3]], $items);
     }
 @endphp
 <header class="top">
@@ -55,17 +60,23 @@
     @endauth
 </header>
 <main id="content" tabindex="-1">
-{{-- A form that failed validation comes back here (bootstrap/app.php flashes form_errors: field name => messages). app.js focuses the summary and links each
-     message to its field when the page has one with that name. Messages name fields and rules, never values. --}}
-@php $formErrors = array_filter((array) session('form_errors'), 'is_array'); @endphp
+{{-- A form that failed validation comes back here (bootstrap/app.php flashes form_errors: field name => messages). The summary is rendered right under the
+     page head (h1, tabs, jump links), never above the h1; app.js then moves it to the form that was sent, focuses it and links each message to its field.
+     Messages name fields and rules, never values. --}}
+@php
+    $formErrors = array_filter((array) session('form_errors'), 'is_array');
+    $page = $__env->yieldContent('content');
+    $headEnd = $formErrors ? \App\Providers\AppServiceProvider::headEnd($page) : 0;
+@endphp
+{!! substr($page, 0, $headEnd) !!}
 @if($formErrors)
 <div class="callout bad error-summary" id="form-errors" role="alert" tabindex="-1" data-form="{{ session('error_form') }}">
-    <p><b>Check the form.</b> Nothing was saved. Secret fields are deliberately not refilled.</p>
+    <p><b>Check the form.</b> Nothing was saved.@if(session('error_unfilled')) Secret fields are not refilled.@endif</p>
     <ul>@foreach($formErrors as $field => $messages)@foreach(array_slice($messages, 0, 2) as $message)<li data-field="{{ $field }}">{{ $message }}</li>@endforeach @endforeach</ul>
 </div>
 @endif
-@yield('content')
-@auth<p class="foot"><span class="lamp ok"></span> Secret values stay in the vault. Agents only get action results.</p>@endauth
+{!! substr($page, $headEnd) !!}
+@auth<p class="foot">Secret values stay in the vault. Agents only get action results.</p>@endauth
 </main>
 @endif
 <p id="live" class="sr-only" aria-live="polite"></p>

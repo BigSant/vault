@@ -29,7 +29,7 @@
         <p class="note">Creates a bearer token, shown once.</p>
         <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="ai-os" required maxlength="100"></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 7) }}" required></label>
-        @include('confirm-inline', ['verb' => 'create this agent'])
+        @include('confirm-inline', ['verb' => 'add this agent'])
         <div class="form-foot"><p class="note">Up to 30 days. It can do nothing until you grant actions.</p><button class="go">Add agent</button></div>
     </form>
 @endsection

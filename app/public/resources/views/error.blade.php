@@ -10,6 +10,7 @@
     $home = is_string($last) && $last !== '' ? '/?workspace='.rawurlencode($last) : '/';
 @endphp
 @section('title', $title)
+@section('quiet-nav', '1')
 @unless($shell)
 @section('bare', '1')
 @endunless
@@ -29,7 +30,7 @@
         } }}</p>
         @if(!empty($messages))<ul>@foreach($messages as $message)<li>{{ $message }}</li>@endforeach</ul>@endif
     </div>
-    @if(in_array($status, [419, 422], true))<p class="note">Go back to correct the form. Secret fields are deliberately not refilled.</p>
+    @if(in_array($status, [419, 422], true))<p class="note">Go back to correct the form. Secret fields are not refilled.</p>
     @elseif($status === 409)<p class="note">Go back and reload the page to see the current state. Nothing was changed.</p>@endif
     <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : $home }}">{{ $signIn ? 'Sign in' : 'Back to entries' }}</a></div>
 </div>

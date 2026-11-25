@@ -15,7 +15,7 @@ final class Account
 
     public function confirmForm(Request $r)
     {
-        return view('confirm', ['return' => self::safePath($r->query('return')), 'blocked' => false, 'failed' => false]);
+        return view('confirm', ['return' => self::safePath($r->query('return')), 'blocked' => false, 'failed' => false, 'navFirst' => true]);
     }
 
     public function newWorkspace()

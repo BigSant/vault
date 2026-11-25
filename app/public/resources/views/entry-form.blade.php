@@ -14,7 +14,7 @@
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
-<h2>Entry details</h2>
+<h2>Details</h2>
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
     <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
     <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin"></label>
@@ -76,11 +76,11 @@
 
     <h3 class="gap">Tags and rotation</h3>
     <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="billing, admin"></label>
-    <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
+    <label><span>Rotation reminder <small>(YYYY-MM-DD)</small></span><input type="date" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
     @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">
         <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
-        <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
+        <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Add entry' }}</button></div>
     </div>
 </form>
 @endif

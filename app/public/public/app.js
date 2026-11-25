@@ -1,9 +1,11 @@
 // Screen readers hear short status changes through the polite live region in the layout.
 const say = text => { const live = document.getElementById('live'); if (live) { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); } };
-// A hidden value cannot be copied any more, so its Copy button is switched off too.
+// A hidden value cannot be copied any more, so its Copy button is switched off too and gets its first wording back.
+// data-hidden-text says what to do when the value cannot be revealed again (the one-time agent token).
+document.querySelectorAll('[data-copy]').forEach(button => { button.dataset.label = button.textContent; });
 const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(selector).forEach(el => {
-  el.textContent = 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1';
-  if (el.id) document.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.copy === el.id) { button.disabled = true; button.textContent = 'Copy'; } });
+  el.textContent = el.dataset.hiddenText || 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1';
+  if (el.id) document.querySelectorAll('[data-copy]').forEach(button => { if (button.dataset.copy === el.id) { button.disabled = true; button.textContent = button.dataset.label; } });
 });
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
 if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again. Copy is off until you reveal them again.'); }, 30000);
@@ -32,9 +34,9 @@ document.querySelectorAll('[data-generate]').forEach(button => button.addEventLi
   input.dispatchEvent(new Event('input', { bubbles: true }));
   button.textContent = 'Generated';
   const name = fieldName(input);
-  say(name + ' generated. Use Show ' + name + ' to check it.');
+  say(name + ' generated. Use Reveal ' + name + ' to check it.');
 }));
-// Every Generate button gets a Show/Hide companion, so a generated or typed value can be checked before saving.
+// Every Generate button gets a Reveal/Hide companion, so a generated or typed value can be checked before saving.
 document.querySelectorAll('[data-generate]').forEach(button => {
   const input = document.getElementById(button.dataset.generate);
   if (!input || input.type !== 'password') return;
@@ -43,7 +45,7 @@ document.querySelectorAll('[data-generate]').forEach(button => {
   show.type = 'button';
   // The button names what a press does, in text and accessible name alike; the announcement reuses the words.
   const sync = () => {
-    const verb = input.type === 'password' ? 'Show' : 'Hide';
+    const verb = input.type === 'password' ? 'Reveal' : 'Hide';
     show.textContent = verb;
     show.setAttribute('aria-label', verb + ' ' + name);
   };
@@ -53,7 +55,7 @@ document.querySelectorAll('[data-generate]').forEach(button => {
     const visible = input.type === 'password';
     input.type = visible ? 'text' : 'password';
     sync();
-    say(name + (visible ? ' shown. Hide ' + name + ' to mask it again.' : ' hidden. Show ' + name + ' to check it.'));
+    say(name + (visible ? ' revealed. Hide ' + name + ' to mask it again.' : ' hidden. Reveal ' + name + ' to check it.'));
   });
   button.before(show);
   // A shown value never stays on screen through a submit or a page change.
@@ -103,10 +105,58 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     say('Your password confirmation has expired. Enter your current password to continue.');
   });
 });
-document.querySelectorAll('[data-confirm]').forEach(form => form.addEventListener('submit', event => {
-  if (event.defaultPrevented) return;
-  if (!confirm(form.dataset.confirm)) event.preventDefault();
-}));
+// Destructive actions confirm in place, in two steps. The first press turns the button into "Confirm <verb>" with a
+// Cancel beside it and the form's data-confirm question as the note; the second press sends the form.
+document.querySelectorAll('form[data-confirm]').forEach(form => {
+  let step = null;
+  let armedAt = 0;
+  const disarm = focus => {
+    if (!step) return;
+    const { box, button, text, label } = step;
+    step = null;
+    box.before(button);
+    box.remove();
+    button.textContent = text;
+    button.classList.remove('armed');
+    if (label === null) button.removeAttribute('aria-label'); else button.setAttribute('aria-label', label);
+    if (focus) button.focus();
+  };
+  form.addEventListener('submit', event => {
+    if (event.defaultPrevented) return;
+    if (step) {
+      // A double click must not confirm what its first click only asked for.
+      if (Date.now() - armedAt < 500) event.preventDefault();
+      return;
+    }
+    const button = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])');
+    if (!button) return;
+    event.preventDefault();
+    const text = button.textContent.trim();
+    const label = button.getAttribute('aria-label');
+    const box = document.createElement('span');
+    box.className = 'confirm-step';
+    const note = document.createElement('span');
+    note.className = 'confirm-note';
+    note.textContent = form.dataset.confirm;
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.setAttribute('aria-label', 'Cancel: ' + (label || text));
+    cancel.addEventListener('click', () => disarm(true));
+    button.before(box);
+    box.append(note, button, cancel);
+    button.textContent = 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+    button.setAttribute('aria-label', 'Confirm: ' + (label || text));
+    button.classList.add('armed');
+    step = { box, button, text, label };
+    armedAt = Date.now();
+    button.focus();
+    say(form.dataset.confirm + ' Press Confirm to go on, or Cancel.');
+  });
+  form.addEventListener('keydown', event => { if (event.key === 'Escape' && step) { event.stopPropagation(); disarm(true); } });
+  // A page restored from the back/forward cache starts unarmed again.
+  addEventListener('pageshow', event => { if (event.persisted) disarm(false); });
+});
 // Grant form: an action needs fields the chosen entry's type may not have. Options carry data-fields (entry: the
 // fields it has; action: the fields it reads), so impossible actions are switched off before the server says no.
 document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
@@ -188,40 +238,76 @@ document.querySelectorAll('table.board, table.facts, table.list.edit, table.list
 });
 addEventListener('hashchange', openTarget);
 openTarget();
-// Error summary of a form that failed validation: each message links to its field when the page has a field with
-// that name, and the summary takes focus so it is read and seen first. Server names use dots: "field_key.0".
+// Error summary of a form that failed validation. The server prints it under the page head; here it moves to the
+// form that was sent, each message links to its field and is repeated under it, and the summary takes focus so it
+// is read and seen first. Server names use dots: "field_key.0".
 const summary = document.getElementById('form-errors');
 if (summary) {
-  // The form that was sent, when it is on this page; otherwise any field with the name will do.
+  // The forms that post to the address that failed; several rows or cards may share it.
   const sent = [...document.forms].filter(form => { try { return new URL(form.action).pathname === summary.dataset.form; } catch { return false; } });
-  const scopes = [...sent, document];
-  const find = key => {
+  // A control the person can reach: not hidden, not disabled, not inside a hidden block.
+  const usable = el => el.type !== 'hidden' && !el.disabled && !el.closest('[hidden]');
+  const findIn = (scope, key) => {
     const [head, ...rest] = key.split('.');
     const names = [key, head + rest.map(part => '[' + part + ']').join(''), head + '[]', head];
-    for (const scope of scopes) for (const name of names) {
-      const hits = [...scope.querySelectorAll('input, select, textarea')].filter(el => el.name === name && el.type !== 'hidden');
+    for (const name of names) {
+      const hits = [...scope.querySelectorAll('input, select, textarea')].filter(el => el.name === name && usable(el));
       // "field_key.2" is the third field_key[] row.
       const field = name === head + '[]' && /^\d+$/.test(rest[0] || '') ? hits[Number(rest[0])] || hits[0] : hits[0];
       if (field) return field;
     }
     return null;
   };
-  summary.querySelectorAll('li[data-field]').forEach((item, index) => {
-    const field = find(item.dataset.field);
+  const items = [...summary.querySelectorAll('li[data-field]')];
+  // The failing form is the sent form holding the most of the named fields; the first one wins a tie.
+  let form = null;
+  let best = 0;
+  sent.forEach(candidate => {
+    const score = new Set(items.map(item => item.dataset.field).filter(key => findIn(candidate, key))).size;
+    if (score > best) { best = score; form = candidate; }
+  });
+  form ??= sent.length === 1 ? sent[0] : null;
+  if (form) {
+    // A form inside a collapsed editor is opened, so the summary and the field can be seen.
+    for (let el = form.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS' && !el.classList.contains('menu')) el.open = true;
+    const table = form.closest('table');
+    if (table) (table.closest('.scroll') || table).before(summary);
+    else if (form.matches('form.action') || form.parentElement.matches('.inner')) {
+      // Inside the card, under its heading.
+      const heading = form.querySelector(':scope > h3');
+      if (heading) heading.after(summary); else form.prepend(summary);
+    } else (form.closest('.card-head, .fold-foot, .controls') || form).before(summary);
+  }
+  const seen = new Set();
+  items.forEach((item, index) => {
+    const field = (form && findIn(form, item.dataset.field)) || (form ? null : findIn(document, item.dataset.field));
     if (!field) return;
     if (!field.id) field.id = 'field-error-' + index;
     field.setAttribute('aria-invalid', 'true');
+    // The first message of a field is repeated right under it.
+    if (!seen.has(field) && field.type !== 'checkbox' && field.type !== 'radio') {
+      seen.add(field);
+      const note = document.createElement('small');
+      note.className = 'field-error';
+      note.id = field.id + '-error';
+      note.textContent = item.textContent;
+      const holder = field.closest('label, .field, td');
+      if (holder) holder.append(note); else field.after(note);
+      // Inside a label the message is already part of the field's name, unless an aria-label names the field.
+      if (!holder?.matches('label') || field.hasAttribute('aria-label')) field.setAttribute('aria-describedby', [field.getAttribute('aria-describedby'), note.id].filter(Boolean).join(' '));
+    }
     const link = document.createElement('a');
     link.href = '#' + field.id;
     link.textContent = item.textContent;
     link.addEventListener('click', event => {
       event.preventDefault();
-      // A field inside a collapsed editor or a hidden block is opened first.
+      // A field inside a collapsed editor is opened first.
       for (let el = field.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS') el.open = true;
       field.scrollIntoView({ block: 'center' });
       field.focus({ preventScroll: true });
     });
     item.replaceChildren(link);
   });
-  summary.focus();
+  summary.focus({ preventScroll: true });
+  summary.scrollIntoView({ block: 'center' });
 }

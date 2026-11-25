@@ -28,7 +28,8 @@ final class Workspace
         $id = $r->query('workspace') ?? $spaces->firstWhere('id', $r->session()->get('last_workspace'))?->id ?? $spaces->first()?->id;
         $space = $id ? $this->access->workspace($id) : null;
         if ($r->query('due') === '1') {
-            $r->query->remove('state');
+            $r->query->set('state', 'due');
+            $r->query->remove('due');
         }
         $projects = $space ? DB::table('projects')->where('workspace_id', $id)->orderBy('name')->get() : collect();
         $environments = $space ? $this->workspaceEnvironments($id) : collect();
@@ -37,10 +38,10 @@ final class Workspace
             ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
         $archivedCount = (clone $query)->where('entries.state', 'archived')->count();
         $query->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active');
-        if ($r->query('due') === '1') {
+        $scopeCount = (clone $query)->count();
+        if ($r->query('state') === 'due') {
             $query->where('entries.rotate_at', '<', now());
         }
-        $scopeCount = (clone $query)->count();
         foreach (['project' => 'projects.id', 'environment' => 'environments.id', 'type' => 'entries.type'] as $filter => $column) {
             if ($r->filled($filter)) {
                 $query->where($column, $r->query($filter));
@@ -385,7 +386,9 @@ final class Workspace
         $total = ($agent || $entry) ? (clone $query)->count() : null;
         $grants = $query
             ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
-            ->orderBy('action')->get();
+            ->join('machines', 'machines.id', '=', 'grants.machine_id')->select('grants.*')
+            ->orderByRaw('CASE WHEN grants.revoked_at IS NULL AND machines.revoked_at IS NULL AND grants.expires_at > ? AND machines.expires_at > ? THEN 0 ELSE 1 END', [now(), now()])
+            ->orderBy('machines.name')->orderBy('grants.action')->orderBy('grants.id')->get();
         $actions = $this->ops->definitions();
         $types = $this->types->all($workspace);
         $typeNames = $types->pluck('name', 'key');

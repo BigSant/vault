@@ -10,13 +10,14 @@
 <p class="note">Paste a JSON array of 1 to 50 entries for <b>{{ $space->name }}</b>. Every row is validated before any secret is written to the encrypted store.</p>
 
 <h2>Paste entries</h2>
-@if($environments->isEmpty())
+@if($environments->isEmpty() || $types->isEmpty())
 <div class="empty">
-    <p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>@endif
+    @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $space->id }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
-    <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret":"{\"token\":\"...\"}"}]'></textarea></label>
+    <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder='[{"environment_id":"...","name":"...","alias":"...","type":"api_key","secret_fields":{"token":"..."}}]'></textarea></label>
     @include('confirm-inline', ['verb' => 'import'])
     <div class="form-foot">
         <p class="note">The import text is never logged and is not refilled after an error.</p>
@@ -75,11 +76,11 @@
 <div class="scroll"><table class="list import-format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
-        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
-        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
-        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
-        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
-        <tr><td class="key"><code>secret</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">JSON object string mapping field keys to string values (or pass <code>secret_fields</code> as a JSON object).</td></tr>
+        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
+        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
+        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
+        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
+        <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip role">required</span></td><td class="desc">JSON object mapping field keys to string values (or pass <code>secret</code> as a JSON-encoded string).</td></tr>
         <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>
         <tr><td class="key"><code>rotate_at</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
     </tbody>
@@ -92,7 +93,9 @@
     "name": "Billing API",
     "alias": "billing-api-prod",
     "type": "api_key",
-    "secret": "{\"token\":\"replace-me\"}",
+    "secret_fields": {
+      "token": "replace-me"
+    },
     "tags": "billing, api",
     "rotate_at": "2026-12-31"
   }

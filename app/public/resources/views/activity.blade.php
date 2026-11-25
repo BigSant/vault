@@ -1,4 +1,24 @@
 {{-- $filtered: the caller applied a filter, so an empty list means "nothing matches", not "nothing happened". --}}
+@php
+    // The one place that names audit events for people. Keys are the stored codes; a code missing here is shown
+    // as words made from the code itself. The code stays visible as the small secondary text.
+    $eventNames = [
+        'entry.create' => 'Added entry', 'entry.rotate' => 'Updated entry', 'entry.update' => 'Updated entry', 'entry.reveal' => 'Revealed values',
+        'entry.archive' => 'Archived entry', 'entry.unarchive' => 'Restored entry from archive', 'entry.destroy' => 'Destroyed entry',
+        'grant.create' => 'Added grant', 'grants.revoke' => 'Revoked grant',
+        'machine.create' => 'Added agent', 'machines.revoke' => 'Revoked agent',
+        'operation.request' => 'Agent requested an action', 'operation.approve' => 'Agent request allowed', 'operation.deny' => 'Agent request denied',
+        'operation.mfa' => 'Site MFA code entered', 'operation.finish' => 'Agent request finished',
+        'member.change' => 'Changed member', 'owner.setup' => 'First owner set up',
+        'workspace.create' => 'Added workspace', 'project.create' => 'Added project', 'project.rename' => 'Renamed project', 'project.delete' => 'Removed project',
+        'environment.create' => 'Added environment', 'environment.update' => 'Updated environment', 'environment.delete' => 'Removed environment',
+        'environment.template' => 'Changed environment template', 'type.save' => 'Saved entry type', 'type.delete' => 'Removed entry type',
+        'session.login' => 'Signed in', 'session.logout' => 'Signed out', 'user.password' => 'Changed password', 'user.recover' => 'Recovered account',
+    ];
+    // Codes are shown in the UI vocabulary: request, agent, grant.
+    $eventCode = fn ($code) => strtr((string) $code, ['operation.' => 'request.', 'machines.' => 'agent.', 'machine.' => 'agent.', 'grants.' => 'grant.']);
+    $eventName = fn ($code) => $eventNames[$code] ?? ucfirst(str_replace(['.', '_'], ' ', $eventCode($code)));
+@endphp
 @if($events->isEmpty())
     <div class="empty">{{ empty($filtered) ? 'No activity yet.' : 'No matching activity.' }}</div>
 @else
@@ -12,10 +32,10 @@
         }; @endphp
         <tr class="{{ $stripe }}">
         <td data-label="When (UTC)" class="when">{{ substr($event->created_at, 0, 16) }} <small class="k">UTC</small></td>
-        <td data-label="Actor">{{ $event->actor_label }} @if($event->actor_kind === 'agent')<span class="chip muted">agent</span>@endif</td>
-        <td data-label="Event"><code class="nobreak">{{ strtr($event->event, ['operation.' => 'request.', 'machines.' => 'agent.', 'machine.' => 'agent.', 'grants.' => 'grant.']) }}</code></td>
-        @empty($hideSubject)<td data-label="Subject">@if($event->subject_url)<a href="{{ $event->subject_url }}">{{ $event->subject_label }}</a>@else{{ $event->subject_label ?? $event->subject ?? '—' }}@endif</td>@endempty
-        <td data-label="Outcome">@include('outcome', ['outcome' => $event->outcome])</td>
+        <td data-label="Actor" class="actor">{{ $event->actor_label }} @if($event->actor_kind === 'agent')<span class="chip muted">agent</span>@endif</td>
+        <td data-label="Event" class="event"><span class="event-name">{{ $eventName($event->event) }}</span> <code class="nobreak event-code">{{ $eventCode($event->event) }}</code></td>
+        @empty($hideSubject)<td data-label="Subject" class="subject">@if($event->subject_url)<a href="{{ $event->subject_url }}">{{ $event->subject_label }}</a>@else{{ $event->subject_label ?? $event->subject ?? '—' }}@endif</td>@endempty
+        <td data-label="Outcome" class="outcome">@include('outcome', ['outcome' => $event->outcome])</td>
     </tr>@endforeach</tbody>
 </table></div>
 @endif

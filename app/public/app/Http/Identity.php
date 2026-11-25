@@ -139,7 +139,7 @@ final class Identity
         if (! Hash::check($d['current_password'], $r->user()->password)) {
             abort_if($r->expectsJson(), 401);
 
-            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true], 401);
+            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true, 'navFirst' => true], 401);
         }
         $r->session()->put('confirmed_at', time());
 
