@@ -311,7 +311,8 @@ final class VaultTest extends TestCase
         $other = (string) Str::uuid();
         DB::table('workspaces')->insert(['id' => $other, 'name' => 'Other']);
         DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $this->owner->id, 'role' => 'owner']);
-        $this->get('/workspaces/'.$other.'/audit?entry='.$entry)->assertNotFound();
+        $this->get('/workspaces/'.$other.'/audit?entry='.$entry)->assertOk()
+            ->assertViewHas('filterErrors', ['entry' => 'Unknown entry.'])->assertViewHas('entry', fn ($value) => $value === null);
     }
 
     public function test_activity_names_setup_users_requests_and_removed_subjects(): void
@@ -414,7 +415,7 @@ final class VaultTest extends TestCase
                 ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
         }
         $this->get('/?state=due')->assertSeeText('State: Rotation due')->assertSeeText('Showing 1 of 1 entry')
-            ->assertSeeInOrder(['data-label="Entry"', 'rotation due since 2020-11-01', 'data-label="Project"'], false);
+            ->assertSeeInOrder(['data-label="Entry"', 'rotation due</span> since 2020-11-01', 'data-label="Project"'], false);
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
@@ -510,7 +511,8 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
-            ->assertSee('<label for="first-password"><span>Initial password <small>Leave blank for an existing account</small></span></label>', false)
+            ->assertSee('<label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account</small>', false)
+            ->assertSee('aria-describedby="first-password-hint"', false)
             ->assertSee('aria-label="Generate initial password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
         $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);
@@ -539,6 +541,22 @@ final class VaultTest extends TestCase
                 ->assertSessionHas('form_errors', fn ($errors) => $errors[$field] === [$message]);
             $this->get($url)->assertSeeText($message);
         }
+    }
+
+    public function test_activity_ignores_invalid_filters_and_keeps_valid_ones(): void
+    {
+        $this->entry();
+        $url = '/workspaces/'.$this->workspace.'/audit';
+        $all = $this->get($url)->assertOk()->assertViewHas('filterErrors', [])->viewData('events')->pluck('id');
+        $this->assertNotEmpty($all);
+        $invalid = ['from' => '2026-02-30', 'to' => 'tomorrow', 'group' => 'unknown', 'actor' => 'unknown',
+            'outcome' => 'unknown', 'entry' => (string) Str::uuid()];
+        $response = $this->get($url.'?'.http_build_query($invalid))->assertOk();
+        $this->assertEqualsCanonicalizing(array_keys($invalid), array_keys($response->viewData('filterErrors')));
+        $this->assertEquals($all, $response->viewData('events')->pluck('id'));
+        $this->get($url.'?from=2026-02-30&outcome=denied')->assertOk()
+            ->assertViewHas('filterErrors', ['from' => 'From (UTC) must be a real date like 2026-12-31.'])
+            ->assertViewHas('events', fn ($events) => $events->total() === 0);
     }
 
     public function test_activity_filters_by_outcome_and_inclusive_dates(): void

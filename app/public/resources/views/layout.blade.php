@@ -69,7 +69,7 @@
 </header>
 <main id="content" tabindex="-1">
 {{-- A form that failed validation comes back here (bootstrap/app.php flashes form_errors: field name => messages). The summary is rendered right under the
-     page head (h1, tabs, jump links), never above the h1; app.js then moves it to the form that was sent, focuses it and links each message to its field.
+     page head (h1, tabs, jump links), never above the h1; app.js then moves it to the form that was sent, focuses it and links each message to its field. No role="alert": the focus announces it once.
      Messages name fields and rules, never values. --}}
 @php
     $formErrors = array_filter((array) session('form_errors'), 'is_array');
@@ -81,7 +81,7 @@
 @endphp
 {!! substr($page, 0, $headEnd) !!}
 @if($formErrors)
-<div class="callout bad error-summary" id="form-errors" role="alert" tabindex="-1" data-form="{{ session('error_form') }}" data-sent="{{ json_encode((object) $sent) }}">
+<div class="callout bad error-summary" id="form-errors" tabindex="-1" data-form="{{ session('error_form') }}" data-sent="{{ json_encode((object) $sent) }}">
     <p><b>Check the form.</b> Nothing was saved.@if(session('error_unfilled')) Secret fields are not refilled.@endif</p>
     <ul>@foreach($formErrors as $field => $messages)@foreach(array_slice($messages, 0, 2) as $message)<li data-field="{{ $field }}">{{ $message }}</li>@endforeach @endforeach</ul>
 </div>

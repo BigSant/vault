@@ -25,6 +25,8 @@ if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => {
   const version = document.querySelector('[data-secret][data-version]')?.dataset.version;
   hideSecrets('[data-secret]:not([data-keep])');
   document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
+  // With the values gone, revealing them again is the page's main action: its button turns solid.
+  document.querySelectorAll('[data-go-when-hidden]').forEach(button => button.classList.add('go'));
   say(version ? 'Version ' + version + ' values hidden again. Copy is off until you reveal version ' + version + ' again.' : 'Secret values hidden again. Copy is off until you reveal them again.');
 }, 30000);
 // The enrollment QR encodes the same key, so it goes too.
@@ -55,7 +57,8 @@ document.querySelectorAll('[data-copy]').forEach(button => button.addEventListen
       note.className = 'note copy-note';
       note.id = el.id + '-copy-note';
       // In a form foot the note goes under the whole row, so the note and buttons of the foot keep their places.
-      (button.closest('.form-foot') || button.closest('.controls') || button).after(note);
+      // A button in a block label ("Copy example") gets the note under that label, never inside it.
+      (button.closest('.form-foot') || button.closest('.controls') || button.closest('.block-label') || button).after(note);
     }
     note.textContent = text;
     say(text);
@@ -173,7 +176,7 @@ document.querySelectorAll('[data-reload-types]').forEach(button => {
   const status = row?.querySelector('[data-reload-status]');
   const rows = document.getElementById('type-fields');
   if (!type || !type.matches('select') || !rows) return;
-  if (row) row.hidden = false;
+  button.hidden = false;
   const tell = text => { if (status) status.textContent = text; say(text); };
   let busy = false;
   button.addEventListener('click', async () => {
@@ -262,7 +265,8 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // waiting requests) stands outside its forms; they name it with data-confirm-from, and its password is copied into
 // the form that is sent. A submit that needs the password and has none is held: the focus moves to the field, and
 // the block shows a button that names the held action ([data-held]: "Allow once: shop.admin-login, request
-// 1a2b3c4d", from the pressed button's data-held-name). That button, or Enter in the field, sends the held form
+// 1a2b3c4d", from the pressed button's data-held-name), with the request it belongs to beside it ([data-held-what],
+// the button's description). That button, or Enter in the field, sends the held form
 // (Enter without one sends the block's default form, data-confirm-default). A password entered first where there
 // is neither gets the visible line "Now choose an action below." (.pending), which is also said.
 // A page states its confirmation once. A shared block that names an earlier one (data-primary: Reveal on the entry
@@ -299,7 +303,8 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
       el.hidden = when === 'deferred' ? !(deferred && expired) : deferred || (when === 'expired') !== expired;
     });
     // Said once, by the block that shows the field.
-    if (wasExpired === false && expired && !deferred && !box.closest('[hidden]')) say(ask);
+    // Not by a block nobody can see: inside something hidden, or inside a closed <details> (a collapsed editor).
+    if (wasExpired === false && expired && !deferred && !box.closest('[hidden], details:not([open])')) say(ask);
     wasExpired = expired;
     return expired;
   };
@@ -340,11 +345,20 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   };
   const heldRow = box.querySelector('[data-held-row]');
   const heldButton = box.querySelector('[data-held]');
+  // What the held action is about (a request: agent, action, entry, project / environment, id), copied from the
+  // <template data-held-summary> beside the held form. It is the held button's description.
+  const heldWhat = box.querySelector('[data-held-what]');
+  const showWhat = form => {
+    if (!heldWhat) return;
+    const source = form?.parentElement?.querySelector(':scope > template[data-held-summary]');
+    heldWhat.replaceChildren(...(source ? [document.importNode(source.content, true)] : []));
+    heldWhat.hidden = !source;
+  };
   const line = text => { if (hint) { hint.textContent = text; hint.hidden = !text; } };
   const showHeld = name => {
     if (!heldRow || !heldButton) return;
     heldRow.hidden = !name;
-    if (!name) { heldButton.replaceChildren(); return; }
+    if (!name) { heldButton.replaceChildren(); showWhat(null); return; }
     // "Allow once: " stays a button word; what follows is data and keeps its case.
     const cut = name.indexOf(': ');
     const text = document.createElement('span');
@@ -359,6 +373,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     state.held = { form, button, name, action: form.getAttribute('action'), value: button?.value || '', version: form.elements.version?.value };
     line('');
     showHeld(name);
+    showWhat(form);
     box.scrollIntoView({ block: 'center' });
     input.focus({ preventScroll: true });
     say('Your password confirmation has expired. Enter your current password, then press: ' + name + '.');

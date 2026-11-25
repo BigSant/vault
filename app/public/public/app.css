@@ -4,13 +4,13 @@
 --board:#0c0e0b;--panel:#13170f;--panel-2:#191e14;--field:#0f120c;--rule:#283022;--edge:#7a8566;
 --ink:#ece6d3;--dim:#b0b4a1;--faint:#969b88;
 --amber:#ffb22e;--amber-fill:#ffb22e;--amber-hover:#ffc75e;--on-accent:#1a1205;
---amber-glow:rgba(255,178,46,.35);--amber-tint:rgba(255,178,46,.22);--amber-line:#99711c;--wash:rgba(255,178,46,.07);--amber-edge:#ffb22e;
---go:#4fe08c;--go-glow:rgba(79,224,140,.55);--go-tint:rgba(79,224,140,.1);--go-line:#378957;
+--amber-glow:rgba(255,178,46,.35);--amber-line:#99711c;--wash:rgba(255,178,46,.07);--amber-edge:#ffb22e;
+--go:#4fe08c;--go-glow:rgba(79,224,140,.55);--go-line:#378957;
 --stop:#ff5b4f;--stop-glow:rgba(255,91,79,.6);--stop-line:#c64c41;
---steel:#7b9dd0;--steel-ink:#c3d6f3;--steel-tint:rgba(111,147,201,.16);--steel-line:#5a769c;
+--steel-ink:#c3d6f3;--steel-tint:rgba(111,147,201,.16);--steel-line:#5a769c;
 --hazard:#f4c20d;--steel-fill:#3f67a8;--stage-fill:#8f5a0a;--prod-fill:#b3261e;
 --top-1:#171c12;--top-2:#10130d;--lamp-off:#20261a;--row-edge:#0a0c08;--scroll-thumb:#4a5540;
---term-bg:#070806;--term-ink:#d8e8c8;--term-faint:#8d927f;
+--term-bg:#070806;--term-ink:#d8e8c8;
 --qr-light:#ece6d3;
 --card:760px;--wide:1100px;
 --mono:ui-monospace,"JetBrains Mono","Iosevka","IBM Plex Mono","SF Mono","Cascadia Code","DejaVu Sans Mono",Menlo,Consolas,monospace}
@@ -98,10 +98,10 @@ border-color:var(--edge)!important;border-style:dashed;box-shadow:none!important
 
 /* Page */
 main{padding:22px 28px 60px;max-width:1760px;margin:0 auto}
-/* Two widths, everywhere. --wide caps everything that sits directly in a page (boards, stats, filter bars, heads),
-   so a page has one right edge; --card is for forms, standalone cards, facts and short lists, which set it
-   themselves. A multi-column .deck is the only thing that may run wider. Pages add no widths of their own. */
-:where(main:not(.login)>:not(.deck)){max-width:var(--wide)}
+/* Two widths, everywhere. --wide caps everything that sits directly in a page (boards, stats, filter bars, heads,
+   a multi-column .deck), so a page has one right edge; --card is for forms, standalone cards, facts and short
+   lists, which set it themselves. Pages add no widths of their own. */
+:where(main:not(.login)>*){max-width:var(--wide)}
 h1{font:700 20px/1.25 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:0 0 16px;overflow-wrap:anywhere}
 h1.name{text-transform:none;letter-spacing:.02em}
 /* Data (project, entry, agent names) is never uppercased: wrap it in .name inside any uppercase label. */
@@ -312,6 +312,7 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 /* Copy failed: the note stays under the Copy button until a copy works or the value is hidden. When the button is
    in a form foot (the token card) the note sits under that row, at the right like the button. */
 .secret-row .copy-note,.form-foot+.copy-note{margin:6px 0 0}
+.block-label+.copy-note{margin:0 0 6px}
 .form-foot+.copy-note{text-align:right}
 pre[data-hidden]{color:var(--faint)}
 .masked{font:700 22px/1 var(--mono);letter-spacing:.08em;color:var(--faint);margin:6px 0 12px}
@@ -469,9 +470,9 @@ label.indent{margin-left:min(14em,30%)}
 }
 /* A form card that is one note and its button (Sign out, Archive entry): the foot is the whole card. */
 form.action>input[type=hidden]:first-child+.form-foot:last-child{margin-top:0;align-items:center}
-/* A page head followed by the stats keeps the normal block gap. */
-.head:has(+.stats){margin-bottom:14px}
-.head:has(+.stats) h1{margin-bottom:0}
+/* A page head followed by the stats, or by the search row (archived entries have no stats), keeps the normal block gap. */
+.head:has(+:is(.stats,.catalog-filters)){margin-bottom:14px}
+.head:has(+:is(.stats,.catalog-filters)) h1{margin-bottom:0}
 /* Editable rows inside a form card start and end where the fields above them do. */
 @media (min-width:901px){
 form.action .list.edit :is(th,td):first-child{padding-left:0}
@@ -555,8 +556,13 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .confirm-inline.is-needed .note{margin:0 0 8px;font-size:13px;color:var(--dim)}
 .confirm-inline .pending{display:block;margin-top:4px;color:var(--ink);font-weight:600}
 /* The action that waits for the password, as a button under the field. Its name wraps; it is never cut. */
-.confirm-inline .held{display:flex;justify-content:flex-end;margin:8px 0 0}
+.confirm-inline .held{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:8px 0 0}
 .confirm-inline .held button{max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}
+/* What the held decision is about, beside its button (the button's description): agent, action, entry, project /
+   environment and the request id, as in the row it came from. */
+.confirm-inline .held-what{flex:1 1 18em;min-width:0;font-size:13px;line-height:1.7;color:var(--dim);overflow-wrap:anywhere}
+.confirm-inline .held-what :is(b,.name){color:var(--ink)}
+.confirm-inline .held-what .sep{color:var(--faint)}
 /* Deferred: another block earlier on the page holds the confirmation state and the one password field. This one
    shows nothing (.is-quiet) while the confirmation is valid, and a line pointing there when it has expired. */
 .confirm-inline.is-quiet{display:none}
@@ -681,14 +687,22 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .stat-link:hover{text-decoration:none}
 .stat-link:hover span,.stat-link.is-on span{color:var(--amber)}
 .stat-link:hover span{text-decoration:underline}
-.stat-link.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
+/* The filter that is on: an underline as wide as the label, at every width. */
+.stat-link.is-on>span{display:inline-block;padding-bottom:3px;box-shadow:inset 0 -2px 0 var(--amber)}
 .stat-link.has-due b{color:var(--amber)}
-/* Add an entry: "Reload types" with its status beside it (under it on phones). */
-.reload-types{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:0 0 12px}
-.reload-types button{flex:none}
-.reload-types .note{flex:1 1 16em;margin:0}
+/* Add an entry: the detour to Setup is one line under the Type field, starting where the inputs start (the label
+   column is 14em of the label's 13px, plus the gap): the note, then "Reload types". What a reload did is the line
+   after it. On phones it starts at the left edge and wraps. */
+.type-detour{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:0 0 8px calc(13px*14 + 10px)}
+.type-detour button{flex:none}
+.type-detour .note{margin:0}
+.type-detour .reload-status{flex:1 1 100%}
+.type-detour .reload-status:empty{display:none}
+@media (max-width:900px){.type-detour{margin-left:0}}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
-.field>label{display:block;margin:0}
+.field>label,.field-name>label{display:block;margin:0}
+/* A field's hint under its name: its description (aria-describedby), outside the label. */
+.field-name .hint{display:block;margin-top:2px;color:var(--faint);font-size:12px}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
 .list.import-format td.key,.list.import-format td.key code,.list.import-types td.type-key code{white-space:nowrap;overflow-wrap:normal}
 .list.import-ids td.env-name>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -858,8 +872,8 @@ details.type-fold .list.edit td.kind select{min-width:12em}
 details.type-fold .list.edit td.key code{white-space:nowrap;overflow-wrap:normal}
 :is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) label.check{white-space:nowrap}
 .list.edit.env-template td:last-child,.list.edit.type-new td:last-child{width:1%}
-/* The column head says "Production"; the row's own word is for phones, where the head is not shown. */
-.list.edit.env-template .phone-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+/* The column head says "Production", "Required", "Remove"; the row's own word is for phones, where the head is not shown. */
+.list.edit .phone-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 }
 details.more.field-rules{margin:14px 0 0}
 details.more.field-rules>summary{color:var(--dim);font-weight:400}
@@ -890,7 +904,11 @@ details.type-fold .list.edit td.remove{margin-left:auto}
 @media (max-width:900px){
 .back{display:inline-flex;align-items:center;min-height:40px;margin-bottom:4px}
 .filter-status a,.pager a{display:inline-flex;align-items:center;min-height:40px}
-.board td a:not(.btn),.more-link{display:inline-block;max-width:100%;padding:11px 0;margin:-11px 0}
+.board td a:not(.btn),.list td:not(.desc) a:not(.btn),.more-link{display:inline-block;max-width:100%;padding:11px 0;margin:-11px 0}
+/* The header mark, and each message of an error summary (a line of its own), are 40 px high. */
+.top .mark{display:inline-flex;align-items:center;min-height:40px}
+main.login .mark{padding:3px 0}
+.error-summary li a{display:inline-flex;align-items:center;min-height:40px}
 .board.entries td.name>a{display:inline;padding:0;margin:0}
 label.check{min-height:40px;align-items:center}
 details>summary{min-height:40px}

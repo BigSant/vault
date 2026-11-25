@@ -227,7 +227,10 @@ final class ShellTest extends TestCase
         // asks for the password in the words of this page.
         $page->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then choose a request action below."', false)
             ->assertSee('data-held-name="Allow once: test.http, request '.$rid.'">Allow once</button>', false)->assertSee('data-held-name="Deny: test.http, request '.$rid.'">Deny</button>', false)
-            ->assertSee('<p class="held" data-held-row hidden><button type="button" class="go" data-held></button></p>', false)->assertSee('<small class="k">requests</small>', false);
+            ->assertSee('<p class="held" data-held-row hidden><span class="held-what" id="confirm-decide-held-what" data-held-what hidden></span><button type="button" class="go" data-held aria-describedby="confirm-decide-held-what"></button></p>', false)->assertSee('<small class="k">requests</small>', false)
+            // The held decision keeps its context: the request's summary travels with its decision cell.
+            ->assertSeeInOrder(['<td class="decision" data-label="Decision">', '<template data-held-summary><b class="name">', '</b> requests <code>test.http</code>', 'Request '.$rid.'</span></template>', 'data-confirm-from="confirm-decide"'], false);
+        $this->assertStringContainsString("querySelector(':scope > template[data-held-summary]')", (string) file_get_contents(public_path('app.js')));
         $this->view('operations', ['operations' => collect([(object) (['state' => 'succeeded'] + (array) $row)]), 'mode' => 'history', 'workspace' => $this->workspace])
             ->assertSee('<small class="k">requested</small>', false)->assertDontSee('<small class="k">requests</small>', false);
         $script = (string) file_get_contents(public_path('app.js'));
@@ -309,8 +312,8 @@ final class ShellTest extends TestCase
             $this->assertStringNotContainsString($never, $stored);
         }
         $this->assertSame(0, DB::table('projects')->count());
-        // The form page shows the summary once: an alert that can take focus, each message tied to its field name.
-        $this->get($this->base.'/structure?from=test')->assertOk()->assertSee('id="form-errors" role="alert" tabindex="-1" data-form="'.$this->base.'/projects"', false)
+        // The form page shows the summary once: it can take focus (which announces it, so no role="alert"), each message tied to its field name.
+        $this->get($this->base.'/structure?from=test')->assertOk()->assertSee('id="form-errors" tabindex="-1" data-form="'.$this->base.'/projects"', false)->assertDontSee('id="form-errors" role="alert"', false)
             ->assertSee('<li data-field="name">', false)->assertSee('Check the form')->assertSee('not refilled')->assertSee('aria-label="Main"', false);
         $this->get($this->base.'/structure?from=test')->assertOk()->assertDontSee('id="form-errors"', false);
 
@@ -383,9 +386,9 @@ final class ShellTest extends TestCase
         // Under the h1 and the tabs, never above them; no secret was typed, so nothing is said about refilling.
         $this->get($this->base.'/agents')->assertOk()->assertSeeInOrder(['<h1>Agents</h1>', 'aria-label="Agents sections"', '</nav>', 'id="form-errors"', 'Valid for (days)'], false)
             ->assertDontSee('not refilled');
-        // A label that differs on one form: "First password" for a new member, "New password" on the account page.
+        // A label that differs on one form: "Initial password" for a new member, "New password" on the account page.
         $this->post($this->base.'/members', ['name' => 'New Person', 'email' => 'new@example.test', 'password' => 'short', 'role' => 'viewer'])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['First password must be at least 14 characters.'])->assertSessionHas('error_unfilled', true);
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['Initial password must be at least 14 characters.'])->assertSessionHas('error_unfilled', true);
         $this->get($this->base.'/agents')->assertOk()->assertSee('Secret fields are not refilled.');
         $this->post('/password', ['current_password' => self::PASSWORD, 'password' => 'short', 'password_confirmation' => 'short'])->assertStatus(303)
             ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['New password must be at least 14 characters.']);
@@ -516,7 +519,7 @@ final class ShellTest extends TestCase
             ->assertDontSee('+ Add an agent')
             ->assertSeeInOrder(['<div class="card solo" data-leave-guard="Token copied?">', 'data-copy="agent-token" data-copy-name="token">Copy token</button>',
                 '<button type="button" data-leave-clear hidden>I\'ve saved it</button>', '#add-grant">Add a grant</a>',
-                '<a class="btn" href="'.$this->base.'/agents" data-leave-done>Done — back to Identities</a>'], false);
+                '<a class="btn" href="'.$this->base.'/agents" data-leave-done>Back to Identities</a>'], false);
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("document.querySelector('[data-leave-guard]')", $script);
         $this->assertStringContainsString("guard.addEventListener('vault:copied', lift)", $script);
@@ -635,15 +638,21 @@ final class ShellTest extends TestCase
         DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
         $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
         // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
-        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types (opens in a new tab)</a>', false)
-            ->assertSee('<p class="reload-types" data-reload-types-row hidden><button type="button" data-reload-types>Reload types</button>', false)
+        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types (new tab)</a>', false)
+            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Edit entry types (new tab)</a>', '<button type="button" data-reload-types title=', ' hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             ->assertSee('Agents refer to this entry by its alias')
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
             ->assertDontSee('inputmode="numeric" pattern="\d{4}', false);
-        $this->get($this->base.'/audit')->assertOk()->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="from"', false)
-            ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="to"', false);
+        $this->get($this->base.'/audit')->assertOk()->assertSee('<label>From (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="from"', false)
+            ->assertSee('<label>To (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="to"', false)
+            ->assertDontSee('filter-errors', false);
+        // A filter that cannot be used is named above the filters and left out; never an error page.
+        $this->get($this->base.'/audit?from=2026-02-30')->assertOk()->assertSeeInOrder(['<div class="callout bad filter-errors" role="status">', 'A filter was not applied.', '<li>From (UTC) ', '<details class="filters"'], false);
+        // Setup: each environment's edit fields name their environment and project.
+        $this->get($this->base.'/structure')->assertOk()->assertSee('aria-label="Name of environment stage in project shop"', false)
+            ->assertSee('aria-label="Production for environment stage in project shop"', false);
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("match(/^(\\d{4})([-\\/.]?)(\\d{2})\\2(\\d{2})$/)", $script);
         $this->assertStringContainsString("input[placeholder=\"YYYY-MM-DD\"]", $script);

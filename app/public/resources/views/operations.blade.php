@@ -36,7 +36,9 @@
      Decisions never go to the confirm page while script runs: one shared password block (confirm-inline, id
      "confirm-decide") stands above the waiting board, outside the refreshed region so a typed password survives a
      refresh; every decision form names it with data-confirm-from. A decision pressed without the password is held:
-     the block then shows a button that names it (data-held-name: "Allow once: <action>, request <id>"). --}}
+     the block then shows a button that names it (data-held-name: "Allow once: <action>, request <id>") and, beside
+     it, the request it belongs to (each decision cell carries <template data-held-summary>: agent, action, entry,
+     project / environment, request id), so the held decision keeps its context. --}}
 @php
     $mode = $mode ?? (isset($historyOnly) ? 'history' : 'waiting');
     $isWaiting = fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time();
@@ -99,6 +101,8 @@
             <td class="when" data-label="Finished (UTC)">@if($state === 'expired' && ($o->expires_at ?? null))<small class="k keep">Expired</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span>@elseif(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> <span class="nobreak">{{ $time($o->updated_at) }} <small class="k">UTC</small></span>@endif</td>
             @else
             <td class="decision" data-label="Decision">
+                {{-- What a held decision is about: app.js shows it beside the held button in the password block. --}}
+                <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code> <span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span> <span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
                 @if($o->state === 'pending')
                     <form class="controls" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/decision" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<button class="ok" name="decision" value="approve" aria-label="Allow once: {{ $what }}" data-held-name="Allow once: {{ $o->action }}, request {{ $rid }}">Allow once</button><button class="stop" name="decision" value="deny" aria-label="Deny: {{ $what }}" data-held-name="Deny: {{ $o->action }}, request {{ $rid }}">Deny</button></form>
                 @else

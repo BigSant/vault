@@ -694,16 +694,34 @@ final class Workspace
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
             'request' => ['operation'], 'member' => ['member', 'owner'], 'session' => ['session'], 'setup' => ['workspace', 'project', 'environment', 'type']];
-        $filters = $r->validate(['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150',
-            'outcome' => 'nullable|in:ok,denied,failed', 'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d']);
-        $total = array_filter($filters) ? (clone $query)->count() : null;
+        $rules = ['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)),
+            'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:ok,denied,failed',
+            'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d'];
+        $filters = $r->only(array_keys($rules));
+        $validator = validator($filters, $rules);
+        $messages = ['entry' => 'Unknown entry.', 'group' => 'Unknown event group.', 'actor' => 'Unknown actor.',
+            'outcome' => 'Unknown outcome.', 'from' => 'From (UTC) must be a real date like 2026-12-31.',
+            'to' => 'To (UTC) must be a real date like 2026-12-31.'];
+        $filterErrors = array_intersect_key($messages, $validator->errors()->messages());
+        if (isset($filters['actor']) && !isset($filterErrors['actor']) && !$actors->containsStrict($filters['actor'])) {
+            $filterErrors['actor'] = $messages['actor'];
+        }
         $entry = null;
-        if ($id = $filters['entry'] ?? null) {
+        if (!isset($filterErrors['entry']) && ($id = $filters['entry'] ?? null)) {
             $entry = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
                 ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
                 ->where('entries.id', $id)->first(['entries.id', 'entries.name']);
-            abort_unless($entry, 404);
-            $this->entryEvents($query, $id);
+            if (!$entry) {
+                $filterErrors['entry'] = $messages['entry'];
+            }
+        }
+        foreach ($filterErrors as $key => $message) {
+            unset($filters[$key]);
+            $r->query->remove($key);
+        }
+        $total = array_filter($filters) ? (clone $query)->count() : null;
+        if ($entry) {
+            $this->entryEvents($query, $entry->id);
         }
         if ($group = $filters['group'] ?? null) {
             $query->where(function ($q) use ($groups, $group) {
@@ -727,6 +745,6 @@ final class Workspace
         $events = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(50)->withQueryString();
         $this->resolveEvents($workspace, $events->getCollection(), $names);
 
-        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry'));
+        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry', 'filterErrors'));
     }
 }

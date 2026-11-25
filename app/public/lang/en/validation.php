@@ -93,10 +93,13 @@ return [
         'entry' => 'Entry',
         'group' => 'Event group',
         'actor' => 'Actor',
+        'outcome' => 'Outcome',
+        'from' => 'From (UTC)',
+        'to' => 'To (UTC)',
     ],
     'form_attributes' => [
         'password' => ['password' => 'New password'],
-        'workspaces/*/members' => ['password' => 'First password'],
+        'workspaces/*/members' => ['password' => 'Initial password'],
         // The label's hint "(6–8 digits)" is left out: the message says it.
         'workspaces/*/operations/*/mfa' => ['code' => 'Site MFA code'],
         'workspaces/*/types*' => ['name' => 'Type name'],

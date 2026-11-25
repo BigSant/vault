@@ -29,7 +29,8 @@
         <input type="hidden" name="form" value="add">
         <label><span>Name</span><input name="name" value="{{ $failedForm === 'add' ? old('name') : '' }}" required maxlength="100"></label>
         <label><span>Email</span><input name="email" type="email" value="{{ $failedForm === 'add' ? old('email') : '' }}" required></label>
-        <div class="field"><label for="first-password"><span>Initial password <small>Leave blank for an existing account</small></span></label><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password"><button type="button" data-generate="first-password" aria-label="Generate initial password">Generate</button></span></div>
+        {{-- The hint is the field's description (aria-describedby), not part of its name. --}}
+        <div class="field"><div class="field-name"><label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account</small></div><span class="with-button"><input id="first-password" name="password" type="password" minlength="14" autocomplete="new-password" aria-describedby="first-password-hint"><button type="button" data-generate="first-password" aria-label="Generate initial password">Generate</button></span></div>
         <label><span>Role</span><select name="role">@foreach($roles as $role)<option value="{{ $role }}" @selected(($failedForm === 'add' ? old('role', 'viewer') : 'viewer') === $role)>{{ ucfirst($role) }}</option>@endforeach</select></label>
         @include('confirm-inline', ['verb' => 'add this member'])
         <div class="form-foot"><p class="note">Hand the password over privately. The authenticator code is set up at the first sign-in. An existing account's password is not changed.</p><button class="go">Add member</button></div>

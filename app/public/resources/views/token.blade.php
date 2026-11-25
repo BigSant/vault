@@ -16,6 +16,6 @@
         <pre data-secret data-keep data-hidden-text="Hidden. If you did not copy the token, revoke this agent and add a new one." class="secret" id="agent-token">{{ $token }}</pre>
         <div class="controls"><button type="button" class="go" aria-label="Copy token for {{ $name }}" data-copy="agent-token" data-copy-name="token">Copy token</button><button type="button" data-leave-clear hidden>I've saved it</button></div>
     </div>
-    <div class="form-foot"><p class="note">Store the token in a private client file (mode 0600). The agent needs a grant to run an action. Leaving this page loses the token.</p><div class="controls"><a class="btn" href="/workspaces/{{ $space->id }}/grants?agent={{ $id }}#add-grant">Add a grant</a><a class="btn" href="/workspaces/{{ $space->id }}/agents" data-leave-done>Done — back to Identities</a></div></div>
+    <div class="form-foot"><p class="note">Store the token in a private client file (mode 0600). The agent needs a grant to run an action. Leaving this page loses the token.</p><div class="controls"><a class="btn" href="/workspaces/{{ $space->id }}/grants?agent={{ $id }}#add-grant">Add a grant</a><a class="btn" href="/workspaces/{{ $space->id }}/agents" data-leave-done>Back to Identities</a></div></div>
 </div>
 @endsection

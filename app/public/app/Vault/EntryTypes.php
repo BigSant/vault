@@ -201,7 +201,7 @@ final class EntryTypes
                 continue;
             }
             if (mb_strlen($label) > 80) {
-                throw ValidationException::withMessages(['fields' => 'A field name is too long (up to 80 characters).']);
+                throw ValidationException::withMessages(['fields' => 'Field label is too long (at most 80 characters).']);
             }
             if ($key === '') {
                 $base = $key = $this->slug($label, 'field');

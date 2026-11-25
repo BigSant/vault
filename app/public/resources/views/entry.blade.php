@@ -112,13 +112,15 @@
         @include('confirm-inline', ['verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
-            {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice. --}}
+            {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice.
+                 While values are on screen no Reveal is the solid button: "Reveal again" turns solid when app.js hides
+                 them (data-go-when-hidden). data-held-name: the held button's wording, the entry name in its own case. --}}
             <div class="controls">
                 @if($shownOlder)
-                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<button aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button></form>
-                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf<input type="hidden" name="version" value="{{ $shownOlder }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button class="go" aria-label="Reveal version {{ $shownOlder }} again: values of {{ $entry->name }}">Reveal version {{ $shownOlder }} again</button></form>
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<button aria-label="Reveal current values of {{ $entry->name }}" data-held-name="Reveal current: {{ $entry->name }}">Reveal current</button></form>
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf<input type="hidden" name="version" value="{{ $shownOlder }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button data-go-when-hidden aria-label="Reveal version {{ $shownOlder }} again: values of {{ $entry->name }}" data-held-name="Reveal version {{ $shownOlder }} again: {{ $entry->name }}">Reveal version {{ $shownOlder }} again</button></form>
                 @else
-                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf @if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif @if($shownCurrent)<button aria-label="Reveal again: current values of {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf @if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif @if($shownCurrent)<button data-go-when-hidden aria-label="Reveal again: current values of {{ $entry->name }}" data-held-name="Reveal again: {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}" data-held-name="Reveal current: {{ $entry->name }}">Reveal current</button>@endif</form>
                 @endif
             </div>
         </div>
@@ -163,7 +165,7 @@
             @if($canEdit)
             <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values" data-held-name="Reveal version {{ $h['version'] }}: {{ $entry->name }}">Reveal</button></form>
                     @if($h['version'] !== $current)
                         <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
                     @endif
@@ -209,7 +211,7 @@
 <p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
-<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">All requests for this entry →</a></p>
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">Request activity for this entry →</a></p>
 <h2 id="activity">Activity</h2>
 <p class="note">The last 30 events for this entry and its requests.</p>
 @include('activity', ['events' => $events, 'hideSubject' => $entry->id])

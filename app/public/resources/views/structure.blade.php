@@ -77,8 +77,8 @@
                 </summary>
                 <div class="inner">
                     <form id="{{ $formId }}" method="post" action="{{ $envPath }}">@csrf
-                        <label><span>Name</span><input name="name" value="{{ $envName }}" required maxlength="60"></label>
-                        <label class="check"><input type="checkbox" name="production" value="1" @checked($envProd)> Production</label>
+                        <label><span>Name</span><input name="name" value="{{ $envName }}" required maxlength="60" aria-label="Name of environment {{ $where }}"></label>
+                        <label class="check"><input type="checkbox" name="production" value="1" @checked($envProd) aria-label="Production for environment {{ $where }}"> Production</label>
                     </form>
                     <div class="form-foot">
                         <p class="note">@if($n > 0)Holds {{ $entries($n) }}, so it cannot be removed.@endif</p>

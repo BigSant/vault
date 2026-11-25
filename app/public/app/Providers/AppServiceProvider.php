@@ -37,7 +37,7 @@ final class AppServiceProvider extends ServiceProvider
             $view->with('requestActions', $ids->isEmpty() ? [] : DB::table('operations')->whereIn('id', $ids->all())->pluck('action', 'id')->all());
         });
         // Validation messages name fields by their visible labels (lang/en/validation.php). A label that differs on
-        // one form ("First password" for a new member) is listed there under form_attributes, by request path.
+        // one form ("Initial password" for a new member) is listed there under form_attributes, by request path.
         Validator::resolver(function ($translator, array $data, array $rules, array $messages, array $attributes) {
             $forms = $translator->get('validation.form_attributes');
             foreach (is_array($forms) ? $forms : [] as $pattern => $labels) {

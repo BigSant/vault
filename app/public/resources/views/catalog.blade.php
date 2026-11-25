@@ -98,18 +98,18 @@
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
         <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
-            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}?from={{ rawurlencode($from) }}">{{ $e->name }}</a>@if($e->state === 'archived') <span class="chip muted">archived</span>@elseif($due)<small><span class="chip warn">rotation due since {{ substr($e->rotate_at, 0, 10) }}</span></small>@endif @if($e->tags)<small class="entry-tags">Tags: {{ $e->tags }}</small>@endif</td>
+            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}?from={{ rawurlencode($from) }}">{{ $e->name }}</a>@if($e->state === 'archived') <span class="chip muted">archived</span>@elseif($due)<small><span class="chip warn">rotation due</span> since {{ substr($e->rotate_at, 0, 10) }}</small>@endif @if($e->tags)<small class="entry-tags">Tags: {{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
             <td class="when updated" data-label="Updated (UTC)"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
-            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">Last used (UTC)</small> {{ substr($e->last_used_at, 0, 16) }} @else — @endif</td>
+            <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used (UTC)">@if($e->last_used_at)<small class="k">Last used</small> <span class="nobreak">{{ substr($e->last_used_at, 0, 16) }} <small class="k">UTC</small></span> @else — @endif</td>
         </tr>
     @endforeach
     </tbody>
 </table></div>
 @if($entries->lastPage() > 1)
-<div class="pager"><span>@if($entries->previousPageUrl())<a href="{{ $entries->previousPageUrl() }}">← Previous</a>@endif</span><span class="muted">Page {{ $entries->currentPage() }} of {{ $entries->lastPage() }}</span><span>@if($entries->hasMorePages())<a href="{{ $entries->nextPageUrl() }}">Next →</a>@endif</span></div>
+<nav class="pager" aria-label="Entry pages"><span>@if($entries->previousPageUrl())<a href="{{ $entries->previousPageUrl() }}">← Previous</a>@endif</span><span class="muted">Page {{ $entries->currentPage() }} of {{ $entries->lastPage() }}</span><span>@if($entries->hasMorePages())<a href="{{ $entries->nextPageUrl() }}">Next →</a>@endif</span></nav>
 @endif
 @endif
 @if($space && !$archived && $archivedCount)

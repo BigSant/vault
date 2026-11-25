@@ -85,9 +85,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   wait), details (the facts table), secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
   Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
-  ("All requests for this entry →", "All activity for this entry →").
+  ("Request activity for this entry →", "All activity for this entry →").
 - `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
-  "Edit entry types (opens in a new tab)" opens Setup beside the form, and "Reload types" (script) fetches the
+  "Edit entry types (new tab)" opens Setup beside the form, and "Reload types" (script) fetches the
   form again and swaps only the Type options and the type field rows; typed values stay in the fields that still
   exist.
 - `/workspaces/{w}/import` — paste a JSON import (editor+).
@@ -110,7 +110,7 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
-  Its next steps are "Add a grant" (Grants for that agent) and "Done — back to Identities". Until the token is
+  Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
   copied, every link out of that page (header, tabs, both next steps) and Sign out asks "Token copied?" in the
   two-step pattern; a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
@@ -178,7 +178,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
    submit without the password is held and stays visible: the focus moves to the field and a button under it names
    the held action ("Allow once: shop.admin-login, request 1a2b3c4d"); that button, or Enter in the field, sends
-   it. A password entered first gets the visible line "Now choose an action below." The waiting requests' block
+   it. A held decision keeps its context: beside the button the block repeats the request ("<agent> requests
+   <action> · <entry> · <project> / <environment> · Request <id>", from the row's `<template data-held-summary>`),
+   and that summary is the button's description (`aria-describedby`). A held Reveal names the entry in its own
+   case ("Reveal current: Shop admin panel"). A password entered first gets the visible line "Now choose an action below." The waiting requests' block
    asks "Enter your current password, then choose a request action below." Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
    requests, the block above them carries "Password confirmed until …" and, once expired, the page's one password field;

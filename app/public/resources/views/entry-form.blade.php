@@ -47,9 +47,10 @@
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>
             {{-- The detour to Setup never costs the draft: the link opens a new tab, and "Reload types" (shown by app.js)
-                 fetches this page again and swaps only the Type options and the type field rows; what was typed stays. --}}
-            <p class="note">Missing a type or a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types (opens in a new tab)</a></p>
-            <p class="reload-types" data-reload-types-row hidden><button type="button" data-reload-types>Reload types</button> <span class="note" data-reload-status>After saving a type in the other tab, reload the types here. What you typed stays.</span></p>
+                 fetches this page again and swaps only the Type options and the type field rows; what was typed stays.
+                 One line under the Type field, starting where the inputs start; the result of a reload is the line
+                 after it (data-reload-status, empty until then). --}}
+            <p class="type-detour" data-reload-types-row><span class="note">Type or field missing? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types (new tab)</a></span> <button type="button" data-reload-types title="After saving a type in the other tab, reload the types here. What you typed stays." hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></p>
         @endif
     </fieldset>
 

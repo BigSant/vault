@@ -25,14 +25,16 @@
             403 => 'Your role in this workspace does not allow it, or the code you entered was wrong.',
             404 => 'This page does not exist, or is not available to you.',
             409 => 'It changed meanwhile, or it is still in use. Reload and try again.',
-            419 => 'The session expired. Sign in again.',
+            419 => 'The session expired. Nothing was saved.',
             422 => 'Check required fields, value formats and password length.',
             429 => 'Wait a minute, then try again.',
             default => 'The service is not available right now. Try again.',
         } }}</p>
         @if(!empty($messages))<ul>@foreach($messages as $message)<li>{{ $message }}</li>@endforeach</ul>@endif
     </div>
-    @if(in_array($status, [419, 422], true))<p class="note">Go back to correct the form. Secret fields are not refilled.</p>
+    {{-- One recovery instruction, in the order it is done; its first step is the button below. --}}
+    @if($status === 419)<p class="note">Sign in again, then open the form and fill it in again. Secret fields are not refilled.</p>
+    @elseif($status === 422)<p class="note">Go back to correct the form. Secret fields are not refilled.</p>
     @elseif($status === 409)<p class="note">Go back and reload the page to see the current state. Nothing was changed.</p>@endif
     <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : $home }}">{{ $signIn ? 'Sign in' : 'Back to entries' }}</a></div>
 </div>

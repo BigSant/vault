@@ -9,7 +9,7 @@
     <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
     <form class="toolbar" method="get">
         <label>Agent <select name="agent"><option value="">All agents</option>@foreach($machines as $m)<option value="{{ $m->id }}" @selected($m->id === $agent?->id)>{{ $m->name }}</option>@endforeach</select></label>
-        <label>Entry <select name="entry"><option value="">All entries</option>@foreach($entries as $e)<option value="{{ $e->id }}" @selected($e->id === $entry?->id)>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}</option>@endforeach</select></label>
+        <label>Entry <select name="entry"><option value="">All entries</option>@foreach($entries as $e)<option value="{{ $e->id }}" @selected($e->id === $entry?->id)>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}{{ $e->production ? ' (production)' : '' }}</option>@endforeach</select></label>
         <button>Apply</button>
     </form>
 </details>
@@ -67,7 +67,7 @@
 @else
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/grants">@csrf
         <label><span>Agent</span><select name="machine_id" required><option value="">Choose an agent</option>@foreach($activeMachines as $m)<option value="{{ $m->id }}"{{ $m->id === old('machine_id', $agent?->id) ? ' selected' : '' }}>{{ $m->name }}</option>@endforeach</select></label>
-        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
+        <label><span>Entry</span><select name="entry_id" required><option value="">Choose an entry</option>@foreach($activeEntries as $e)<option data-fields="{{ implode(',', $typeFields[$e->type] ?? []) }}" value="{{ $e->id }}"{{ $e->id === old('entry_id', $entry?->id) ? ' selected' : '' }}>{{ $e->name }} — {{ $e->project }} / {{ $e->environment }}{{ $e->production ? ' (production)' : '' }} · {{ $typeNames[$e->type] ?? $e->type }}</option>@endforeach</select></label>
         <label><span>Action</span><select name="action" required><option value="">Choose an action</option>@foreach($actions as $id => $a)@php $required = \App\Vault\EntryTypes::actionFields($a['kind']); @endphp<option value="{{ $id }}" data-fields="{{ implode(',', $required) }}" @selected(old('action') === $id)>{{ $id }}</option>@endforeach</select></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 1) }}" required></label>
         <label class="check"><input type="checkbox" name="approval" value="1" @checked(old('approval', !session()->hasOldInput()))> Ask me before every run</label>

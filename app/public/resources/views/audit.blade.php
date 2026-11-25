@@ -3,6 +3,14 @@
 @section('content')
 <h1>Activity</h1>
 @php $filterCount = count(array_filter(request()->only(['entry', 'group', 'actor', 'outcome', 'from', 'to']))); @endphp
+{{-- A filter value that cannot be used (a date that does not exist, an unknown choice) is left out, never an error
+     page: the controller passes $filterErrors (filter name => one message) and drops those filters from the query. --}}
+@if(! empty($filterErrors))
+<div class="callout bad filter-errors" role="status">
+    <p><b>{{ count($filterErrors) === 1 ? 'A filter was not applied.' : 'Some filters were not applied.' }}</b></p>
+    <ul>@foreach($filterErrors as $message)<li>{{ $message }}</li>@endforeach</ul>
+</div>
+@endif
 <details class="filters" data-wide-open>
     <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
     <form class="toolbar" method="get">
@@ -11,8 +19,8 @@
         <label>Actor <select name="actor"><option value="">All actors</option>@foreach($actorOptions as $key => $label)<option value="{{ $key }}" @selected(request('actor') === $key)>{{ $label }}{{ str_starts_with($key, 'machine:') ? ' · agent' : '' }}</option>@endforeach</select></label>
         @php $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed']; @endphp
         <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach($outcomeLabels as $outcome => $outcomeLabel)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcomeLabel }}</option>@endforeach</select></label>
-        <label>From (UTC)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
-        <label>To (UTC)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>
+        <label>From (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
+        <label>To (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>
         <button>Apply</button>
     </form>
 </details>
@@ -28,6 +36,6 @@
 @endif
 @include('activity', ['events' => $events, 'filtered' => $filterCount > 0])
 @if($events->hasPages())
-<div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>
+<nav class="pager" aria-label="Activity pages"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></nav>
 @endif
 @endsection

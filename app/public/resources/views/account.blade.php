@@ -36,7 +36,7 @@
 
 <h2>Workspaces</h2>
 @if($navSpaces->isEmpty())
-    <div class="empty">You are in no workspace yet. <a href="/workspaces/new">Add a workspace</a></div>
+    <div class="empty">You are in no workspace yet. <a class="more-link" href="/workspaces/new">Add a workspace</a></div>
 @else
 <div class="scroll capped"><table class="list">
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
@@ -46,7 +46,7 @@
     @endforeach
     </tbody>
 </table></div>
-<p class="note"><a href="/workspaces/new">Add a workspace</a> to keep another set of projects, entries, members and agents apart.</p>
+<p class="note"><a class="more-link" href="/workspaces/new">Add a workspace</a> to keep another set of projects, entries, members and agents apart.</p>
 @endif
 
 <h2>Sign out</h2>
