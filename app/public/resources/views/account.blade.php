@@ -20,7 +20,7 @@
     @unless($confirmedUntil)
     <form class="action" id="confirm" method="post" action="/confirm">@csrf
         <input type="hidden" name="return" value="/account">
-        <h3>Confirm sensitive actions<small>Lasts 5 minutes. Needed to reveal values and to change entries, access or structure.</small></h3>
+        <h3>Confirm sensitive actions<small>Lasts 5 minutes. Needed to reveal values and to change entries, access or setup.</small></h3>
         <label><span>Current password</span><input type="password" name="current_password" required maxlength="200" autocomplete="current-password"></label>
         <div class="form-foot"><p class="note">Reveals and access changes are written to the activity log.</p><button class="go">Confirm</button></div>
     </form>
@@ -50,7 +50,8 @@
 @endif
 
 <h2>Sign out</h2>
-<form class="action" method="post" action="/logout">@csrf
-    <div class="form-foot"><p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button aria-label="Sign out of this session">Sign out</button></div>
+{{-- One button, nothing to fill in: a plain row at the card width, not a card. --}}
+<form class="form-foot plain-row" method="post" action="/logout">@csrf
+    <p class="note">Ends this session. Sign in again with your password and authenticator code.</p><button aria-label="Sign out of this session">Sign out</button>
 </form>
 @endsection

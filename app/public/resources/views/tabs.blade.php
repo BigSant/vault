@@ -9,6 +9,6 @@
 @endphp
 <nav class="tabs" aria-label="{{ $label }}">
     @foreach($items as $key => $text)
-        <a href="{{ $base }}/{{ $key }}" @if($key === $current) class="on" aria-current="page" @endif>{{ $text }}@if($key === 'requests' && !empty($navWaiting)) <span class="chip warn">{{ $navWaiting }}<span class="sr-only"> waiting</span></span>@endif</a>
+        <a href="{{ $base }}/{{ $key }}" @if($key === $current) class="on" aria-current="page" @endif>{{ $text }}</a>
     @endforeach
 </nav>

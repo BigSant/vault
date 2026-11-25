@@ -11,7 +11,7 @@
 
 <h2>Paste entries</h2>
 @if($environments->isEmpty() || $types->isEmpty())
-<div class="empty">
+<div class="empty capped">
     @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $space->id }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
@@ -29,7 +29,7 @@
 <h2>Format</h2>
 <p class="note">Paste a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
 
-<details class="import-ref">
+<details class="import-ref capped">
     <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
     <div class="inner">
         @if($environments->isEmpty())
@@ -50,7 +50,7 @@
     </div>
 </details>
 
-<details class="import-ref">
+<details class="import-ref capped">
     <summary>Type keys <span class="muted">({{ $types->count() }})</span></summary>
     <div class="inner">
         @if($types->isEmpty())
@@ -73,7 +73,7 @@
     </div>
 </details>
 
-<div class="scroll"><table class="list import-format">
+<div class="scroll capped"><table class="list import-format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
         <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
@@ -87,7 +87,7 @@
 </table></div>
 
 <div class="block-label">Example</div>
-<pre class="cmd">[
+<pre class="cmd capped">[
   {
     "environment_id": "00000000-0000-0000-0000-000000000000",
     "name": "Billing API",

@@ -241,12 +241,83 @@ final class VaultTest extends TestCase
             && $events->first()->subject_label === 'Private name');
     }
 
+    public function test_activity_names_setup_users_requests_and_removed_subjects(): void
+    {
+        $entry = $this->entry();
+        [$machine, $token, $grant] = $this->machine($entry, true);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'request-subject'])->json('id');
+        $type = DB::table('entry_types')->where('key', 'api_key')->first();
+        $missing = (string) Str::uuid();
+        $subjects = [
+            ['member.change', $this->owner->id, 'Owner'], ['workspace.create', $this->workspace, 'Test'],
+            ['project.rename', DB::table('projects')->value('id'), 'Test project'], ['environment.update', $this->environment, 'stage'],
+            ['type.save', $type->id, 'API key'], ['type.save', $type->key, 'API key'], ['type.delete', $missing, 'removed item'],
+            ['entry.create', $entry, 'Private name'], ['machine.create', $machine, 'ai-os'],
+            ['grants.revoke', $grant, 'Private name'], ['operation.request', $op, 'Private name'],
+        ];
+        foreach ($subjects as [$event, $id]) {
+            app(\App\Vault\Access::class)->audit($this->workspace, $event, $id);
+        }
+        $events = $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->viewData('events')->keyBy('subject');
+        foreach ($subjects as [, $id, $label]) {
+            $this->assertSame($label, $events[$id]->subject_label);
+        }
+        $this->assertNull($events[$missing]->subject_url);
+    }
+
+    public function test_owner_decision_labels_and_return_paths(): void
+    {
+        $entry = $this->entry();
+        [$machine, $token] = $this->machine($entry, true);
+        $base = '/workspaces/'.$this->workspace;
+        $foreign = $this->entryInOtherWorkspace();
+        $targets = ['/entries/'.$entry, '/entries/'.$foreign, 'https://example.test', '/entries/'.$entry.'?next=elsewhere'];
+        foreach ($targets as $index => $back) {
+            $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-'.$index])->json('id');
+            $this->post($base.'/operations/'.$op.'/decision', ['decision' => 'deny', 'back' => $back])
+                ->assertRedirect($index === 0 ? $back : $base.'/requests');
+        }
+        $expired = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-expired'])->json('id');
+        $deadline = now()->subMinute()->toDateTimeString();
+        DB::table('operations')->where('id', $expired)->update(['expires_at' => $deadline]);
+        $mfa = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-mfa'])->json('id');
+        DB::table('operations')->where('id', $mfa)->update(['state' => 'requires_user_action']);
+        foreach ($targets as $index => $back) {
+            $this->post($base.'/operations/'.$mfa.'/mfa', ['code' => '123456', 'back' => $back])
+                ->assertRedirect($index === 0 ? $back : $base.'/requests');
+        }
+        $history = $this->get($base.'/requests')->assertOk()->viewData('history')->keyBy('id');
+        $this->assertSame('denied', $history[$op]->decision_label);
+        $this->assertSame('revoked', $history[$op]->state);
+        $this->assertSame('expired', $history[$expired]->decision_label);
+        $this->assertSame($deadline, $history[$expired]->expires_at);
+        $this->assertSame('pending', $history[$expired]->state);
+    }
+
+    private function entryInOtherWorkspace(): string
+    {
+        $workspace = (string) Str::uuid();
+        $project = (string) Str::uuid();
+        $environment = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $workspace, 'name' => 'Other']);
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $workspace, 'name' => 'Other project']);
+        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'test']);
+        $row = (array) DB::table('entries')->first();
+        $row['id'] = (string) Str::uuid();
+        $row['environment_id'] = $environment;
+        DB::table('entries')->insert($row);
+
+        return $row['id'];
+    }
+
     public function test_grant_approval_and_due_filter(): void
     {
         $entry = $this->entry();
         [$machine, , $grant] = $this->machine($entry, true);
         $url = '/workspaces/'.$this->workspace.'/grants';
         $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters')
+            ->assertSee('<select name="machine_id" required><option value="">Choose an agent</option>', false)
+            ->assertSee('<select name="action" required><option value="">Choose an action</option>', false)
             ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
             ->assertSeeText('test.http');
         $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
@@ -255,6 +326,8 @@ final class VaultTest extends TestCase
         $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
         DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
         $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant);
+        $this->get('/?q=Private')->assertOk()->assertSeeText('Search: Private')
+            ->assertSee('<button>Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
         $this->get('/?project=missing')->assertSeeText('Showing 0 of 1')->assertViewHas('archivedCount', 0);
         $this->get('/?due=1')->assertSeeText('Showing 0 of 1')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);

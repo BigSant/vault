@@ -296,6 +296,38 @@ nav.subnav{gap:0 18px}
 nav.subnav .subnav-label{flex-basis:100%}
 nav.subnav a,nav.subnav a:hover{min-height:36px}
 }
+/* Jump links of a long page with many sections (the entry page): <details class="jump" data-wide-open
+   data-wide-static>. Wide screens: app.js keeps it open and it reads as the label and one line of links. Phones: a
+   closed drawer "On this page", so the links do not take four lines before the content. */
+details.jump{flex:1;min-width:0;margin:0;background:none;border:none;border-radius:0}
+details.jump>summary{padding:0;font:400 12px/1.3 var(--mono);color:var(--faint)}
+details.jump>summary::before,details.jump[open]>summary::before{content:none}
+.jump-links{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap}
+@media (min-width:901px){
+details.jump[open]{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap}
+details.jump[open]>summary{flex:none;cursor:default;pointer-events:none;white-space:nowrap}
+details.jump[open]>.jump-links{flex:1;min-width:0}
+}
+@media (max-width:900px){
+nav.subnav:has(>details.jump){padding:0;border-bottom:none}
+details.jump{background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+details.jump>summary{display:flex;align-items:center;gap:8px;min-height:40px;padding:7px 12px;font:600 13px/1.4 var(--mono);color:var(--ink)}
+details.jump>summary::before{content:"\25B8";color:var(--amber);flex:none}
+details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
+.jump-links{gap:0 18px;padding:0 12px 8px}
+}
+/* Entry page: every section, boards included, ends at the card width, so the right edge is one line. */
+.entry-page{max-width:var(--card)}
+.entry-page>:is(.head,nav.subnav)+h2{margin-top:18px}
+@media (min-width:901px){
+/* The requests board fits the card: the action code and the request id stay whole, the times and the MFA label wrap. */
+.entry-page .board td.name{min-width:0}
+.entry-page .board.requests td.action :is(code,.rid){white-space:nowrap;overflow-wrap:normal}
+.entry-page .board.requests td.when .line{white-space:normal}
+.entry-page .board.requests form.mfa{flex-wrap:wrap}
+.entry-page .board.requests form.mfa label{flex:1 1 100%;min-width:0;white-space:normal}
+.entry-page .board.requests form.mfa input{min-width:0}
+}
 
 /* Sign-in */
 main.login{max-width:520px;margin:0 auto;padding:10vh 16px 24px}
@@ -372,6 +404,14 @@ h3.gap{margin-top:22px;padding-top:14px;border-top:1px dashed var(--rule)}
 label.indent{margin-left:min(14em,30%)}
 @media (max-width:900px){label.indent{margin-left:0}}
 .form-foot button,.form-foot .btn{white-space:nowrap}
+/* A button in a row with a field (Members Save, Continue sign-in, Generate) is as tall as the field on wide screens. */
+@media (min-width:901px){
+:is(.controls,.inline,.with-button,.toolbar):has(>:is(input:not([type=hidden]),select),>label>:is(input,select))>:is(button,.btn){min-height:36px}
+/* The other buttons of that table row (Members: Remove beside Save) follow, so the row has one button height. */
+.board tr:has(td :is(select,input:not([type=hidden]))) td :is(button,.btn){min-height:36px}
+}
+/* A form that is one button and its note (Sign out): a plain row at the card width, not a card. */
+form.plain-row{max-width:var(--card);margin:0 0 14px}
 .board.versions td{vertical-align:middle}
 .board.versions td.act{white-space:nowrap}
 button.ok{color:var(--go);border-color:var(--go-line)}
@@ -433,7 +473,7 @@ details[open]>summary .fold-act{color:var(--dim)}
 /* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
    form that was sent, focuses it and links the messages to their fields. Its focus ring is red like the callout. */
 .error-summary{max-width:var(--card);scroll-margin-top:16px}
-.error-summary:focus,.error-summary:focus-visible{outline:1px solid var(--stop);outline-offset:2px}
+.error-summary:focus,.error-summary:focus-visible{outline:2px solid var(--stop);outline-offset:2px}
 .error-summary a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--stop);text-underline-offset:3px}
 .error-summary a:hover{color:var(--stop)}
 .error-summary a:focus-visible{outline-color:var(--stop)}
@@ -450,7 +490,6 @@ td>.field-error{margin-top:4px}
 .card.danger>.block-label:first-child{margin-bottom:10px}
 /* Entry page: requests waiting for the owner sit right under the title. */
 .waiting-first>h2{margin-top:14px}
-.waiting-first{margin-bottom:18px}
 /* Destructive actions confirm in place: app.js turns the button into "Confirm <verb>" with a Cancel beside it and
    the question from data-confirm as the note. The note wraps and never decides a width. */
 .confirm-step{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap;max-width:100%}
@@ -477,9 +516,10 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 }
 .form-foot>.confirm-step:last-child{margin-left:auto;flex:0 1 auto;max-width:60%}
 @media (max-width:900px){.form-foot>.confirm-step:last-child{align-self:flex-end;max-width:100%}}
-/* Activity: the event in words, then its code as dim small text on the same line. */
+/* Activity: the event in words, then its code as dim small text on the same line. No margin on the code: when it
+   wraps it starts flush left, under the name. */
 .board.activity .event-name{font-weight:600}
-.board.activity .event-code{margin-left:6px;font-size:12px;color:var(--dim)}
+.board.activity .event-code{font-size:12px;color:var(--dim)}
 @media (max-width:900px){
 .board.activity td.when{order:1}.board.activity td.event{order:0;flex-basis:100%}
 .board.activity td.actor{order:2}.board.activity td.subject{order:3}.board.activity td.outcome{order:4;margin-left:auto}
@@ -519,6 +559,7 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 }
 
 /* entries area */
+.entry-search label.grow{flex:1;min-width:0}.entry-search button{width:auto}
 @media (min-width:901px){.toolbar label.grow{min-width:15rem}}
 a.stat{display:block;color:inherit;text-decoration:none;border-radius:3px}
 a.stat:hover{text-decoration:none}
@@ -590,21 +631,33 @@ details.import-ref>.inner .scroll{margin:0}
 /* setup area */
 .tabs+nav.subnav{margin-top:-6px}
 .setup-first{margin-top:20px}
-.project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+.project-list{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;max-width:var(--card)}
 .project-card[id]{scroll-margin-top:16px}
-.project-head{align-items:center;gap:10px 14px}
-.project-head h3{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;flex:1 1 auto;min-width:0;margin:0}
-.project-head h3 .name{overflow-wrap:anywhere}
-.project-head h3 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacing:0;text-transform:none}
-.project-head details.project-edit{margin:0;flex:0 0 auto}
-.project-head details.project-edit>summary{min-height:32px;padding:5px 11px;gap:6px}
-.project-head details.project-edit:not([open]):hover{border-color:var(--amber)}
-.project-head details.project-edit[open]{flex:1 0 100%}
-.project-head details.project-edit[open]>summary{min-height:40px;padding:8px 14px}
+.card details.fold.project-edit{background:transparent;border:1px solid transparent;border-bottom-color:var(--rule);border-radius:0;margin:-4px 0 10px}
+.card details.fold.project-edit[open]{border-top:1px solid transparent}
+.card details.fold.project-edit>summary{padding-top:6px;padding-bottom:10px}
+.card details.fold.project-edit>summary .fold-name{font-size:15px}
 .card details.fold .form-foot .controls{flex:0 1 auto;max-width:100%}
-.card details.fold .error-summary{max-width:none}
-.card details.fold:last-of-type{margin-bottom:0}
-.card>.note+details.fold{margin-top:8px}
+.card details.fold .error-summary,.card details.env-add .error-summary{max-width:none}
+.card details.fold.env:last-of-type{margin-bottom:0}
+.card>.note{margin:0 0 4px}
+.card details.env-add{background:transparent;border:none;border-radius:0;margin:8px 0 0}
+.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0;font:600 13px/1.4 var(--mono);color:var(--amber)}
+.card details.env-add>summary::before,.card details.env-add[open]>summary::before{content:none}
+.card details.env-add>summary:hover{text-decoration:underline}
+.card details.env-add[open]{background:var(--panel-2);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;margin-top:10px}
+.card details.env-add[open]>summary{display:flex;padding:10px 14px;color:var(--ink)}
+.card details.env-add[open]>summary:hover{text-decoration:none;color:var(--amber)}
+@media (min-width:901px){
+details.type-fold .list.edit :is(th,td){padding:7px 6px}
+details.type-fold .list.edit :is(th,td):first-child{padding-left:0}
+details.type-fold .list.edit :is(th,td):last-child{padding-right:0}
+details.type-fold .list.edit td[data-label="Field label"] input{min-width:10em}
+details.type-fold .list.edit td[data-label="Kind"] select{min-width:12em}
+details.type-fold .list.edit td[data-label="Required"] select{min-width:4.8em}
+details.type-fold .list.edit td[data-label="Key"] code{white-space:nowrap;overflow-wrap:normal}
+details.type-fold .list.edit td:last-child label.check{white-space:nowrap}
+}
 details.more.field-rules{margin:14px 0 0}
 details.more.field-rules>summary{color:var(--dim);font-weight:400}
 details.more.field-rules>summary:hover{color:var(--ink)}
@@ -615,9 +668,6 @@ form.action fieldset+fieldset{margin-top:14px}
 form.action fieldset+fieldset>legend{padding-top:14px;border-top:1px dashed var(--rule)}
 form.action fieldset>:last-child{margin-bottom:0}
 @media (max-width:900px){
-.project-head{flex-direction:row;align-items:center;gap:10px}
-.project-head details.project-edit>summary{min-height:40px;padding:8px 12px}
-.project-head details.project-edit>summary .fold-act{margin-left:0}
+.card details.env-add>summary{min-height:40px}
 .list.edit td[data-label=""]::before{content:none}
-.card details.fold:not(.env)>summary .fold-name{flex:1 1 auto}
 }

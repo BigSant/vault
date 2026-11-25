@@ -351,6 +351,17 @@ final class Workspace
         $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)->get();
         $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit($historyLimit)->get();
 
+        $revoked = $history->where('state', 'revoked')->pluck('id');
+        $denied = $revoked->isEmpty() ? [] : DB::table('audit')->where('event', 'operation.deny')
+            ->whereIn('subject', $revoked)->pluck('subject')->flip()->all();
+        foreach ($waiting->concat($history) as $row) {
+            $row->decision_label = match (true) {
+                isset($denied[$row->id]) => 'denied',
+                in_array($row->state, $states, true) && $row->expires_at <= $now->toDateTimeString() => 'expired',
+                default => $row->state,
+            };
+        }
+
         return [$waiting, $history];
     }
 
@@ -476,7 +487,7 @@ final class Workspace
         }
         // The type only describes new versions; the version the action would read must actually hold the fields.
         if ($missing = $this->catalog->missingFields($entry->id, EntryTypes::actionFields($definition['kind']))) {
-            throw ValidationException::withMessages(['action' => 'The current version of this entry has no value for: '.implode(', ', $missing).'. Update the entry first.']);
+            throw ValidationException::withMessages(['action' => 'The current version of this entry has no value for: '.implode(', ', $missing).'. Edit the entry first.']);
         }
         DB::transaction(function () use ($workspace, $d) {
             DB::table('machines')->where('id', $d['machine_id'])->lockForUpdate()->first();
@@ -529,7 +540,7 @@ final class Workspace
             $this->access->audit($workspace, 'operation.'.$d['decision'], $id);
         });
 
-        return redirect('/workspaces/'.$workspace.'/requests');
+        return $this->afterDecision($r, $workspace);
     }
 
     public function mfa(Request $r, string $workspace, string $id)
@@ -542,6 +553,21 @@ final class Workspace
         abort_unless(DB::table('machines')->where('id', $op->machine_id)->where('workspace_id', $workspace)->exists(), 404);
         $this->access->audit($workspace, 'operation.mfa', $id);
         $this->ops->broker('POST', '/operations/'.$id.'/mfa', $d);
+
+        return $this->afterDecision($r, $workspace);
+    }
+
+    private function afterDecision(Request $r, string $workspace)
+    {
+        $back = $r->input('back');
+        if (is_string($back) && str_starts_with($back, '/entries/')) {
+            $id = substr($back, strlen('/entries/'));
+            if (Str::isUuid($id) && DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+                ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+                ->where('entries.id', $id)->exists()) {
+                return redirect('/entries/'.$id);
+            }
+        }
 
         return redirect('/workspaces/'.$workspace.'/requests');
     }
@@ -572,13 +598,22 @@ final class Workspace
         }
         $entryNames = $entries->whereIn('entries.id', $ids->merge(array_values($related)))->pluck('entries.name', 'entries.id');
         $agents = DB::table('machines')->where('workspace_id', $workspace)->whereIn('id', $ids)->pluck('name', 'id');
+        $subjects = DB::table('users')->whereIn('id', $ids)->pluck('name', 'id')
+            ->union(DB::table('workspaces')->where('id', $workspace)->whereIn('id', $ids)->pluck('name', 'id'))
+            ->union(DB::table('projects')->where('workspace_id', $workspace)->whereIn('id', $ids)->pluck('name', 'id'))
+            ->union(DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')
+                ->where('projects.workspace_id', $workspace)->whereIn('environments.id', $ids)->pluck('environments.name', 'environments.id'));
+        $types = DB::table('entry_types')->where('workspace_id', $workspace)
+            ->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('key', $ids))->get(['id', 'key', 'name']);
+        $typeNames = $types->pluck('name', 'id')->union($types->pluck('name', 'key'));
         foreach ($events as $event) {
             $event->actor_kind = match (Str::before($event->actor, ':')) {
                 'machine' => 'agent', 'user' => 'user', default => 'system',
             };
             $event->actor_label = $names[$event->actor] ?? $event->actor_kind;
             $entry = $related[$event->subject] ?? $event->subject;
-            $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject);
+            $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject)
+                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null) ?? 'removed item';
             $event->subject_url = $entryNames->has($entry) ? '/entries/'.$entry
                 : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject : null);
         }

@@ -8,7 +8,7 @@
     <form class="toolbar" method="get">
         <label>Event group <select name="group"><option value="">All groups</option>@foreach(array_keys($groups) as $group)<option value="{{ $group }}" @selected(request('group') === $group)>{{ ucfirst($group) }}</option>@endforeach</select></label>
         <label>Actor <select name="actor"><option value="">All actors</option>@foreach($actorOptions as $key => $label)<option value="{{ $key }}" @selected(request('actor') === $key)>{{ $label }}{{ str_starts_with($key, 'machine:') ? ' · agent' : '' }}</option>@endforeach</select></label>
-        <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach(['ok', 'denied', 'failed'] as $outcome)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcome }}</option>@endforeach</select></label>
+        <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach(['ok', 'denied', 'failed'] as $outcome)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcome === 'ok' ? 'OK' : ucfirst($outcome) }}</option>@endforeach</select></label>
         <label>From<input type="date" name="from" value="{{ request('from') }}"></label>
         <label>To<input type="date" name="to" value="{{ request('to') }}"></label>
         <button>Apply</button>

@@ -13,9 +13,9 @@
     $filterCount = (request()->filled('project') ? 1 : 0)
         + (request()->filled('environment') ? 1 : 0)
         + (request()->filled('type') ? 1 : 0)
-        + (request()->filled('q') ? 1 : 0) + ($archived ? 1 : 0)
+        + ($archived ? 1 : 0)
         + ($dueOnly ? 1 : 0);
-    $hasFilters = $filterCount > 0;
+    $hasFilters = $filterCount > 0 || request()->filled('q');
     $activeProject = request()->filled('project') ? $projects->firstWhere('id', request('project')) : null;
     $activeEnv = request()->filled('environment') ? $environments->firstWhere('id', request('environment')) : null;
     $activeEnvLabel = $activeEnv
@@ -42,7 +42,10 @@
 
 <form method="get">
     <input type="hidden" name="workspace" value="{{ $space->id }}">
-    <label>Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
+    <div class="toolbar entry-search">
+        <label class="grow">Search<input type="search" name="q" value="{{ request('q') }}" placeholder="name, tag or alias" maxlength="100"></label>
+        <button>Search</button>
+    </div>
     <details class="filters" data-wide-open>
         <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
         <div class="toolbar">

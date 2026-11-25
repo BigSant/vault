@@ -201,7 +201,8 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
   const actionSelect = form?.querySelector('select[name=action]');
   if (!actionSelect || !actionSelect.querySelector('option[data-fields]')) return;
   const lacking = ' — needs fields this entry lacks';
-  const options = [...actionSelect.options];
+  // The empty "Choose an action" placeholder is not an action: it is never switched off or counted.
+  const options = [...actionSelect.options].filter(option => option.value);
   options.forEach(option => { option.dataset.text = option.textContent; });
   const submit = form.querySelector('button:not([type=button])');
   const note = document.createElement('p');
@@ -236,11 +237,19 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
 // opens or closes the bar themselves.
 const wide = matchMedia('(min-width: 901px)');
 const filterBars = document.querySelectorAll('details[data-wide-open]');
+// data-wide-static (the entry page's jump links): on wide screens the bar is always open and its summary is a plain
+// label, out of the tab order; on phones it is an ordinary closed drawer.
+const fixedBar = bar => {
+  if (!bar.hasAttribute('data-wide-static')) return;
+  const label = bar.querySelector('summary');
+  if (wide.matches) { bar.open = true; label?.setAttribute('tabindex', '-1'); } else label?.removeAttribute('tabindex');
+};
 filterBars.forEach(bar => {
   if (wide.matches) bar.open = true;
-  bar.querySelector('summary')?.addEventListener('click', () => { bar.dataset.toggled = '1'; });
+  fixedBar(bar);
+  bar.querySelector('summary')?.addEventListener('click', event => { if (wide.matches && bar.hasAttribute('data-wide-static')) event.preventDefault(); else bar.dataset.toggled = '1'; });
 });
-wide.addEventListener('change', () => filterBars.forEach(bar => { if (!bar.dataset.toggled) bar.open = wide.matches; }));
+wide.addEventListener('change', () => filterBars.forEach(bar => { if (!bar.dataset.toggled || bar.hasAttribute('data-wide-static')) bar.open = wide.matches; fixedBar(bar); }));
 // Header menus are <details>: only one stays open, and a click outside or Escape closes it.
 const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {
@@ -280,8 +289,15 @@ openTarget();
 // is read and seen first. Server names use dots: "field_key.0".
 const summary = document.getElementById('form-errors');
 if (summary) {
-  // The forms that post to the address that failed; several rows or cards may share it.
-  const sent = [...document.forms].filter(form => { try { return new URL(form.action).pathname === summary.dataset.form; } catch { return false; } });
+  // The forms that post to the address that failed; several rows or cards may share it ("Add an environment" in
+  // every project). data-sent holds the short non-secret values that were posted: a form whose hidden inputs say
+  // something else (another project_id) is not the one that was sent.
+  let values = {};
+  try { values = JSON.parse(summary.dataset.sent || '{}') || {}; } catch { values = {}; }
+  const hiddenMatch = form => [...form.elements].every(el => el.type !== 'hidden' || !el.name || el.name === '_token' || !(el.name in values) || values[el.name] === el.value);
+  const posted = [...document.forms].filter(form => { try { return new URL(form.action).pathname === summary.dataset.form; } catch { return false; } });
+  const matching = posted.filter(hiddenMatch);
+  const sent = matching.length ? matching : posted;
   // A control the person can reach: not hidden, not disabled, not inside a hidden block.
   const usable = el => el.type !== 'hidden' && !el.disabled && !el.closest('[hidden]');
   const findIn = (scope, key) => {
@@ -303,7 +319,8 @@ if (summary) {
     const score = new Set(items.map(item => item.dataset.field).filter(key => findIn(candidate, key))).size;
     if (score > best) { best = score; form = candidate; }
   });
-  form ??= sent.length === 1 ? sent[0] : null;
+  // No named field found (a message about the form as a whole): the one form left, or the one the hidden values picked.
+  form ??= sent.length === 1 || (matching.length && matching.length < posted.length) ? sent[0] : null;
   if (form) {
     // A form inside a collapsed editor is opened, so the summary and the field can be seen.
     for (let el = form.parentElement; el; el = el.parentElement) if (el.tagName === 'DETAILS' && !el.classList.contains('menu')) el.open = true;

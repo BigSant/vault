@@ -18,6 +18,8 @@
         ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
         : 0);
 @endphp
+{{-- Everything on this page is capped at the card width (.entry-page), boards included: one right edge. --}}
+<div class="entry-page">
 <a class="back" href="/?workspace={{ $entry->workspace_id }}">← Entries</a>
 <div class="head">
     <div>
@@ -32,21 +34,27 @@
 @if($isEditor)
 {{-- Jump links right under the title: the sections in page order, each named like its heading. Links, not actions.
      When requests wait for this owner, they are the first link and the first section. --}}
-<nav class="subnav" aria-label="Entry sections">
-    <span class="subnav-label" aria-hidden="true">On this page</span>
-    @if($hasWaiting)<a href="#waiting">Requests waiting for you</a>@endif
-    <a href="#values">Secret values</a><a href="#versions">Versions</a>
-    @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
-    @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
+<nav class="subnav" aria-label="On this page">
+    {{-- A <details>: app.js keeps it open on wide screens (one line of links); on phones it is a closed drawer. --}}
+    <details class="jump" data-wide-open data-wide-static>
+        <summary>On this page</summary>
+        <div class="jump-links">
+            @if($hasWaiting)<a href="#waiting">Requests waiting for you</a>@endif
+            <a href="#details">Details</a><a href="#values">Secret values</a><a href="#versions">Versions</a>
+            @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
+            @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
+        </div>
+    </details>
 </nav>
 @endif
 {{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading. --}}
 @if($hasWaiting)
 <div class="waiting-first">
-@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true])
+@include('operations', ['mode' => 'waiting', 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id])
 </div>
 @endif
 
+<h2 id="details">Details</h2>
 <table class="facts">
     <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
     <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
@@ -197,4 +205,5 @@
     @endif
 </div>
 @endif
+</div>
 @endsection

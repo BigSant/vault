@@ -67,10 +67,13 @@
     $formErrors = array_filter((array) session('form_errors'), 'is_array');
     $page = $__env->yieldContent('content');
     $headEnd = $formErrors ? \App\Providers\AppServiceProvider::headEnd($page) : 0;
+    // The short non-secret values that were sent (ids such as project_id): app.js uses them to tell apart forms that
+    // post to the same address. Old input never holds secret fields (bootstrap/app.php drops them).
+    $sent = $formErrors ? array_filter((array) session()->getOldInput(), fn ($value, $key) => is_string($value) && strlen($value) <= 100 && $key !== '_token', ARRAY_FILTER_USE_BOTH) : [];
 @endphp
 {!! substr($page, 0, $headEnd) !!}
 @if($formErrors)
-<div class="callout bad error-summary" id="form-errors" role="alert" tabindex="-1" data-form="{{ session('error_form') }}">
+<div class="callout bad error-summary" id="form-errors" role="alert" tabindex="-1" data-form="{{ session('error_form') }}" data-sent="{{ json_encode((object) $sent) }}">
     <p><b>Check the form.</b> Nothing was saved.@if(session('error_unfilled')) Secret fields are not refilled.@endif</p>
     <ul>@foreach($formErrors as $field => $messages)@foreach(array_slice($messages, 0, 2) as $message)<li data-field="{{ $field }}">{{ $message }}</li>@endforeach @endforeach</ul>
 </div>

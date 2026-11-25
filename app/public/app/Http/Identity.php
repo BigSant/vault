@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use OTPHP\TOTP;
 
 final class Identity
@@ -151,7 +152,10 @@ final class Identity
         $d = $r->validate(['current_password' => 'required|string|max:200', 'password' => 'required|string|min:14|max:200|confirmed']);
         DB::transaction(function () use ($r, $d) {
             $user = User::where('id', $r->user()->id)->lockForUpdate()->firstOrFail();
-            abort_unless(Hash::check($d['current_password'], $user->password), 401);
+            // Back to the form with the message on the field, like any other validation error.
+            if (! Hash::check($d['current_password'], $user->password)) {
+                throw ValidationException::withMessages(['current_password' => 'Current password is not right.']);
+            }
             DB::table('users')->where('id', $r->user()->id)->update(['password' => Hash::make($d['password'])]);
             DB::table('sessions')->where('user_id', $r->user()->id)->delete();
             $this->access->audit(null, 'user.password', $r->user()->id);

@@ -314,6 +314,15 @@ final class ShellTest extends TestCase
             ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['New password must be at least 14 characters.']);
         $this->post('/password', ['current_password' => self::PASSWORD, 'password' => str_repeat('a', 14), 'password_confirmation' => str_repeat('b', 14)])->assertStatus(303)
             ->assertSessionHas('form_errors', fn ($errors) => $errors['password'] === ['New password and its repeat do not match.']);
+        // A wrong current password comes back to the form like any other error; the password is not changed.
+        $this->post('/password', ['current_password' => 'wrong-password', 'password' => str_repeat('a', 14), 'password_confirmation' => str_repeat('a', 14)])->assertStatus(303)
+            ->assertSessionHas('form_errors', ['current_password' => ['Current password is not right.']]);
+        $this->assertTrue(Hash::check(self::PASSWORD, User::where('email', 'owner@example.test')->value('password')));
+        $this->assertAuthenticated();
+        // The summary carries the short non-secret values that were sent, so app.js can find the one form among
+        // several that post to the same address. Passwords are never among them.
+        $this->post($this->base.'/environments', ['project_id' => 'p-123', 'name' => '', 'back' => 'structure', 'confirm_password' => 'never-shown'])->assertStatus(303);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('data-sent="{&quot;project_id&quot;:&quot;p-123&quot;', false)->assertDontSee('never-shown');
         $this->post($this->base.'/operations/'.Str::uuid().'/mfa', ['code' => 'abc'])->assertStatus(303)
             ->assertSessionHas('form_errors', fn ($errors) => $errors['code'] === ['Site MFA code must be 6 to 8 digits.']);
         // Every rule the forms use has its own sentence: the label first, never "The … field".
@@ -352,7 +361,7 @@ final class ShellTest extends TestCase
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'machine:'.$machine, 'event' => $event, 'subject' => $subject, 'outcome' => $outcome, 'created_at' => now()]);
         }
         $this->get($this->base.'/audit')->assertOk()
-            ->assertSee('<span class="event-name">Agent requested <span class="name">shop.admin-login</span></span> <small class="nobreak event-code">request.request</small>', false)
+            ->assertSee('<span class="event-name">Agent requested <span class="name">shop.admin-login</span></span> <small class="nobreak event-code">request.open</small>', false)
             ->assertSee('<span class="event-name">Agent request</span>', false)->assertSee('<span class="event-name">Rotated entry values</span>', false)
             ->assertSee('<span class="chip bad">denied</span>', false)->assertDontSee('<code class="nobreak event-code">', false)->assertDontSee('Agent requested an action');
     }

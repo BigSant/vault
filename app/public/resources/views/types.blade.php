@@ -36,7 +36,7 @@
 <p class="note">A type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 
 @if($types->isEmpty())
-    <div class="empty"><b>No entry types yet</b>An entry needs a type. <a href="#add-type">Add the first type</a></div>
+    <div class="empty capped"><b>No entry types yet</b>An entry needs a type. <a href="#add-type">Add the first type</a></div>
 @else
 @foreach($types as $type)
     @php
@@ -67,13 +67,13 @@
             }
         }
     @endphp
-    <details class="fold" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
+    <details class="fold type-fold capped" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
         <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }}</span> <span class="fold-meta">{{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act">Edit<span class="sr-only"> type {{ $type->name }}</span></span></summary>
         <div class="inner">
             <form method="post" action="{{ $typePath }}">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
                 <label><span>Type name <small>key <code>{{ $type->key }}</code></small></span><input name="name" value="{{ $oldTypeEdit && is_string(old('name')) ? old('name') : $type->name }}" required maxlength="80"></label>
-                <table class="list edit">
+                <div class="scroll"><table class="list edit">
                     <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th><th scope="col">Key</th><th scope="col">Remove</th></tr></thead>
                     <tbody id="rows-{{ $type->key }}">
                     @foreach($editRows as $f)
@@ -91,7 +91,7 @@
                             <td data-label="Kind">{!! $kindSelect('text', 'the new field') !!}</td><td data-label="Required">{!! $required(false, 'the new field') !!}</td><td data-label=""></td><td data-label=""></td>
                         </tr>
                     </tbody>
-                </table>
+                </table></div>
                 @include('confirm-inline', ['verb' => 'save this type'])
                 <div class="form-foot"><p class="note">Leave the last row empty if you add no field.</p>
                     <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Field</button><button aria-label="Save type {{ $type->name }}">Save type</button></div></div>
@@ -102,7 +102,7 @@
         </div>
     </details>
 @endforeach
-<details class="more field-rules">
+<details class="more field-rules capped">
     <summary>Rules for changing fields</summary>
     <div class="inner">
         <ul class="note">

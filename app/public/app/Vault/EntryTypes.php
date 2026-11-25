@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 /** Workspace-defined entry types. Only field definitions live here; values stay in OpenBao. */
 final class EntryTypes
 {
-    public const KINDS = ['text' => 'Text', 'secret' => 'Secret (hidden while typing)', 'multiline' => 'Multi-line text'];
+    public const KINDS = ['text' => 'Text', 'secret' => 'Secret (masked)', 'multiline' => 'Multi-line text'];
 
     public const MAX_FIELDS = 20;
 

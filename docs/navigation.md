@@ -62,7 +62,7 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   (editor+), search and filters (project, environment, type, state), the board, pager. No workspace or project
   forms on this page; empty states link to Setup.
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
-  wait), facts, secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
+  wait), details (the facts table), secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
 - `/entries/new`, `/entries/new?entry=` — add / update form.
 - `/workspaces/{w}/import` — paste a JSON import (editor+).
@@ -145,7 +145,7 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 ## Additions to the ops design system
 
 Vault adds a few components not in `DESIGN.md`: `button.ok` (approve a request), `nav.subnav` (quiet in-page jump
-links on the entry page), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
+links labelled "On this page"; on the entry page they sit in a `details.jump` that is a closed drawer on phones), `nav.tabs` (area tabs), `details.menu` (header menus), `.chip.role` (neutral role
 label), `.confirm-inline` (password field inside a long form), the compact phone card for boards, `.card.solo`
 (a capped standalone card), `.confirm-step` (inline two-step confirmation that replaces `confirm()` for every
 `data-confirm` form) and `.field-error` (message under an invalid field), `.legend` (form section titles; sections inside a card are
@@ -155,6 +155,8 @@ Validation messages use the visible labels from `lang/en/validation.php` (`attri
 keyed by request path for labels that differ per form). Messages thrown by hand with
 `ValidationException::withMessages` must use the visible label themselves. Activity event codes get readable
 names in one mapping in `activity.blade.php`; the code stays as secondary text.
+
+The entry page wraps its content in `.entry-page`, which caps everything, boards included, at the card width.
 
 ## Known gaps
 
