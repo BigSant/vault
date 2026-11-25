@@ -27,7 +27,7 @@
      row off at its deadline and refreshes the regions. Every row carries data-request (its id) and data-state, so a
      refresh can say what changed ("Request expired"). Timestamp labels are <small class="k">; .keep marks the two
      that no column head replaces. A date and its time never break apart (.nobreak).
-     Columns: Agent · Action · Entry. Card (below 1180 px): "<agent> requests <action>", then "<entry> · <project> /
+     Columns: Agent · Action · Entry. Card (below 1180 px): "<agent> requests <action>" ("requested" in the history), then "<entry> · <project> /
      <environment>", then the short request id ("Request 1a2b3c4d") with the state at the right, then "Requested …",
      "Expires …" or "Finished …" each on a line of its own, and the controls last. The id belongs to the request's
      identity: it comes after what is asked for and before the decision controls at every width (in the table it
@@ -35,7 +35,8 @@
      otherwise the same can be told apart.
      Decisions never go to the confirm page while script runs: one shared password block (confirm-inline, id
      "confirm-decide") stands above the waiting board, outside the refreshed region so a typed password survives a
-     refresh; every decision form names it with data-confirm-from. --}}
+     refresh; every decision form names it with data-confirm-from. A decision pressed without the password is held:
+     the block then shows a button that names it (data-held-name: "Allow once: <action>, request <id>"). --}}
 @php
     $mode = $mode ?? (isset($historyOnly) ? 'history' : 'waiting');
     $isWaiting = fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time();
@@ -67,7 +68,7 @@
     <h2 id="{{ $id }}"@if($reload) data-refresh="waiting-title"@endif>{{ $title }}</h2>
     @if($reload)<p class="refresh-row"><a class="btn" href="{{ $reload }}" data-refresh-now>Refresh requests</a> <span class="note refresh-status" data-refresh-status data-now="{{ time() }}">Checked {{ gmdate('H:i') }} UTC</span></p>@endif
 </div>
-@include('confirm-inline', ['verb' => 'decide', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
+@include('confirm-inline', ['verb' => 'decide', 'ask' => 'Enter your current password, then choose a request action below.', 'shared' => 'confirm-decide', 'shownWith' => 'waiting', 'shownHidden' => $rows->isEmpty()])
 @if($reload)<div data-refresh="waiting" data-refresh-url="{{ $reload }}">@endif
 @endif
 @if($rows->isEmpty())
@@ -89,7 +90,7 @@
         @endphp
         <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-what="{{ $o->action }} on {{ $o->entry }} (request {{ $rid }})" data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
             <td class="who" data-label="Agent"><b class="nobreak">{{ $o->agent }}</b></td>
-            <td class="name action" data-label="Action"><small class="k">requests</small> <code>{{ $o->action }}</code><small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
+            <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{{ $o->action }}</code><small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small><span class="k">· </span>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
@@ -99,9 +100,9 @@
             @else
             <td class="decision" data-label="Decision">
                 @if($o->state === 'pending')
-                    <form class="controls" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/decision" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<button class="ok" name="decision" value="approve" aria-label="Allow once: {{ $what }}">Allow once</button><button class="stop" name="decision" value="deny" aria-label="Deny: {{ $what }}">Deny</button></form>
+                    <form class="controls" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/decision" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<button class="ok" name="decision" value="approve" aria-label="Allow once: {{ $what }}" data-held-name="Allow once: {{ $o->action }}, request {{ $rid }}">Allow once</button><button class="stop" name="decision" value="deny" aria-label="Deny: {{ $what }}" data-held-name="Deny: {{ $o->action }}, request {{ $rid }}">Deny</button></form>
                 @else
-                    <form class="inline mfa" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/mfa" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<label class="stack"><span>Site MFA code (6–8 digits)</span><input name="code" pattern="[0-9]{6,8}" inputmode="numeric" autocomplete="one-time-code" required maxlength="8" aria-label="Site MFA code (6–8 digits): {{ $what }}"></label><button class="ok" aria-label="Continue sign-in: {{ $what }}">Continue sign-in</button></form>
+                    <form class="inline mfa" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/mfa" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<label class="stack"><span>Site MFA code (6–8 digits)</span><input name="code" pattern="[0-9]{6,8}" inputmode="numeric" autocomplete="one-time-code" required maxlength="8" aria-label="Site MFA code (6–8 digits): {{ $what }}"></label><button class="ok" aria-label="Continue sign-in: {{ $what }}" data-held-name="Continue sign-in: {{ $o->action }}, request {{ $rid }}">Continue sign-in</button></form>
                 @endif
             </td>
             @endif

@@ -30,6 +30,6 @@
         <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="e.g. deploy-bot" required maxlength="100"></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 7) }}" required></label>
         @include('confirm-inline', ['verb' => 'add this agent'])
-        <div class="form-foot"><p class="note">Up to 30 days. It can do nothing until you grant actions.</p><button class="go">Add agent</button></div>
+        <div class="form-foot"><p class="note">Up to 30 days. The agent can do nothing until you add a grant.</p><button class="go">Add agent</button></div>
     </form>
 @endsection

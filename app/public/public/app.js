@@ -107,7 +107,7 @@ const twoStep = (question, armed = armedText) => {
 };
 // Generate fills a secret field with a random value. A field that already holds a value is only replaced after a
 // second press ("Replace value?").
-document.querySelectorAll('[data-generate]').forEach(button => {
+const wireGenerate = (root = document) => root.querySelectorAll('[data-generate]').forEach(button => {
   const step = twoStep('Replace value?', () => 'Confirm replace');
   const input = document.getElementById(button.dataset.generate);
   if (!input) return;
@@ -126,9 +126,10 @@ document.querySelectorAll('[data-generate]').forEach(button => {
   input.addEventListener('input', event => { if (event.isTrusted) step.disarm(false); });
   addEventListener('pageshow', event => { if (event.persisted) step.disarm(false); });
 });
+wireGenerate();
 // Every secret field (a password input in .with-button) gets a Reveal/Hide button right after it, before Generate
 // when the field has one, so a generated or typed value can be checked before saving.
-document.querySelectorAll('.with-button > input[type=password]').forEach(input => {
+const wireReveal = (root = document) => root.querySelectorAll('.with-button > input[type=password]').forEach(input => {
   const name = fieldName(input);
   const show = document.createElement('button');
   show.type = 'button';
@@ -150,6 +151,67 @@ document.querySelectorAll('.with-button > input[type=password]').forEach(input =
   // A shown value never stays on screen through a submit or a page change.
   input.form?.addEventListener('submit', mask);
   addEventListener('pagehide', mask);
+});
+wireReveal();
+// "Reload types" on the Add an entry form. Entry types are edited in Setup, which the form's link opens in a new
+// tab; back here the button fetches this page again and swaps only the Type options and the type field rows
+// (#type-fields). Nothing else is touched, so the draft stays, and a value typed into a type field is put back
+// into the field with the same id (the same type and key) or, for the chosen type, the same name. Values never
+// leave this page: they are copied from the old fields to the new ones.
+document.querySelectorAll('[data-reload-types]').forEach(button => {
+  const row = button.closest('[data-reload-types-row]');
+  const status = row?.querySelector('[data-reload-status]');
+  const rows = document.getElementById('type-fields');
+  if (!type || !type.matches('select') || !rows) return;
+  if (row) row.hidden = false;
+  const tell = text => { if (status) status.textContent = text; say(text); };
+  let busy = false;
+  button.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const response = await fetch(location.href, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      if (response.redirected || !response.ok) throw new Error('reload failed');
+      const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const nextType = fresh.getElementById('entry-type');
+      const nextRows = fresh.getElementById('type-fields');
+      if (!nextType?.matches('select') || !nextRows) throw new Error('reload failed');
+      const controls = scope => [...scope.querySelectorAll('input, textarea')].filter(el => el.name && el.type !== 'hidden');
+      const byId = new Map();
+      const byName = new Map();
+      controls(rows).forEach(el => {
+        const kept = el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
+        if (kept === '') return;
+        if (el.id) byId.set(el.id, kept);
+        if (!el.disabled && el.type !== 'checkbox') byName.set(el.name, kept);
+      });
+      const chosen = type.value;
+      const before = [...type.options].filter(option => option.value).length;
+      type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
+      type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
+      rows.replaceChildren(...[...nextRows.childNodes].map(node => document.importNode(node, true)));
+      let lost = 0;
+      const placed = new Set();
+      controls(rows).forEach(el => {
+        const mine = (el.closest('[data-types]')?.dataset.types || '').split(',').includes(type.value);
+        const kept = el.id && byId.has(el.id) ? byId.get(el.id) : mine && el.type !== 'checkbox' ? byName.get(el.name) : undefined;
+        if (kept === undefined) return;
+        if (el.type === 'checkbox') el.checked = true; else el.value = kept;
+        placed.add(el.name);
+      });
+      byName.forEach((value, name) => { if (!placed.has(name)) lost++; });
+      wireGenerate(rows);
+      wireReveal(rows);
+      fields();
+      const after = [...type.options].filter(option => option.value).length;
+      const count = after === 1 ? '1 type' : after + ' types';
+      tell('Types reloaded: ' + count + (after > before ? ', ' + (after - before) + ' new' : '') + '. '
+        + (chosen && !type.value ? 'The type you chose is gone: choose a type. ' : '')
+        + (lost ? (lost === 1 ? '1 typed value belonged to a field that no longer exists.' : lost + ' typed values belonged to fields that no longer exist.') : 'What you typed was kept.'));
+    } catch {
+      tell('Could not reload the types. Nothing was changed. Check the connection and try again.');
+    } finally { busy = false; }
+  });
 });
 // "+ Row" / "+ Field": add another empty row to an editable table. The clone is a fresh row: its controls go back to
 // their defaults, every indexed name ("field_required[3]") gets the next free index so a checkbox stays tied to its
@@ -189,7 +251,10 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // A block inside a form guards that form. A shared block (.shared: Reveal on the entry page, the decisions of the
 // waiting requests) stands outside its forms; they name it with data-confirm-from, and its password is copied into
 // the form that is sent. A submit that needs the password and has none is held: the focus moves to the field, and
-// Enter there sends the held form (or the block's default form, data-confirm-default).
+// the block shows a button that names the held action ([data-held]: "Allow once: shop.admin-login, request
+// 1a2b3c4d", from the pressed button's data-held-name). That button, or Enter in the field, sends the held form
+// (Enter without one sends the block's default form, data-confirm-default). A password entered first where there
+// is neither gets the visible line "Now choose an action below." (.pending), which is also said.
 // A page states its confirmation once. A shared block that names an earlier one (data-primary: Reveal on the entry
 // page names the waiting requests' block) is deferred while that one is on screen: it shows nothing while the
 // confirmation is valid and, once it has expired, a line pointing to the one password field, which then serves this
@@ -202,6 +267,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   const skew = box.dataset.now ? Number(box.dataset.now) * 1000 - Date.now() : 0;
   const until = Number(box.dataset.confirmedUntil) * 1000;
   const verb = box.dataset.verb || 'continue';
+  const ask = box.dataset.ask || 'Your password confirmation has expired. Enter your current password to ' + verb + '.';
   // With script the shared field works, so the line asks for the password instead of pointing at the confirm page.
   box.querySelectorAll('[data-script-text]').forEach(el => { el.textContent = el.dataset.scriptText; });
   const primary = shared && box.dataset.primary ? document.getElementById(box.dataset.primary) : null;
@@ -223,7 +289,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
       el.hidden = when === 'deferred' ? !(deferred && expired) : deferred || (when === 'expired') !== expired;
     });
     // Said once, by the block that shows the field.
-    if (wasExpired === false && expired && !deferred && !box.closest('[hidden]')) say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
+    if (wasExpired === false && expired && !deferred && !box.closest('[hidden]')) say(ask);
     wasExpired = expired;
     return expired;
   };
@@ -246,7 +312,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
       if (!check() || input.value) return;
       event.preventDefault();
       input.focus();
-      say('Your password confirmation has expired. Enter your current password to ' + verb + '.');
+      say(ask);
     });
     return;
   }
@@ -262,24 +328,56 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     }
     return state.held;
   };
+  const heldRow = box.querySelector('[data-held-row]');
+  const heldButton = box.querySelector('[data-held]');
+  const line = text => { if (hint) { hint.textContent = text; hint.hidden = !text; } };
+  const showHeld = name => {
+    if (!heldRow || !heldButton) return;
+    heldRow.hidden = !name;
+    if (!name) { heldButton.replaceChildren(); return; }
+    // "Allow once: " stays a button word; what follows is data and keeps its case.
+    const cut = name.indexOf(': ');
+    const text = document.createElement('span');
+    const data = document.createElement('span');
+    data.className = 'name';
+    data.textContent = cut < 0 ? '' : name.slice(cut + 2);
+    text.append(cut < 0 ? name : name.slice(0, cut + 2), ...(cut < 0 ? [] : [data]));
+    heldButton.replaceChildren(text);
+  };
   state.hold = (form, button) => {
-    const name = button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action';
+    const name = button?.dataset.heldName || button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action';
     state.held = { form, button, name, action: form.getAttribute('action'), value: button?.value || '', version: form.elements.version?.value };
-    if (hint) { hint.textContent = 'Then press Enter to go on with: ' + name + '.'; hint.hidden = false; }
+    line('');
+    showHeld(name);
     box.scrollIntoView({ block: 'center' });
     input.focus({ preventScroll: true });
-    say('Your password confirmation has expired. Enter your current password, then press Enter to go on with: ' + name + '.');
+    say('Your password confirmation has expired. Enter your current password, then press: ' + name + '.');
   };
-  state.release = () => { state.held = null; if (hint) { hint.hidden = true; hint.textContent = ''; } };
+  state.release = () => { state.held = null; showHeld(''); line(''); };
+  const send = () => {
+    const held = heldForm();
+    const form = held?.form || document.querySelector('form[data-confirm-from="' + box.id + '"][data-confirm-default]');
+    if (!form) {
+      const gone = Boolean(heldRow && !heldRow.hidden);
+      state.release();
+      line(gone ? 'That action is no longer available. Choose an action below.' : 'Now choose an action below.');
+      say(gone ? 'That action is no longer available. Choose an action below.' : 'Password entered. Now choose an action below.');
+      return;
+    }
+    const button = held?.button || form.querySelector('button:not([type=button])');
+    if (button?.disabled) { state.release(); line('That action is no longer available. Choose an action below.'); say('That action is no longer available. Choose an action below.'); return; }
+    form.requestSubmit(button || undefined);
+  };
   input.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || !input.value) return;
     event.preventDefault();
-    const held = heldForm();
-    const form = held?.form || document.querySelector('form[data-confirm-from="' + box.id + '"][data-confirm-default]');
-    if (!form) { state.release(); say('Password entered. Now press the action you want.'); return; }
-    const button = held?.button || form.querySelector('button:not([type=button])');
-    if (button?.disabled) { state.release(); say('That action is no longer available.'); return; }
-    form.requestSubmit(button || undefined);
+    send();
+  });
+  // The line belongs to the password it answered: it goes when the field is emptied.
+  input.addEventListener('input', () => { if (!input.value && !state.held) line(''); });
+  heldButton?.addEventListener('click', () => {
+    if (!input.value) { input.focus(); say('Enter your current password first.'); return; }
+    send();
   });
   confirmBoxes.set(box.id, state);
 });

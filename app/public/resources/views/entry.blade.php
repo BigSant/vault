@@ -209,9 +209,11 @@
 <p class="note">Read-only summary. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
 @endif
 @include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">All requests for this entry →</a></p>
 <h2 id="activity">Activity</h2>
 <p class="note">The last 30 events for this entry and its requests.</p>
 @include('activity', ['events' => $events, 'hideSubject' => $entry->id])
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}">All activity for this entry →</a></p>
 @endif
 
 @if($showLifecycle)

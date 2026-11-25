@@ -30,6 +30,12 @@ main>p,.note,.callout p{max-width:80ch}
 /* Header */
 .top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 28px;border-bottom:1px solid var(--rule);
 background:linear-gradient(180deg,var(--top-1),var(--top-2))}
+/* One right edge: on desktop the header's contents start and end where main's do. main is at most 1760 px wide
+   and centred, and what sits in it ends at --wide; the paddings below repeat that sum, so the account menu ends
+   where the boards end at every width (the bar itself stays full width). */
+@media (min-width:901px){
+.top{--top-left:max(28px,calc((100% - 1760px)/2 + 28px));padding-left:var(--top-left);padding-right:max(28px,calc(100% - var(--wide) - var(--top-left)))}
+}
 .mark{font:800 17px/1.2 var(--mono);letter-spacing:.08em;color:var(--amber)}
 .mark:hover{text-decoration:none}
 .mark small{display:block;letter-spacing:.04em;font-size:12px;color:var(--dim);font-weight:400;max-width:22em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -238,8 +244,6 @@ border:1px solid var(--edge);border-radius:3px;padding:7px 10px;min-height:36px;
 input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
 input:not([type=checkbox]):not([type=radio]):focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber)}
 input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
-/* A date field is as tall as a select beside it, so the labels of a filter bar share one line. */
-input[type=date]{color-scheme:dark;height:36px}
 textarea{min-height:7em;resize:vertical;font-size:13px}
 input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px;height:16px;margin:2px 0 0;flex:none}
 /* Form foot: the note on the left (above on phones), submit buttons at the right at their natural width. */
@@ -377,7 +381,7 @@ main.login label{grid-template-columns:10.5em minmax(0,1fr)}
 .menu-list a{min-height:44px}.tabs a{min-height:40px}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
-input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}input[type=date]{height:40px}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}
 .section-head .refresh-row{flex-direction:row;flex:1 1 100%}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
@@ -548,7 +552,10 @@ details:not([open])>summary .when-open,details[open]>summary .when-closed{displa
 .confirm-inline .note{margin:0;font-size:12px;color:var(--faint)}
 .confirm-inline.is-needed{padding-top:14px;border-top:1px dashed var(--rule)}
 .confirm-inline.is-needed .note{margin:0 0 8px;font-size:13px;color:var(--dim)}
-.confirm-inline .pending{display:block;margin-top:4px;color:var(--ink)}
+.confirm-inline .pending{display:block;margin-top:4px;color:var(--ink);font-weight:600}
+/* The action that waits for the password, as a button under the field. Its name wraps; it is never cut. */
+.confirm-inline .held{display:flex;justify-content:flex-end;margin:8px 0 0}
+.confirm-inline .held button{max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}
 /* Deferred: another block earlier on the page holds the confirmation state and the one password field. This one
    shows nothing (.is-quiet) while the confirmation is valid, and a line pointing there when it has expired. */
 .confirm-inline.is-quiet{display:none}
@@ -587,6 +594,8 @@ label.stack+.field-error,label.check+.field-error{margin-left:0}
 /* A standalone card that is not a form (revealed values, the one-time token) keeps the form card width. */
 .card.solo{max-width:var(--card);margin-bottom:14px}
 .card.danger>.block-label:first-child{margin-bottom:10px}
+/* One-time token card: on phones the expiry is a line of its own under the agent's name. */
+@media (max-width:900px){.token-expiry{display:block}.token-expiry .sep{display:none}}
 /* Entry page: requests waiting for the owner sit right under the title. */
 .waiting-first>.section-head{margin-top:14px}
 /* Destructive actions confirm in place: app.js turns the button into "Confirm <verb>" with a Cancel beside it and
@@ -623,11 +632,13 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .board.activity .event-name{font-weight:600}
 .board.activity .event-code{font-size:12px;color:var(--dim)}
 @media (max-width:900px){
-/* Phone card: what happened, to what, then when, who and the outcome. The code is for screen readers only. */
-.board.activity td.event{order:0;flex-basis:100%}.board.activity td.subject{order:1;flex-basis:100%}
-/* One line: when, who, outcome. The actor takes what is left and wraps inside its own box, so the chip never
-   drops to a line of its own. */
-.board.activity td.when{order:2;flex:none}.board.activity td.actor{order:3;flex:1 1 0;min-width:5em}.board.activity td.outcome{order:4;flex:none;margin-left:auto}
+/* Phone card: what happened with its outcome at the right, then to what, then when and who. The code is for screen
+   readers only. The outcome is off the last line, so the actor has room there and an agent's chip stays on the
+   line of its name. */
+.board.activity td.event{order:0;flex:1 1 0;min-width:0}.board.activity td.outcome{order:1;flex:none;margin-left:auto}
+.board.activity td.subject{order:2;flex-basis:100%}
+.board.activity tr::before{content:"";order:2;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.activity td.when{order:3;flex:none}.board.activity td.actor{order:3;flex:1 1 0;min-width:5em}
 .board.activity td.subject.is-empty{display:none}
 .board.activity .event-code{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 }
@@ -671,6 +682,10 @@ white-space:normal;overflow-wrap:anywhere;text-align:right}
 .stat-link:hover span{text-decoration:underline}
 .stat-link.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
 .stat-link.has-due b{color:var(--amber)}
+/* Add an entry: "Reload types" with its status beside it (under it on phones). */
+.reload-types{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:0 0 12px}
+.reload-types button{flex:none}
+.reload-types .note{flex:1 1 16em;margin:0}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
@@ -686,6 +701,14 @@ form.action details.import-ref{background:var(--panel-2)}
 @media (max-width:900px){
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
+/* Entries stats: the two numbers that lead somewhere (active entries, rotation due) stay stats; production and
+   agent use follow as one small summary line, "3 production · 2 used by agents in 7 days". */
+.stats.entry-stats{display:block}
+.entry-stats>.stat:nth-child(-n+2){display:inline-block;width:calc(50% - 6px);vertical-align:top;margin-bottom:10px}
+.entry-stats>.stat:nth-child(n+3){display:inline;font-size:12px;color:var(--dim)}
+.entry-stats>.stat:nth-child(n+3) b{display:inline;margin-right:.5em;font:700 12px/1.5 var(--mono);color:var(--ink)}
+.entry-stats>.stat:nth-child(n+3) span{letter-spacing:0;text-transform:none}
+.entry-stats>.stat:nth-child(n+3):not(:last-child)::after{content:" \00B7";color:var(--faint)}
 .board.entries tr{column-gap:5px}
 .board.entries td.name{display:contents}
 .board.entries td.name>a{order:0}
@@ -789,16 +812,19 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.requests td.decision{order:5;flex-basis:100%}
 .board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
 .board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
-.board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
-/* Grants: agent and action, the entry, approval and state, then the end date with Revoke at the right. */
-.board.grants td.who{grid-area:1/1}
-.board.grants td.action{grid-area:1/2;justify-self:end}
-.board.grants td.entry{grid-area:2/1/3/3}
-.board.grants td.approval{grid-area:3/1}
-.board.grants td.state{grid-area:3/2;justify-self:end}
-.board.grants td.when{grid-area:4/1}
-.board.grants tr:has(td:last-child:empty) td.when{grid-column:1/-1}
-.board.grants td:last-child{grid-area:4/2;justify-self:end}
+/* Grants: agent and action, the entry, approval and state, then the end date with Revoke at the right. Every line
+   is a flex line of its own, so a long action code on the first line never decides how much room the date has
+   beside Revoke on the last: "Expires" and its date stay on one line. */
+.board.grants tr{align-items:center}
+.board.grants td.who{order:0;flex:1 1 auto}
+.board.grants td.action{order:0;flex:0 1 auto;margin-left:auto}
+.board.grants td.entry{order:1;flex-basis:100%}
+.board.grants td.approval{order:2;flex:1 1 auto}
+.board.grants td.state{order:2;flex:none;margin-left:auto}
+.board.grants tr::before{content:"";order:3;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.grants td.when{order:4;flex:1 1 0}
+.board.grants td:last-child{order:4;flex:none;margin-left:auto}
+.board.grants td:last-child .controls{margin-top:0}
 .board.grants td.entry small{display:inline}
 }
 

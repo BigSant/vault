@@ -10,7 +10,7 @@
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
 <h2>Agent added</h2>
 <div class="card solo" data-leave-guard="Token copied?">
-    <p><strong>{{ $name }}</strong> · Expires <span class="nobreak">{{ $expiresAt->format('Y-m-d H:i') }} UTC</span></p>
+    <p><strong>{{ $name }}</strong> <span class="token-expiry"><span class="sep" aria-hidden="true">· </span>Expires <span class="nobreak">{{ $expiresAt->format('Y-m-d H:i') }} UTC</span></span></p>
     <div class="callout warn"><p>Copy the token now. It is shown only once.</p></div>
     <div class="secret-row">
         <pre data-secret data-keep data-hidden-text="Hidden. If you did not copy the token, revoke this agent and add a new one." class="secret" id="agent-token">{{ $token }}</pre>

@@ -17,7 +17,7 @@
 </div>
 @else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
-    <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off" placeholder="{{ $example }}"></textarea></label>
+    <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off"></textarea></label>
     <details id="environment-ids" class="import-ref capped">
         <summary>Environment IDs</summary>
         <div class="inner">
@@ -77,8 +77,8 @@
 
 @if($example)
 <div class="import-example">
-    <div class="block-label">Example</div>
-    <pre class="cmd capped">{{ $example }}</pre>
+    <div class="block-label">Example <button type="button" data-copy="import-example-json" data-copy-name="example">Copy example</button></div>
+    <pre class="cmd capped" id="import-example-json">{{ $example }}</pre>
 </div>
 @endif
 @endsection

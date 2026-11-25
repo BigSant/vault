@@ -36,9 +36,9 @@
 @unless($archived)
 <div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
-    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true" aria-label="Clear rotation-due filter"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}</span></a>
-    <div class="stat"><b>{{ $prodCount }}</b><span>production</span></div>
-    <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents in 7 days</span></div>
+    <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? 'rotation due' : 'rotation due →' }}@if($dueOnly)<span class="sr-only"> — clear filter</span>@endif</span></a>
+    <div class="stat"><b>{{ $prodCount }}</b><span>in production</span></div>
+    <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents, 7 days</span></div>
 </div>
 @endunless
 
@@ -93,7 +93,7 @@
     </div>
 @else
 <div class="scroll"><table class="board compact-board entries">
-    <thead><tr><th scope="col">Entry</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated (UTC)</th><th scope="col">Last used (UTC)</th></tr></thead>
+    <thead><tr><th scope="col">Entry</th><th scope="col">Project</th><th scope="col">Environment</th><th scope="col">Type</th><th scope="col">Updated</th><th scope="col">Last used (UTC)</th></tr></thead>
     <tbody>
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
@@ -102,7 +102,7 @@
             <td class="proj" data-label="Project">{{ $e->project }}</td>
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>
-            <td class="when updated" data-label="Updated"><small class="k">Updated (UTC)</small> {{ substr($e->updated_at, 0, 10) }}</td>
+            <td class="when updated" data-label="Updated"><small class="k">Updated</small> {{ substr($e->updated_at, 0, 10) }}</td>
             <td class="when used{{ $e->last_used_at ? '' : ' is-empty' }}" data-label="Last used">@if($e->last_used_at)<small class="k">Last used (UTC)</small> {{ substr($e->last_used_at, 0, 16) }} @else — @endif</td>
         </tr>
     @endforeach

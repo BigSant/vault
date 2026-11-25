@@ -292,6 +292,28 @@ final class VaultTest extends TestCase
             && $events->first()->subject_label === 'Private name');
     }
 
+    public function test_activity_entry_filter_includes_related_subjects_and_combines_with_request_group(): void
+    {
+        $entry = $this->entry();
+        [, $token, $grant] = $this->machine($entry, true);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'filter-test'])->json('id');
+        $audit = app(\App\Vault\Access::class);
+        $audit->audit($this->workspace, 'grants.revoke', $grant);
+        $audit->audit($this->workspace, 'workspace.create', $this->workspace);
+
+        $url = '/workspaces/'.$this->workspace.'/audit?entry='.$entry;
+        $events = $this->get($url)->assertOk()->assertSeeText('Entry: Private name')->viewData('events');
+        $this->assertEqualsCanonicalizing([$entry, $grant, $op], $events->pluck('subject')->unique()->all());
+        $total = DB::table('audit')->where('workspace_id', $this->workspace)->count();
+        $this->get($url.'&group=request')->assertOk()->assertSeeText('Showing 1 of '.$total)->assertSeeText('request.open')
+            ->assertDontSeeText('entry.create')->assertDontSeeText('grant.revoke');
+
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Other']);
+        DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->get('/workspaces/'.$other.'/audit?entry='.$entry)->assertNotFound();
+    }
+
     public function test_activity_names_setup_users_requests_and_removed_subjects(): void
     {
         $entry = $this->entry();

@@ -223,6 +223,16 @@ final class ShellTest extends TestCase
         $page->assertSeeInOrder(['id="confirm-decide"', 'data-refresh="waiting"', 'Request '.$rid.'</small>', 'data-confirm-from="confirm-decide"',
             ', request '.$rid.'">Allow once</button>', ', request '.$rid.'">Deny</button>', 'Request ffffffff</small>', ', request ffffffff">Allow once</button>'], false);
         $this->assertSame(1, substr_count((string) $page, 'id="confirm-decide"'));
+        // A decision pressed without the password is held and named by a button in the password block; the block
+        // asks for the password in the words of this page.
+        $page->assertSee('data-script-text="Your password confirmation has expired. Enter your current password, then choose a request action below."', false)
+            ->assertSee('data-held-name="Allow once: test.http, request '.$rid.'">Allow once</button>', false)->assertSee('data-held-name="Deny: test.http, request '.$rid.'">Deny</button>', false)
+            ->assertSee('<p class="held" data-held-row hidden><button type="button" class="go" data-held></button></p>', false)->assertSee('<small class="k">requests</small>', false);
+        $this->view('operations', ['operations' => collect([(object) (['state' => 'succeeded'] + (array) $row)]), 'mode' => 'history', 'workspace' => $this->workspace])
+            ->assertSee('<small class="k">requested</small>', false)->assertDontSee('<small class="k">requests</small>', false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("button?.dataset.heldName || button?.getAttribute('aria-label')", $script);
+        $this->assertStringContainsString("'Now choose an action below.'", $script);
         // An expired confirmation with the password in the same POST decides at once: no confirm page.
         $this->post($this->base.'/operations/'.$id.'/decision', ['decision' => 'deny', 'confirm_password' => self::PASSWORD])->assertRedirect();
         $this->assertSame('revoked', DB::table('operations')->where('id', $id)->value('state'));
@@ -553,7 +563,7 @@ final class ShellTest extends TestCase
         $deferred = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => true]);
         $deferred->assertSee('class="confirm-inline shared is-deferred is-quiet" id="confirm-reveal"  data-primary="confirm-decide"', false)
             ->assertSee('<span data-when="valid"  hidden >Confirmed until', false)
-            ->assertSee('<a href="#confirm-decide-password" data-confirm-goto="confirm-decide">', false);
+            ->assertSee('<a class="more-link" href="#confirm-decide-password" data-confirm-goto="confirm-decide">Go to the password field</a> above the waiting requests', false);
         // Nothing waits: the Reveal block is the one that says it.
         $alone = $this->view('confirm-inline', ['confirmedUntil' => time() + 200, 'verb' => 'reveal', 'shared' => 'confirm-reveal', 'primary' => 'confirm-decide', 'primaryShown' => false]);
         $alone->assertSee('class="confirm-inline shared" id="confirm-reveal"', false)->assertSee('<span data-when="valid" >Confirmed until', false);
@@ -608,5 +618,38 @@ final class ShellTest extends TestCase
     {
         $this->signIn('owner', time() - 301);
         $this->post('/confirm', ['current_password' => self::PASSWORD, 'return' => $return])->assertRedirect('/');
+    }
+
+    public function test_entry_form_keeps_the_draft_through_a_setup_detour_and_takes_dates_as_iso_text(): void
+    {
+        $this->signIn('owner');
+        $project = (string) Str::uuid();
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
+        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
+        $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
+        // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
+        $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types (opens in a new tab)</a>', false)
+            ->assertSee('<p class="reload-types" data-reload-types-row hidden><button type="button" data-reload-types>Reload types</button>', false)
+            ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
+            ->assertSee('Agents refer to this entry by its alias')
+            ->assertSee('<input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false);
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("document.querySelectorAll('[data-reload-types]')", $script);
+        $this->assertStringContainsString('rows.replaceChildren(', $script);
+        $this->get($this->base.'/agents')->assertOk()->assertSee('The agent can do nothing until you add a grant.');
+    }
+
+    public function test_header_and_page_share_one_right_edge_and_phone_cards_keep_their_lines(): void
+    {
+        $css = (string) file_get_contents(public_path('app.css'));
+        // The header's contents end at --wide like main's; the bar stays full width.
+        $this->assertStringContainsString('.top{--top-left:max(28px,calc((100% - 1760px)/2 + 28px));padding-left:var(--top-left);padding-right:max(28px,calc(100% - var(--wide) - var(--top-left)))}', $css);
+        // Grants cards are flex lines, so the action code never sizes the Revoke column.
+        $this->assertStringNotContainsString('.board.grants tr{display:grid', $css);
+        // Entries on phone: two stats, then production and agent use as one summary line.
+        $this->assertStringContainsString('.entry-stats>.stat:nth-child(n+3) b{display:inline;', $css);
+        $this->assertStringNotContainsString('input[type=date]', $css);
+        $this->view('token', ['name' => 'deploy-bot', 'id' => 'm1', 'token' => 'synthetic-token', 'expiresAt' => now()->addDays(7), 'space' => (object) ['id' => $this->workspace, 'role' => 'owner']])
+            ->assertSee('<span class="token-expiry"><span class="sep" aria-hidden="true">· </span>Expires <span class="nobreak">', false);
     }
 }

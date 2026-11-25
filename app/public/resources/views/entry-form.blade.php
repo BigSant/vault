@@ -18,7 +18,7 @@
     <fieldset>
         <legend>Details</legend>
         <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
-        <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin"></label>
+        <label><span>Agent alias <small>Agents refer to this entry by its alias</small></span><input name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin"></label>
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
@@ -46,11 +46,14 @@
                 <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>
-            <p class="note">Missing a type or a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>
+            {{-- The detour to Setup never costs the draft: the link opens a new tab, and "Reload types" (shown by app.js)
+                 fetches this page again and swaps only the Type options and the type field rows; what was typed stays. --}}
+            <p class="note">Missing a type or a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types (opens in a new tab)</a></p>
+            <p class="reload-types" data-reload-types-row hidden><button type="button" data-reload-types>Reload types</button> <span class="note" data-reload-status>After saving a type in the other tab, reload the types here. What you typed stays.</span></p>
         @endif
     </fieldset>
 
-    <fieldset>
+    <fieldset id="type-fields">
         <legend>Secret values</legend>
         @if($entry)<p class="note">Leave a secret value blank to keep its current value.</p>@endif
         @unless($entry)<p class="note" data-types="" @if($initialType !== null) hidden @endif>Choose a type above to see its fields.</p>@endunless
@@ -84,7 +87,7 @@
     <fieldset>
         <legend>Tags and rotation</legend>
         <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="billing, admin"></label>
-        <label><span>Rotation reminder <small>UTC</small></span><input type="date" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
+        <label><span>Rotation reminder <small>UTC, YYYY-MM-DD</small></span><input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
     </fieldset>
     @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">

@@ -66,18 +66,30 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 - The header data comes from a view composer (`AppServiceProvider`): `$navSpaces`, `$navRole` and `$navWaiting`,
   derived from the `$space` each page passes. A workspace page that does not pass `$space` shows only Entries.
 - **Account menu** (`<details>` under the user's name): Account → `GET /account`, Sign out (POST `/logout`).
+- **One right edge.** On desktop the header's contents start and end where the page's do: the bar is full width,
+  its contents are capped at `--wide` and left-aligned like `main`, so the account menu ends where the boards end
+  (checked at 1280 and 1920).
 
 ## Areas
 
 ### Entries (all roles)
 
 - `/` — the entry list for the current workspace: header with `+ Add an entry` (the one `go`) and `Import`
-  (editor+), search and filters (project, environment, type, state), the board, pager. No workspace or project
-  forms on this page; empty states link to Setup.
+  (editor+), the stats, search and filters (project, environment, type, state), the board, pager. No workspace or
+  project forms on this page; empty states link to Setup.
+  **Stats (decided, final):** desktop shows all four as stats (active entries, rotation due →, production, used by
+  agents in 7 days). On phone only the two actionable numbers stay stats (active entries, rotation due →); production
+  and agent use follow as one small summary line ("3 production · 2 used by agents in 7 days"). Reviewers disagreed
+  both ways; do not reopen it.
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table), secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
-- `/entries/new`, `/entries/new?entry=` — add / update form.
+  Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
+  ("All requests for this entry →", "All activity for this entry →").
+- `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
+  "Edit entry types (opens in a new tab)" opens Setup beside the form, and "Reload types" (script) fetches the
+  form again and swaps only the Type options and the type field rows; typed values stay in the fields that still
+  exist.
 - `/workspaces/{w}/import` — paste a JSON import (editor+).
 
 ### Agents (owner)
@@ -160,7 +172,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    (current and per version) and the waiting requests' Allow once / Deny / Continue sign-in use one shared block
    each (`'shared' => 'confirm-reveal'` in the Secret values card, `'confirm-decide'` above the waiting board);
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
-   submit without the password is held, the focus moves to the field, and Enter there sends it. Without script
+   submit without the password is held and stays visible: the focus moves to the field and a button under it names
+   the held action ("Allow once: shop.admin-login, request 1a2b3c4d"); that button, or Enter in the field, sends
+   it. A password entered first gets the visible line "Now choose an action below." The waiting requests' block
+   asks "Enter your current password, then choose a request action below." Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
    requests, the block above them carries "Confirmed until …" and, once expired, the page's one password field;
    the Reveal block (`'primary' => 'confirm-decide'`) then shows nothing while valid and a pointer to that field
@@ -176,7 +191,7 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    reads "asks every time" or "runs without asking". Requests and Grants need the whole `--wide` for their
    columns, so they are cards below a 1180 px window (1100 px plus page padding and a scrollbar): a row action is
    never behind a sideways scroll. Every other board switches at 900 px. A request card reads: agent "requests"
-   action; entry · project / environment; "Request 1a2b3c4d" with the state at the right; the times; the controls.
+   action ("requested" in the history, where the row is finished); entry · project / environment; "Request 1a2b3c4d" with the state at the right; the times; the controls.
    On phone everything pressed is at least 40 px high; a link that shares its line with text (a link in a card,
    `.more-link` after a note) gets that height from padding, not from a taller line.
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished or inactive) and `is-wait` (waiting
@@ -203,7 +218,10 @@ Validation messages use the visible labels from `lang/en/validation.php` (`attri
 keyed by request path for labels that differ per form). Messages thrown by hand with
 `ValidationException::withMessages` must use the visible label themselves. Activity event codes get readable
 names in one mapping in `activity.blade.php`; the code stays as secondary text (visually hidden on phones, where
-the card leads with the readable name and the subject). Date fields carry "UTC" only, no format hint.
+the card leads with the readable name and its outcome, then the subject, then when and who). Date fields are text
+fields in ISO form, never the browser's date picker (its display format follows the device, not the data):
+`type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"`, with "UTC, YYYY-MM-DD"
+in the label; the server validates the date.
 
 
 ## Known gaps

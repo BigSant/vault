@@ -265,10 +265,7 @@ final class Workspace
             $operations = $waiting->concat($finished);
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
                 ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get()->each(fn ($grant) => $this->grantStatus($grant));
-            $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
-                $query->where('subject', $id)->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
-                    ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
-            })->orderByDesc('created_at')->orderByDesc('id')->limit(30)->get();
+            $events = $this->entryEvents(DB::table('audit')->where('workspace_id', $space->id), $id)->orderByDesc('created_at')->orderByDesc('id')->limit(30)->get();
             $this->resolveEvents($space->id, $events);
         }
 
@@ -679,6 +676,15 @@ final class Workspace
         }
     }
 
+    private function entryEvents(Builder $query, string $id): Builder
+    {
+        return $query->where(function ($subjects) use ($id) {
+            $subjects->where('subject', $id)
+                ->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
+                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
+        });
+    }
+
     public function audit(Request $r, string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
@@ -688,9 +694,17 @@ final class Workspace
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
             'request' => ['operation'], 'member' => ['member', 'owner'], 'session' => ['session'], 'setup' => ['workspace', 'project', 'environment', 'type']];
-        $filters = $r->validate(['group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150',
+        $filters = $r->validate(['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150',
             'outcome' => 'nullable|in:ok,denied,failed', 'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d']);
         $total = array_filter($filters) ? (clone $query)->count() : null;
+        $entry = null;
+        if ($id = $filters['entry'] ?? null) {
+            $entry = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+                ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+                ->where('entries.id', $id)->first(['entries.id', 'entries.name']);
+            abort_unless($entry, 404);
+            $this->entryEvents($query, $id);
+        }
         if ($group = $filters['group'] ?? null) {
             $query->where(function ($q) use ($groups, $group) {
                 foreach ($groups[$group] as $prefix) {
@@ -713,6 +727,6 @@ final class Workspace
         $events = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(50)->withQueryString();
         $this->resolveEvents($workspace, $events->getCollection(), $names);
 
-        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total'));
+        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry'));
     }
 }
