@@ -5,6 +5,8 @@ namespace App\Vault;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 
 final class Access
 {
@@ -37,11 +39,44 @@ final class Access
         return $row;
     }
 
+    /** How long a password confirmation allows sensitive actions, in seconds. */
+    public const CONFIRM_SECONDS = 300;
+
+    /** Password checks per user and minute, shared by every form that carries `confirm_password`. */
+    private const CONFIRM_ATTEMPTS = 10;
+
+    /**
+     * Lets a sensitive request through only with a fresh password confirmation.
+     * A stale session may confirm in the same POST with `confirm_password`; a correct one refreshes the confirmation.
+     */
     public function recent(Request $r): void
     {
-        if (time() - (int) $r->session()->get('confirmed_at', 0) >= 300) {
+        if (self::confirmedUntil($r) !== null) {
+            return;
+        }
+        // Body only: a password must never travel in a query string.
+        $password = $r->isMethod('POST') ? $r->request->get('confirm_password') : null;
+        if (! is_string($password) || $password === '') {
             throw new ConfirmationRequired;
         }
+        $key = 'confirm-password:'.$r->user()->id;
+        abort_if(RateLimiter::tooManyAttempts($key, self::CONFIRM_ATTEMPTS), 429);
+        RateLimiter::hit($key, 60);
+        if (strlen($password) > 200 || ! Hash::check($password, $r->user()->password)) {
+            throw new ConfirmationRequired(failed: true);
+        }
+        $r->session()->put('confirmed_at', time());
+    }
+
+    /** Unix time until which this session may do sensitive actions, or null when it must confirm first. */
+    public static function confirmedUntil(Request $r): ?int
+    {
+        if (! $r->hasSession()) {
+            return null;
+        }
+        $until = (int) $r->session()->get('confirmed_at', 0) + self::CONFIRM_SECONDS;
+
+        return $until > time() ? $until : null;
     }
 
     public function audit(?string $workspace, string $event, ?string $subject = null, string $outcome = 'ok', ?string $actor = null): void

@@ -241,7 +241,7 @@ main.login label{grid-template-columns:8em minmax(0,1fr)}
 .top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 12px;padding:10px 16px}
 .top .spacer{display:none}.top .nav{grid-column:1/-1;grid-row:2}
 .top details.menu.space{justify-self:start;max-width:100%}.top details.menu>summary{min-height:40px;max-width:100%}
-.nav{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}.nav .btn{flex:none}
+.nav{gap:6px}.nav .btn:first-child:nth-last-child(n+4),.nav .btn:first-child:nth-last-child(n+4)~.btn{flex:1 1 auto}
 .menu-list a{min-height:44px}.tabs a{min-height:40px}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
 .btn,button,.controls .btn,.controls button{min-height:40px;padding:9px 14px}
@@ -258,14 +258,26 @@ label,main.login label{grid-template-columns:1fr;gap:4px}
 .board td.name{max-width:none}.board td.when{white-space:normal}
 .board td[data-label]::before{content:attr(data-label);display:block;margin-bottom:2px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 .board td[data-label=""]::before{content:none}
-.list{display:block;overflow-x:auto;max-width:100%}
 .facts,.facts tbody,.facts tr,.facts th,.facts td{display:block;width:100%}
 .facts th{padding:10px 12px 2px;border-bottom:none}.facts td{padding:2px 12px 10px}
 .inline{flex-direction:column;align-items:stretch}.inline input:not([type=checkbox]){width:100%}.board.versions td.act{padding-top:4px}}
 @media (max-width:600px){.top{position:relative}.top details.menu{position:static}
 .top details.menu .menu-list,.top details.menu.account .menu-list{left:16px;right:16px;top:auto;width:auto;max-width:none;margin-top:4px}
 details.menu.account>summary{max-width:11em}
+.tabs{flex-wrap:wrap;overflow-x:visible}
+.nav{gap:4px}.nav .btn{padding:9px 5px;font-size:11px;letter-spacing:.02em}.nav .btn .chip{padding:0 4px;font-size:11px}
 input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{font-size:16px}.totp-qr{width:220px;height:220px}}
+/* Editable rows: a table on wide screens, one labelled card per row on phones, so no control is clipped. */
+.list.edit td{vertical-align:middle}
+.list.edit td.act .controls{justify-content:flex-end;flex-wrap:nowrap}
+.list.edit label.check{margin:0}
+@media (max-width:900px){
+.list.edit thead{display:none}.list.edit,.list.edit tbody,.list.edit tr,.list.edit td{display:block;width:100%}
+.list.edit tr{margin:0 0 10px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--rule);border-left:3px solid var(--edge);border-radius:4px}
+.list.edit td{padding:0 0 8px;border:none}.list.edit td:last-child{padding-bottom:0}.list.edit td:empty{display:none}
+.list.edit td[data-label]::before{content:attr(data-label);display:block;margin-bottom:3px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.list.edit td.act{padding-top:4px}.list.edit td.act .controls{flex-wrap:wrap}
+.fold-foot button{width:auto}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .nobreak{white-space:nowrap}
 .card .form-foot:first-child{margin:0 0 12px;align-items:center;flex-wrap:wrap}
@@ -286,3 +298,87 @@ button.ok{color:var(--go);border-color:var(--go-line)}
 button.ok:hover{color:var(--go);border-color:var(--go);box-shadow:0 0 12px var(--go-glow)}
 main.login .mark small{max-width:none}
 @media (max-width:900px){.card>.form-foot:first-child{align-items:stretch}.card>.form-foot:first-child>.controls,.card>.form-foot:first-child>.chip{align-self:flex-end}}
+/* Shell helpers */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.skip{position:absolute;left:8px;top:-60px;z-index:50;padding:10px 14px;background:var(--amber-fill);color:var(--on-accent);border-radius:3px;
+font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.skip:focus{top:8px}
+main:focus{outline:none}
+/* A role is a fact about a person, not a state: no state colour. */
+.chip.role{color:var(--ink);border-color:var(--rule);background:var(--panel-2)}
+h2 .chip{flex:none}
+form.action>h2,.card>h2{margin-top:0}
+label span small{display:block;margin-top:2px;font-weight:400;letter-spacing:0;text-transform:none}
+/* Card header: the thing's own name form on the left, its removal on the right. Buttons stay plain. */
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 12px}
+.card-head .inline{flex:1;min-width:min(100%,18em)}
+.card>.note{margin:0}
+@media (max-width:900px){.card-head{flex-direction:column;align-items:stretch}.card-head .inline{flex:none}.card-head>.controls{align-self:flex-end}}
+/* Fold: a collapsed editor, one per thing */
+details.fold{scroll-margin-top:16px}
+details.fold>summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px}
+details.fold>summary::before,details.fold[open]>summary::before{flex:none;content:"\25B8"}
+details.fold[open]>summary::before{content:"\25BE"}
+details.fold>summary:hover .fold-name{color:var(--amber)}
+details.fold[open]{border-top:2px solid var(--amber)}
+details.fold:target{border-color:var(--amber)}
+.fold-name{font-weight:700;font-size:14px;margin-right:auto;overflow-wrap:anywhere}
+.fold-foot{display:flex;justify-content:flex-end;margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--rule)}
+/* Input with a button beside it; the button may also sit next to the whole label. */
+.with-button>input,.with-button>label{flex:1;min-width:0}
+.with-button>label{margin:0}
+.with-button:has(>label){align-items:flex-end;margin:0 0 8px}
+
+
+/* entries area */
+a.stat{display:block;color:inherit;text-decoration:none;border-radius:3px}
+a.stat:hover{text-decoration:none}
+a.stat:hover span,a.stat.is-on span{color:var(--amber)}
+a.stat:hover span{text-decoration:underline}
+a.stat.has-due b{color:var(--amber)}
+.catalog-filter{margin:0 0 12px}
+.catalog-filter .search-row{display:flex;gap:8px;align-items:stretch;margin:0 0 8px}
+.catalog-filter .search-row input{flex:1;min-width:0}
+.catalog-filter .search-row button{flex:none;width:auto}
+details.filters{margin:0}
+details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px}
+details.filters .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px 12px;align-items:end;padding-top:4px}
+details.filters .filter-grid label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--dim)}
+details.filters .filter-grid label.check{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;color:var(--ink);min-height:36px}
+details.filters .filter-grid .filter-actions{display:flex;align-items:center;justify-content:flex-end}
+.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px;font-size:13px;color:var(--dim)}
+.field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
+.field>label{display:block;margin:0}
+.field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
+.confirm-inline{margin-top:16px;padding-top:12px;border-top:1px dashed var(--rule)}
+.confirm-inline .note{margin:0 0 8px}
+.list.import-format td.key,.list.import-format td.key code{white-space:nowrap;overflow-wrap:normal}
+.board.entry-activity td.ev small{display:block;margin-top:3px;color:var(--faint)}
+@media (max-width:900px){
+details.filters>summary{min-height:40px}
+.field{grid-template-columns:1fr;gap:4px}
+.field-val{min-height:0}
+.board.entries tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 12px;align-items:baseline}
+.board.entries td{padding:0;width:auto}
+.board.entries td:first-child,.board.entries td:last-child{padding:0}
+.board.entries td.name{grid-column:1/-1;min-width:0}
+.board.entries td.name small{margin-top:2px}
+.board.entries td.proj{grid-column:1;min-width:0;color:var(--dim);overflow-wrap:anywhere}
+.board.entries td.env{grid-column:2;justify-self:end;align-self:center}
+.board.entries td.proj::before,.board.entries td.env::before,.board.entries td.type::before{content:none}
+.board.entries td.type{grid-column:1;min-width:0;color:var(--dim)}
+.board.entries td.updated{grid-column:2;justify-self:end;text-align:right;color:var(--dim)}
+.board.entries td.updated::before{display:inline;margin:0 6px 0 0;color:var(--faint)}
+.board.entries td.updated small{margin-top:2px}
+.board.entries td.used{grid-column:1/-1;color:var(--dim)}
+.board.entries td.used::before{display:inline;margin:0 6px 0 0;color:var(--faint)}
+.board.entries td.used.is-empty{display:none}
+.list.import-format{display:block;overflow:visible}
+.list.import-format thead{display:none}
+.list.import-format tbody{display:grid;gap:8px}
+.list.import-format tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:center;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+.list.import-format td{display:block;padding:0;border:none}
+.list.import-format td.key{grid-column:1}
+.list.import-format td.req{grid-column:2;justify-self:end}
+.list.import-format td.desc{grid-column:1/-1;color:var(--dim)}
+}

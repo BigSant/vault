@@ -7,14 +7,10 @@ use Illuminate\Http\Request;
 /** Personal pages: the account, the password confirmation, and creating a workspace. */
 final class Account
 {
-    /** How long a password confirmation allows sensitive actions, in seconds. */
-    public const CONFIRM_SECONDS = 300;
-
+    /** $confirmedUntil comes from the view composer, like on every page. */
     public function show(Request $r)
     {
-        $until = (int) $r->session()->get('confirmed_at', 0) + self::CONFIRM_SECONDS;
-
-        return view('account', ['user' => $r->user(), 'confirmedUntil' => $until > time() ? $until : null]);
+        return view('account', ['user' => $r->user()]);
     }
 
     public function confirmForm(Request $r)

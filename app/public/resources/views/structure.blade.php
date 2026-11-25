@@ -13,39 +13,41 @@
 
 @forelse($projects as $project)
     @php $envs = $environments[$project->id] ?? collect(); $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0); @endphp
-    <h2 id="p-{{ $project->id }}">{{ $project->name }}</h2>
+    <h2 id="p-{{ $project->id }}">{{ $project->name }} <span class="chip muted">{{ $projectEntries }} {{ $projectEntries === 1 ? 'entry' : 'entries' }}</span></h2>
     <div class="card">
-        <div class="form-foot">
+        <div class="card-head">
             <form class="inline" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}">@csrf
                 <input name="name" value="{{ $project->name }}" required maxlength="100" aria-label="Project name"><button>Rename</button>
             </form>
             @if($projectEntries === 0)
                 <form class="controls" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop">Remove project</button></form>
-            @else
-                <span class="chip muted">{{ $projectEntries }} {{ $projectEntries === 1 ? 'entry' : 'entries' }}</span>
             @endif
         </div>
-        <div class="scroll"><table class="list">
-            <thead><tr><th scope="col">Environment</th><th scope="col">Name</th><th scope="col">Production</th><th scope="col">Entries</th><th scope="col"></th></tr></thead>
+        @if($envs->isNotEmpty())
+        <table class="list edit">
+            <thead><tr><th scope="col">Environment</th><th scope="col">Name</th><th scope="col">Production</th><th scope="col">Entries</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
             <tbody>
             @foreach($envs as $env)
                 @php $formId = 'env-'.$env->id; $n = $counts[$env->id] ?? 0; @endphp
                 <tr>
-                    <td>@include('sign', ['name' => $env->name, 'production' => $env->production])</td>
-                    <td><input form="{{ $formId }}" name="name" value="{{ $env->name }}" required maxlength="60" aria-label="Environment name"></td>
-                    <td>{!! $yesNo('production', $env->production, $formId) !!}</td>
-                    <td>{{ $n }}</td>
-                    <td><div class="controls">
+                    <td class="lead">@include('sign', ['name' => $env->name, 'production' => $env->production])</td>
+                    <td data-label="Name"><input form="{{ $formId }}" name="name" value="{{ $env->name }}" required maxlength="60" aria-label="Environment name"></td>
+                    <td data-label="Production">{!! $yesNo('production', $env->production, $formId) !!}</td>
+                    <td data-label="Entries"><span class="chip muted">{{ $n }}</span></td>
+                    <td class="act"><div class="controls">
                         <form id="{{ $formId }}" method="post" action="/workspaces/{{ $space->id }}/environments/{{ $env->id }}">@csrf<button>Save</button></form>
                         @if($n === 0)<form method="post" action="/workspaces/{{ $space->id }}/environments/{{ $env->id }}/delete" data-confirm="Remove environment “{{ $env->name }}”?">@csrf<button class="stop">Remove</button></form>@endif
                     </div></td>
                 </tr>
             @endforeach
             </tbody>
-        </table></div>
+        </table>
+        @else
+        <p class="note">No environments yet. Add one to store entries in this project.</p>
+        @endif
         <form class="inline add-env" method="post" action="/workspaces/{{ $space->id }}/environments">@csrf
             <input type="hidden" name="project_id" value="{{ $project->id }}"><input type="hidden" name="back" value="structure">
-            <input name="name" required maxlength="60" placeholder="new environment" aria-label="New environment">
+            <input name="name" required maxlength="60" placeholder="new environment" aria-label="New environment name">
             <label class="check"><input type="checkbox" name="production" value="1"> production</label>
             <button>Add environment</button>
         </form>
@@ -54,22 +56,22 @@
     <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>
 @endforelse
 
-<h2>New projects</h2>
+<h2>Add a project</h2>
 <div class="deck">
     <form class="action" id="add-project" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
-        <h3>Add a project</h3>
+        <h3>New project</h3>
         <label><span>Name</span><input name="name" required maxlength="100" placeholder="shop"></label>
         <div class="form-foot"><p class="note">Gets these environments: {{ implode(', ', array_column($template, 'name')) ?: 'none' }}.</p><button>Add project</button></div>
     </form>
     <form class="action" method="post" action="/workspaces/{{ $space->id }}/template">@csrf
-        <h3>Environment template<small>Used for new projects only. Existing projects keep theirs.</small></h3>
-        <table class="list">
+        <h3>Environment template<small>The environments a new project starts with. Existing projects keep theirs.</small></h3>
+        <table class="list edit">
             <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
             <tbody id="template-rows">
             @foreach($template as $env)
-                <tr><td><input name="env_name[]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', $env['production']) !!}</td></tr>
+                <tr><td data-label="Environment"><input name="env_name[]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment"></td><td data-label="Production">{!! $yesNo('env_production[]', $env['production']) !!}</td></tr>
             @endforeach
-                <tr data-row-template><td><input name="env_name[]" maxlength="60" placeholder="new environment" aria-label="Environment"></td><td>{!! $yesNo('env_production[]', false) !!}</td></tr>
+                <tr data-row-template><td data-label="Environment"><input name="env_name[]" maxlength="60" placeholder="new environment" aria-label="Environment"></td><td data-label="Production">{!! $yesNo('env_production[]', false) !!}</td></tr>
             </tbody>
         </table>
         <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows">+ Row</button><button>Save template</button></div></div>

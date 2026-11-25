@@ -15,6 +15,19 @@ When it and the code disagree, fix one of them in the same change.
   account menu, not at the bottom of every page.
 - **Role decides what is shown.** A link a role cannot use is not rendered. The server still returns 404 for it.
 
+## Vocabulary
+
+Use these words in every UI text. Code names may differ.
+
+- **Entry** — a stored credential.
+- **Agent** — a machine identity with a bearer token. The tab listing agents is **Identities**.
+- **Grant** — one agent may run one action with one entry. Not "permission".
+- **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
+  States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
+- **Sign out** — not "Lock".
+- Roles are shown as neutral `chip role`, never with state colours.
+- A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it.
+
 ## Header (every signed-in page)
 
 ```
@@ -53,10 +66,11 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 
 ### Agents (owner)
 
-Three tabs, shown as a sub-nav on each page: **Requests · Agents · Grants**.
+Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
-- `/workspaces/{w}/requests` — agent requests (operations). "Waiting for you" first (pending approval or a site
-  MFA code), then recent history. This is where Allow once / Deny / Continue sign-in live.
+- `/workspaces/{w}/requests` — agent requests. "Waiting for you" first (approval or a site MFA code), each row
+  saying which agent asks to run which action on which entry and environment, then recent history. This is where
+  Allow once / Deny / Continue sign-in live.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page,
   whose next step links to Grants for that agent.
@@ -66,19 +80,19 @@ Three tabs, shown as a sub-nav on each page: **Requests · Agents · Grants**.
 
 ### Members (owner)
 
-- `/workspaces/{w}/members` — people in the workspace and their roles, the add/change member form, and a short
-  role explanation.
+- `/workspaces/{w}/members` — people in the workspace with a role select and Remove on each row, the "Add a
+  member" form, and a short role explanation.
 
 ### Setup (owner, editor)
 
-Two tabs: **Projects · Entry types**.
+Two tabs under the h1 "Setup": **Projects · Entry types**.
 
 - `/workspaces/{w}/structure` — projects, environments, the environment template, the production flag.
 - `/workspaces/{w}/types` — entry types and their fields.
 
 ### Activity (owner)
 
-- `/workspaces/{w}/audit` — the workspace audit log.
+- `/workspaces/{w}/audit` — the workspace audit log with actor and subject names (not ids) and filters.
 
 ### Account (any signed-in user)
 

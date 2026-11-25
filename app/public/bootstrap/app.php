@@ -17,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $m) {
         $m->append(SecurityHeaders::class);
         $m->alias(['vault.auth' => OwnerSession::class, 'vault.machine' => MachineAuth::class]);
-        $m->trimStrings(except: ['password', 'password_confirmation', 'current_password', 'secret', 'secret_fields.*', 'import', 'code', 'bootstrap_code']);
+        $m->trimStrings(except: ['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields.*', 'import', 'code', 'bootstrap_code']);
         $m->redirectGuestsTo('/login');
     })
     ->withExceptions(function (Exceptions $e) {
@@ -27,7 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return false;
         });
-        $e->dontFlash(['password', 'password_confirmation', 'current_password', 'secret', 'secret_fields', 'import', 'code', 'bootstrap_code', 'token']);
+        $e->dontFlash(['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields', 'import', 'code', 'bootstrap_code', 'token']);
         $e->render(function (Throwable $error, Request $r) {
             $status = $error instanceof HttpExceptionInterface ? $error->getStatusCode() : ($error instanceof ValidationException ? 422 : 503);
             $status = in_array($status, [400, 401, 403, 404, 405, 409, 413, 415, 419, 422, 429, 503]) ? $status : 503;
@@ -37,7 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($error instanceof ConfirmationRequired) {
-                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => true, 'failed' => false], 403);
+                return response()->view('confirm', ['return' => Account::returnPath($r), 'blocked' => ! $error->failed, 'failed' => $error->failed], 403);
             }
 
             // Validation texts name fields and rules, never submitted values.

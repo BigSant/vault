@@ -23,7 +23,7 @@ final class Workspace
 
     public function index(Request $r)
     {
-        $spaces = DB::table('workspaces')->join('members', 'members.workspace_id', '=', 'workspaces.id')->where('members.user_id', $r->user()->id)->select('workspaces.*', 'members.role')->get();
+        $spaces = DB::table('workspaces')->join('members', 'members.workspace_id', '=', 'workspaces.id')->where('members.user_id', $r->user()->id)->select('workspaces.*', 'members.role')->orderBy('workspaces.name')->get();
         $id = $r->query('workspace') ?? $spaces->first()?->id;
         $space = $id ? $this->access->workspace($id) : null;
         $projects = $space ? DB::table('projects')->where('workspace_id', $id)->get() : collect();
@@ -43,14 +43,19 @@ final class Workspace
             }
         }
 
+        if ($r->query('due') === '1') {
+            $query->where('entries.state', 'active')->where('entries.rotate_at', '<', now());
+        }
+
         $query->addSelect('environments.production');
         $active = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('projects.workspace_id', $id)->where('entries.state', 'active');
         $stats = $space ? [
+            'active' => $active->count(),
             'due' => (clone $active)->whereNotNull('entries.rotate_at')->where('entries.rotate_at', '<', now())->count(),
             'production' => (clone $active)->where('environments.production', true)->count(),
             'used' => (clone $active)->whereExists(fn ($q) => $q->from('operations')->whereColumn('operations.entry_id', 'entries.id')->where('operations.state', 'succeeded')->where('operations.updated_at', '>=', now()->subDays(7)))->count(),
-        ] : ['due' => 0, 'production' => 0, 'used' => 0];
+        ] : ['active' => 0, 'due' => 0, 'production' => 0, 'used' => 0];
 
         return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
             'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
@@ -224,13 +229,14 @@ final class Workspace
         $events = collect();
         $operations = collect();
         if ($role === 'owner') {
-            $operations = DB::table('operations')->where('entry_id', $id)->orderByDesc('created_at')->limit(25)->get();
+            $operations = $this->requestRows($space->id)->where('operations.entry_id', $id)->limit(25)->get();
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
                 ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
             $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
                 $query->where('subject', $id)->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
                     ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
             })->orderByDesc('id')->limit(30)->get();
+            $this->resolveEvents($space->id, $events);
         }
 
         return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
@@ -307,15 +313,25 @@ final class Workspace
         return redirect('/workspaces/'.$workspace.'/requests');
     }
 
+    private function requestRows(string $workspace)
+    {
+        return DB::table('operations')->join('machines', 'machines.id', '=', 'operations.machine_id')
+            ->join('entries', 'entries.id', '=', 'operations.entry_id')
+            ->join('environments', 'environments.id', '=', 'entries.environment_id')
+            ->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('machines.workspace_id', $workspace)->where('projects.workspace_id', $workspace)
+            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project')
+            ->orderByDesc('operations.created_at')->orderByDesc('operations.id');
+    }
+
     public function requests(string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
-        $operations = DB::table('operations')->whereIn('machine_id', DB::table('machines')->select('id')->where('workspace_id', $workspace))
-            ->orderByDesc('created_at')->orderByDesc('id');
+        $operations = $this->requestRows($workspace);
         $states = ['pending', 'requires_user_action'];
         $now = now();
-        $waiting = (clone $operations)->whereIn('state', $states)->where('expires_at', '>', $now)->get();
-        $history = $operations->where(fn ($query) => $query->whereNotIn('state', $states)->orWhere('expires_at', '<=', $now))->limit(50)->get();
+        $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)->get();
+        $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit(50)->get();
 
         return view('requests', compact('space', 'waiting', 'history'));
     }
@@ -337,15 +353,16 @@ final class Workspace
         $space = $this->access->workspace($workspace, ['owner']);
         $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')->orderBy('name')->get()->keyBy('id');
         $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('projects.workspace_id', $workspace)->select('entries.id', 'entries.name', 'entries.type', 'entries.state')->orderBy('entries.name')->get()->keyBy('id');
+            ->where('projects.workspace_id', $workspace)->select('entries.id', 'entries.name', 'entries.type', 'entries.state', 'projects.name as project', 'environments.name as environment')->orderBy('entries.name')->get()->keyBy('id');
         $agent = is_string($r->query('agent')) ? $machines->get($r->query('agent')) : null;
         $entry = is_string($r->query('entry')) ? $entries->get($r->query('entry')) : null;
         $grants = DB::table('grants')->whereIn('machine_id', $machines->keys())->whereIn('entry_id', $entries->keys())
             ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
             ->orderBy('action')->get();
         $actions = $this->ops->definitions();
+        $typeNames = $this->types->names($workspace);
 
-        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions'));
+        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions', 'typeNames'));
     }
 
     public function members(string $workspace)
@@ -489,11 +506,67 @@ final class Workspace
         return redirect('/workspaces/'.$workspace.'/requests');
     }
 
-    public function audit(string $workspace)
+    private function actorNames(string $workspace, $actors): array
+    {
+        $names = [];
+        foreach (['user' => DB::table('users'), 'machine' => DB::table('machines')->where('workspace_id', $workspace)] as $kind => $query) {
+            $ids = $actors->filter(fn ($actor) => str_starts_with($actor, $kind.':'))->map(fn ($actor) => Str::after($actor, ':'));
+            foreach ($query->whereIn('id', $ids)->pluck('name', 'id') as $id => $name) {
+                $names[$kind.':'.$id] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    private function resolveEvents(string $workspace, $events, ?array $names = null): void
+    {
+        $names ??= $this->actorNames($workspace, $events->pluck('actor')->unique());
+        $ids = $events->pluck('subject')->filter()->unique();
+        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+            ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace);
+        $related = [];
+        foreach (['operations', 'grants'] as $table) {
+            $related += (clone $entries)->join($table, $table.'.entry_id', '=', 'entries.id')
+                ->whereIn($table.'.id', $ids)->select('entries.id as entry_id', $table.'.id as subject_id')->get()->pluck('entry_id', 'subject_id')->all();
+        }
+        $entryNames = $entries->whereIn('entries.id', $ids->merge(array_values($related)))->pluck('entries.name', 'entries.id');
+        $agents = DB::table('machines')->where('workspace_id', $workspace)->whereIn('id', $ids)->pluck('name', 'id');
+        foreach ($events as $event) {
+            $event->actor_kind = match (Str::before($event->actor, ':')) {
+                'machine' => 'agent', 'user' => 'user', default => 'system',
+            };
+            $event->actor_label = $names[$event->actor] ?? $event->actor_kind;
+            $entry = $related[$event->subject] ?? $event->subject;
+            $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject);
+            $event->subject_url = $entryNames->has($entry) ? '/entries/'.$entry
+                : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject : null);
+        }
+    }
+
+    public function audit(Request $r, string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
-        $events = DB::table('audit')->where('workspace_id', $workspace)->orderByDesc('id')->paginate(50);
+        $query = DB::table('audit')->where('workspace_id', $workspace);
+        $actors = (clone $query)->distinct()->pluck('actor');
+        $names = $this->actorNames($workspace, $actors);
+        $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
+        $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
+            'request' => ['operation'], 'member' => ['member', 'owner'], 'session' => ['session'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+        $filters = $r->validate(['group' => 'nullable|string|in:'.implode(',', array_keys($groups)), 'actor' => 'nullable|string|max:150']);
+        if ($group = $filters['group'] ?? null) {
+            $query->where(function ($q) use ($groups, $group) {
+                foreach ($groups[$group] as $prefix) {
+                    $q->orWhere('event', 'like', $prefix.'.%');
+                }
+            });
+        }
+        if ($actor = $filters['actor'] ?? null) {
+            $query->where('actor', $actor);
+        }
+        $events = $query->orderByDesc('id')->paginate(50)->withQueryString();
+        $this->resolveEvents($workspace, $events->getCollection(), $names);
 
-        return view('audit',compact('space','events'));
+        return view('audit', compact('space', 'events', 'groups', 'actorOptions'));
     }
 }

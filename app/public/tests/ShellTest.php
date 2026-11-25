@@ -77,10 +77,10 @@ final class ShellTest extends TestCase
         $this->signIn('editor');
         $this->get($this->base.'/structure')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false);
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false);
         $this->get($this->base.'/types')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="page">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false);
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false);
         $this->get('/')->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="page">Entries</a>', false);
     }
 
@@ -149,6 +149,72 @@ final class ShellTest extends TestCase
         $this->post('/confirm', ['current_password' => self::PASSWORD, 'return' => $this->base.'/structure?x=1'])->assertRedirect($this->base.'/structure?x=1');
         $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure'])->assertRedirect($this->base.'/structure');
         $this->assertSame(1, DB::table('projects')->count());
+    }
+
+    public function test_stale_confirmation_is_refreshed_by_a_correct_confirm_password_in_the_same_post(): void
+    {
+        $this->signIn('owner', time() - 301);
+        $this->get($this->base.'/structure')->assertOk()->assertSessionHas('last_page', $this->base.'/structure');
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure', 'confirm_password' => self::PASSWORD])
+            ->assertRedirect($this->base.'/structure')->assertSessionMissing('_old_input');
+        $this->assertSame(1, DB::table('projects')->count());
+        $this->assertGreaterThanOrEqual(time() - 2, session('confirmed_at'));
+        // The refreshed confirmation carries the next action without a password.
+        $this->post($this->base.'/projects', ['name' => 'blog', 'back' => 'structure'])->assertRedirect($this->base.'/structure');
+        $this->assertSame(2, DB::table('projects')->count());
+    }
+
+    public function test_wrong_confirm_password_answers_403_with_the_confirm_form_and_is_never_flashed(): void
+    {
+        $this->signIn('owner', $stale = time() - 301);
+        $this->post($this->base.'/projects', ['name' => 'shop', 'back' => 'structure', 'confirm_password' => 'wrong-password'])->assertForbidden()
+            ->assertSee('action="/confirm"', false)->assertSee('That password is not right')->assertDontSee('wrong-password');
+        $this->assertSame(0, DB::table('projects')->count());
+        $this->assertSame($stale, session('confirmed_at'));
+        // A query string is no place for a password, even a correct one.
+        $this->post($this->base.'/projects?confirm_password='.urlencode(self::PASSWORD), ['name' => 'shop'])->assertForbidden();
+        // A validation error flashes the other input back, never the password. The confirmation it refreshed stays.
+        $this->post($this->base.'/projects', ['name' => '', 'back' => 'structure', 'confirm_password' => self::PASSWORD])->assertUnprocessable();
+        $this->assertStringNotContainsString(self::PASSWORD, json_encode(session()->all()));
+        $this->assertStringNotContainsString('confirm_password', json_encode(session()->all()));
+    }
+
+    public function test_confirm_password_attempts_are_rate_limited(): void
+    {
+        $this->signIn('owner', time() - 301);
+        for ($i = 0; $i < 10; $i++) {
+            $this->post($this->base.'/projects', ['name' => 'shop', 'confirm_password' => 'wrong-password'])->assertForbidden();
+        }
+        $this->post($this->base.'/projects', ['name' => 'shop', 'confirm_password' => self::PASSWORD])->assertTooManyRequests();
+        $this->assertSame(0, DB::table('projects')->count());
+    }
+
+    public function test_pages_outside_a_workspace_keep_the_last_workspace_in_the_header(): void
+    {
+        $user = $this->signIn('owner');
+        $second = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $second, 'name' => 'Another space']);
+        DB::table('members')->insert(['workspace_id' => $second, 'user_id' => $user->id, 'role' => 'owner']);
+        $this->get('/account')->assertOk()->assertSee('aria-label="Workspace: none chosen"', false)->assertDontSee('/members"', false);
+        $this->get($this->base.'/members')->assertOk()->assertSessionHas('last_workspace', $this->workspace);
+        foreach (['/account', '/workspaces/new'] as $page) {
+            $this->get($page)->assertOk()->assertSee('aria-label="Workspace: Main space"', false)
+                ->assertSee('href="'.$this->base.'/requests"', false)->assertSee('href="'.$this->base.'/audit"', false)->assertDontSee('class="btn on"', false);
+        }
+        // Losing the membership drops the remembered workspace from the header.
+        DB::table('members')->where('workspace_id', $this->workspace)->delete();
+        $this->get('/account')->assertOk()->assertSee('aria-label="Workspace: none chosen"', false)->assertDontSee($this->base.'/requests');
+    }
+
+    public function test_shell_has_a_skip_link_live_region_and_sign_out_wording(): void
+    {
+        $this->signIn('owner');
+        $this->get($this->base.'/agents')->assertOk()
+            ->assertSeeInOrder(['<body>', '<a class="skip" href="#content">Skip to content</a>', '<header', '<main id="content">', 'id="live"'], false)
+            ->assertSee('aria-label="Agents sections"', false)->assertSee('Identities')->assertSee('<button>Sign out</button>', false)->assertDontSee('Lock');
+        $this->get('/account')->assertOk()->assertSee('Change password and sign out')->assertSee('<span class="chip role">owner</span>', false)->assertDontSee('>Lock<', false);
+        $this->get('/nothing-here')->assertNotFound()->assertSee('Not found')->assertDontSee('not refilled');
+        $this->post($this->base.'/projects', ['name' => ''])->assertUnprocessable()->assertSee('Check the form')->assertSee('not refilled');
     }
 
     public static function unsafeReturns(): array

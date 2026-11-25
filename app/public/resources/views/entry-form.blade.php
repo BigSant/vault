@@ -1,46 +1,85 @@
 @extends('layout')
 @section('title', $entry ? 'Update entry' : 'Add an entry')
 @section('content')
+@php
+    $initialType = $entry?->type ?? $types->first()?->key;
+    $confirmedUntil = $confirmedUntil ?? null;
+    $needsConfirm = $confirmedUntil === null || ((int) $confirmedUntil - time()) < 240;
+    $confirmExpired = $confirmedUntil === null || (int) $confirmedUntil <= time();
+@endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
-<p class="note">Values go straight to the encrypted store. Existing values are never shown in this form.@if($entry) An empty field keeps its current value, and every save creates a new version.@endif</p>
+<p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
 @if($environments->isEmpty())<div class="callout warn"><p>Create a project first in <a href="/workspaces/{{ $workspace }}/structure">Setup</a>.</p></div>@endif
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
-    <h3>Where and what</h3>
+    <h3>Entry details</h3>
     <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>
     <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ $entry?->alias }}" required maxlength="100" placeholder="shop-stage-admin"></label>
-    <label><span>Project / environment</span><select name="environment_id">
-        @foreach($environments as $e)
-            @if(!$entry || $entry->environment_id === $e->id)<option value="{{ $e->id }}" @selected($entry?->environment_id === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>@endif
-        @endforeach
-    </select></label>
-    <label><span>Type</span><select name="type" id="entry-type">
-        @foreach($types as $t)<option value="{{ $t->key }}" @selected($entry?->type === $t->key)>{{ $t->name }}</option>@endforeach
-    </select></label>
-    @unless($entry)<p class="note">Missing a type or a field? <a href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>@endunless
+    @if($entry)
+        @php
+            $currentEnv = $environments->firstWhere('id', $entry->environment_id);
+            $currentType = $types->firstWhere('key', $entry->type);
+        @endphp
+        <input type="hidden" name="environment_id" value="{{ $entry->environment_id }}">
+        <input type="hidden" name="type" id="entry-type" value="{{ $entry->type }}">
+        <div class="field field-static">
+            <span class="field-key">Project / environment</span>
+            <span class="field-val">@if($currentEnv){{ $currentEnv->project }} @include('sign', ['name' => $currentEnv->name, 'production' => $currentEnv->production])@else{{ $entry->environment_id }}@endif</span>
+        </div>
+        <div class="field field-static">
+            <span class="field-key">Type</span>
+            <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
+        </div>
+    @else
+        <label><span>Project / environment</span><select name="environment_id">
+            @foreach($environments as $e)
+                <option value="{{ $e->id }}">{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
+            @endforeach
+        </select></label>
+        <label><span>Type</span><select name="type" id="entry-type">
+            @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
+        </select></label>
+        <p class="note">Missing a type or a field? <a href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>
+    @endif
 
     <h3 class="gap">Secret values</h3>
     @foreach($types as $t)
+        @php $activeType = $t->key === $initialType; @endphp
         @foreach($t->fields as $f)
-            @php $id = 'f-'.$t->key.'-'.$f['key']; $optional = $f['required'] ? '' : 'data-optional'; @endphp
-            <label data-types="{{ $t->key }}" for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>
-                @if($f['kind'] === 'multiline')
-                    <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }}></textarea>
-                @elseif($f['kind'] === 'secret')
-                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }}><button type="button" data-generate="{{ $id }}">Generate</button></span>
-                @else
-                    <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }}>
-                @endif
-            </label>
-            @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}"><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional> clear the current “{{ $f['label'] }}” value</label>@endif
+            @php
+                $id = 'f-'.$t->key.'-'.$f['key'];
+                $optional = $f['required'] ? '' : 'data-optional';
+                $req = $activeType && !$entry && $f['required'];
+            @endphp
+            @if($f['kind'] === 'secret')
+                <div class="field" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless>
+                    <label for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span></label>
+                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}">Generate</button></span>
+                </div>
+            @else
+                <label data-types="{{ $t->key }}" for="{{ $id }}" @unless($activeType) hidden @endunless><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>
+                    @if($f['kind'] === 'multiline')
+                        <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }} @if($req) required @endif @disabled(!$activeType)></textarea>
+                    @else
+                        <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }} @if($req) required @endif @disabled(!$activeType)>
+                    @endif
+                </label>
+            @endif
+            @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> clear the current “{{ $f['label'] }}” value</label>@endif
         @endforeach
     @endforeach
 
     <h3 class="gap">Notes</h3>
     <label><span>Tags</span><input name="tags" value="{{ $entry?->tags }}" maxlength="200" placeholder="billing, admin"></label>
     <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '' }}"></label>
+    @if($needsConfirm)
+    <div class="confirm-inline">
+        <p class="note">@if($confirmExpired)Your password confirmation has expired. Enter your password to save.@else Your password confirmation expires at {{ gmdate('H:i', (int) $confirmedUntil) }} UTC. Enter your password to save.@endif</p>
+        <label><span>Current password</span><input type="password" name="confirm_password" autocomplete="current-password" @if($confirmExpired) required @endif></label>
+    </div>
+    @endif
     <div class="form-foot">
-        <p class="note">{{ $entry ? 'Saving revokes pending agent operations for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
+        <p class="note">{{ $entry ? 'Saving revokes pending agent requests for this entry.' : 'Agents get nothing until you grant them an action.' }} @unless($needsConfirm)<span class="muted">Confirmed until {{ gmdate('H:i', (int) $confirmedUntil) }} UTC.</span>@endunless</p>
         <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
     </div>
 </form>

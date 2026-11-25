@@ -1,13 +1,15 @@
+// Screen readers hear short status changes through the polite live region in the layout.
+const say = text => { const live = document.getElementById('live'); if (live) { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); } };
 const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(selector).forEach(el => { el.textContent = 'Hidden. Reveal again to see it.'; el.dataset.hidden = '1'; });
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
-if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => hideSecrets('[data-secret]:not([data-keep])'), 30000);
+if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => { hideSecrets('[data-secret]:not([data-keep])'); say('Secret values hidden again'); }, 30000);
 // The enrollment QR encodes the same key, so it goes too.
 addEventListener('pagehide', () => { hideSecrets(); document.querySelectorAll('.totp-qr').forEach(img => img.remove()); });
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
   const el = document.getElementById(button.dataset.copy);
   if (!el || el.dataset.hidden) return;
-  try { await navigator.clipboard.writeText(el.textContent); button.textContent = 'Copied'; }
-  catch { button.textContent = 'Copy blocked'; }
+  try { await navigator.clipboard.writeText(el.textContent); button.textContent = 'Copied'; say('Copied'); }
+  catch { button.textContent = 'Copy blocked'; say('Copy blocked'); }
 }));
 const type = document.getElementById('entry-type');
 const fields = () => document.querySelectorAll('[data-types]').forEach(el => {
@@ -22,6 +24,7 @@ document.querySelectorAll('[data-generate]').forEach(button => button.addEventLi
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   input.value = btoa(String.fromCharCode(...bytes));
   button.textContent = 'Generated';
+  say('Value generated');
 }));
 // Entry type editor: add another empty field row.
 document.querySelectorAll('[data-add-row]').forEach(button => button.addEventListener('click', () => {
@@ -52,3 +55,14 @@ addEventListener('keydown', event => {
     if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
   });
 });
+// A link to a collapsed editor (#type-KEY) opens it.
+const openTarget = () => {
+  let target = null;
+  try { target = location.hash.length > 1 ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null; } catch { return; }
+  const fold = target?.closest('details');
+  if (!fold || fold.classList.contains('menu')) return;
+  fold.open = true;
+  target.scrollIntoView();
+};
+addEventListener('hashchange', openTarget);
+openTarget();

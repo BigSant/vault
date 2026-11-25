@@ -2,8 +2,8 @@
 @php
     $base = '/workspaces/'.$space->id;
     $sets = [
-        'agents' => ['Agent area', ['requests' => 'Requests', 'agents' => 'Agents', 'grants' => 'Grants']],
-        'setup' => ['Setup', ['structure' => 'Projects', 'types' => 'Entry types']],
+        'agents' => ['Agents sections', ['requests' => 'Requests', 'agents' => 'Identities', 'grants' => 'Grants']],
+        'setup' => ['Setup sections', ['structure' => 'Projects', 'types' => 'Entry types']],
     ];
     [$label, $items] = $sets[$area];
 @endphp

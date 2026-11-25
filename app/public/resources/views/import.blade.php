@@ -16,16 +16,16 @@
 
 <h2>Format</h2>
 <p class="note">Send a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
-<div class="scroll"><table class="list">
+<div class="scroll"><table class="list import-format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
-        <tr><td><code>environment_id</code></td><td><span class="chip warn">required</span></td><td>UUID of an environment in this workspace.</td></tr>
-        <tr><td><code>name</code></td><td><span class="chip warn">required</span></td><td>Display name, up to 160 characters.</td></tr>
-        <tr><td><code>alias</code></td><td><span class="chip warn">required</span></td><td>Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
-        <tr><td><code>type</code></td><td><span class="chip warn">required</span></td><td>Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
-        <tr><td><code>secret</code></td><td><span class="chip warn">required</span></td><td>JSON object string mapping field keys to string values (or pass <code>secret_fields</code> as a JSON object).</td></tr>
-        <tr><td><code>tags</code></td><td><span class="chip muted">optional</span></td><td>Comma-separated tags, up to 200 characters.</td></tr>
-        <tr><td><code>rotate_at</code></td><td><span class="chip muted">optional</span></td><td>Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
+        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">UUID of an environment in this workspace.</td></tr>
+        <tr><td class="key"><code>name</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
+        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
+        <tr><td class="key"><code>type</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">Lowercase entry type key from <a href="/workspaces/{{ $space->id }}/types">Setup</a>.</td></tr>
+        <tr><td class="key"><code>secret</code></td><td class="req"><span class="chip warn">required</span></td><td class="desc">JSON object string mapping field keys to string values (or pass <code>secret_fields</code> as a JSON object).</td></tr>
+        <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>
+        <tr><td class="key"><code>rotate_at</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Rotation reminder date as <code>YYYY-MM-DD</code>.</td></tr>
     </tbody>
 </table></div>
 

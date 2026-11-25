@@ -155,7 +155,7 @@ final class VaultTest extends TestCase
         $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
             ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[1]['id'], $rows[0]['id']])
             ->assertViewHas('history', fn ($history) => $history->count() === 50)
-            ->assertSeeInOrder(['Waiting for you', 'Continue sign-in', 'Allow once', 'Recent history'])
+            ->assertSeeInOrder(['Waiting for you', 'ai-os', 'Private name', 'stage', 'test.http', 'needs MFA code', 'Continue sign-in', 'Allow once', 'Recent history'])
             ->assertDontSee($rows[2]['id']);
     }
 
@@ -221,6 +221,48 @@ final class VaultTest extends TestCase
         $other = User::create(['id' => (string) Str::uuid(), 'name' => 'Other', 'email' => 'other@example.test', 'password' => 'unused']);
         $this->actingAs($other)->withSession(['auth_revision' => $other->credentialRevision()])->get('/entries/'.$id)->assertNotFound();
         $this->actingAs($this->owner)->withSession(['auth_revision' => $this->owner->credentialRevision()])->post('/workspaces/'.$this->workspace.'/members', ['email' => $this->owner->email, 'name' => 'Owner', 'role' => 'remove'])->assertConflict();
+    }
+
+    public function test_activity_resolves_grant_subject_and_filters_by_group_and_actor(): void
+    {
+        $entry = $this->entry();
+        [$machine, , $grant] = $this->machine($entry);
+        app(\App\Vault\Access::class)->audit($this->workspace, 'grants.revoke', $grant, 'ok', 'machine:'.$machine);
+        $url = '/workspaces/'.$this->workspace.'/audit';
+        $this->get($url.'?group=grant&actor=machine:'.$machine)->assertOk()->assertSeeText('ai-os')
+            ->assertSeeText('grant.revoke')->assertSeeText('Private name')->assertDontSeeText('entry.create')
+            ->assertSee('href="/entries/'.$entry.'"', false)->assertSeeText('Page 1');
+        $this->get($url.'?group=entry&actor=machine:'.$machine)->assertOk()->assertSeeText('No matching activity.');
+        $this->get('/entries/'.$entry)->assertViewHas('events', fn ($events) => $events->first()->actor_label === 'ai-os'
+            && $events->first()->subject_label === 'Private name');
+    }
+
+    public function test_grant_approval_and_due_filter(): void
+    {
+        $entry = $this->entry();
+        [, , $grant] = $this->machine($entry, true);
+        $url = '/workspaces/'.$this->workspace.'/grants';
+        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('every time');
+        DB::table('grants')->where('id', $grant)->update(['approval' => false]);
+        $this->get($url)->assertOk()->assertSeeText('not asked');
+        $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+            ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
+        DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
+        $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
+    }
+
+    public function test_member_row_role_change_and_removal(): void
+    {
+        $member = User::create(['id' => (string) Str::uuid(), 'name' => 'Member', 'email' => 'member@example.test', 'password' => 'unused']);
+        $identity = ['email' => $member->email, 'name' => $member->name];
+        $url = '/workspaces/'.$this->workspace.'/members';
+        $this->post($url, $identity + ['role' => 'viewer'])->assertRedirect($url);
+        $this->get($url)->assertOk()->assertSee('aria-label="Role for Member"', false)->assertSee('Remove Member from this workspace?');
+        $this->post($url, $identity + ['role' => 'editor'])->assertRedirect($url);
+        $this->assertDatabaseHas('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'editor']);
+        $this->post($url, $identity + ['role' => 'remove'])->assertRedirect($url);
+        $this->assertDatabaseMissing('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id]);
+        $this->post($url, ['name' => 'Owner', 'email' => $this->owner->email, 'role' => 'viewer'])->assertConflict();
     }
 
     public function test_import_validates_all_rows_before_any_write(): void

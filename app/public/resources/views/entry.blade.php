@@ -20,13 +20,13 @@
     </div>
     @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Update</a>@endif
 </div>
-<nav class="subnav"><a class="btn" href="#data">Values</a><a class="btn" href="#versions">Versions</a>@if($showLifecycle)<a class="btn" href="#lifecycle">Lifecycle</a>@endif @if($isOwner)<a class="btn" href="#access">Agent access</a><a class="btn" href="#activity">Activity</a>@endif</nav>
+<nav class="tabs" aria-label="Entry sections"><a href="#data">Values</a><a href="#versions">Versions</a>@if($showLifecycle)<a href="#lifecycle">Lifecycle</a>@endif @if($isOwner)<a href="#access">Agent access</a><a href="#activity">Activity</a>@endif</nav>
 
 <table class="facts">
-    <tr><th>Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
-    <tr><th>Tags</th><td>{{ $entry->tags ?: '—' }}</td></tr>
-    <tr><th>Updated</th><td>{{ $entry->updated_at }}</td></tr>
-    <tr><th>Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">due</span>@endif</td></tr>
+    <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
+    <tr><th scope="row">Tags</th><td>{{ $entry->tags ?: '—' }}</td></tr>
+    <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
+    <tr><th scope="row">Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">due</span>@endif</td></tr>
 </table>
 
 <h2 id="data">Secret values</h2>
@@ -50,6 +50,10 @@
         @endforeach
         @php $onlyCurrent = array_diff($differs, array_keys($secret)); @endphp
         @if($onlyCurrent)<p class="note">The current version also has: {{ implode(', ', array_map($label, $onlyCurrent)) }}.</p>@endif
+    @elseif(!$isEditor)
+        <p class="note">Your viewer role sees entry metadata only. Secret values cannot be revealed.</p>
+    @elseif(!$canEdit)
+        <p class="note">Secret values cannot be revealed while this entry is {{ $entry->state }}.</p>
     @else
         <div class="masked" aria-hidden="true">••••••••••••</div>
         <p class="note">Values are not sent to this page until you reveal them.</p>
@@ -63,14 +67,14 @@
 </div>
 
 <h2 id="versions">Versions</h2>
-<p class="note">Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.</p>
+<p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when. Secret values are hidden from the viewer role.@endif</p>
 <div class="scroll"><table class="board versions">
     <thead><tr><th scope="col">Version</th><th scope="col">When (UTC)</th><th scope="col">Who</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"></th>@endif</tr></thead>
     <tbody>
     @forelse($history as $h)
         <tr class="{{ $h['version'] === $current ? 'is-ok' : 'is-idle' }}">
             <td data-label="Version"><b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
-            <td class="when" data-label="When (UTC)">{{ $h['at'] ? substr(str_replace('T', ' ', $h['at']), 0, 19) : '—' }}</td>
+            <td class="when" data-label="When (UTC)">{{ $h['at'] ? substr(str_replace('T', ' ', $h['at']), 0, 16) : '—' }}</td>
             <td data-label="Who">{{ $h['user'] ?? '—' }}</td>
             <td data-label="Changes"><div class="changes">
                 @if($h['changes'] === null)
@@ -108,7 +112,7 @@
             @endif
         </tr>
     @empty
-        <tr class="is-idle"><td colspan="5" data-label="" class="muted">No versions.</td></tr>
+        <tr class="is-idle"><td colspan="{{ $canEdit ? 5 : 4 }}" data-label="" class="muted">No versions.</td></tr>
     @endforelse
     </tbody>
 </table></div>
@@ -118,15 +122,15 @@
 <h2 id="lifecycle">Lifecycle</h2>
 <div class="deck">
     @if($canEdit)
-    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Agent permissions for it are revoked.">@csrf
+    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Grants for it are revoked.">@csrf
         <h3>Archive</h3>
-        <div class="form-foot"><p class="note">Revokes every agent permission for this entry. You can bring it back later.</p><button class="stop">Archive</button></div>
+        <div class="form-foot"><p class="note">Revokes every grant for this entry. You can bring it back later.</p><button class="stop">Archive</button></div>
     </form>
     @endif
     @if($entry->state === 'archived' && $isEditor)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/unarchive">@csrf
         <h3>Restore from archive</h3>
-        <div class="form-foot"><p class="note">Agent permissions have to be granted again.</p><button>Restore</button></div>
+        <div class="form-foot"><p class="note">Grants have to be created again.</p><button>Restore</button></div>
     </form>
     @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf
@@ -145,7 +149,7 @@
     <div class="empty">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></div>
 @else
 <div class="scroll"><table class="board">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires</th><th scope="col">State</th></tr></thead>
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires (UTC)</th><th scope="col">State</th></tr></thead>
     <tbody>
     @foreach($grants as $grant)
         @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
@@ -153,7 +157,7 @@
             <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
             <td data-label="Action"><code>{{ $grant->action }}</code></td>
             <td data-label="Approval">{{ $grant->approval ? 'every time' : 'not asked' }}</td>
-            <td class="when" data-label="Expires">{{ $grant->expires_at }}</td>
+            <td class="when" data-label="Expires (UTC)">{{ substr((string) $grant->expires_at, 0, 16) }}</td>
             <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
         </tr>
     @endforeach
@@ -161,12 +165,34 @@
 </table></div>
 <p class="note">Read-only summary. <a href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants</a></p>
 @endif
-@include('operations', ['workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id])
+@include('operations', ['workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'heading' => 'Requests', 'empty' => 'No requests yet.'])
 <h2 id="activity">Activity</h2>
-<p class="note">The last 30 events for this entry and its operations.</p>
-<div class="scroll"><table class="list">
+<p class="note">The last 30 events for this entry and its requests.</p>
+@if($events->isEmpty())
+    <div class="empty">No events yet.</div>
+@else
+<div class="scroll"><table class="board entry-activity">
     <thead><tr><th scope="col">When (UTC)</th><th scope="col">Event</th><th scope="col">Actor</th><th scope="col">Outcome</th></tr></thead>
-    <tbody>@forelse($events as $event)<tr><td class="nobreak">{{ $event->created_at }}</td><td><code>{{ $event->event }}</code></td><td>{{ $event->actor }}</td><td>@include('outcome', ['outcome' => $event->outcome])</td></tr>@empty<tr><td colspan="4" class="muted">No events yet.</td></tr>@endforelse</tbody>
+    <tbody>
+    @foreach($events as $event)
+        @php
+            $evOutcome = (string) $event->outcome;
+            $evRow = in_array($evOutcome, ['ok', 'succeeded', 'approved', 'active'], true) ? 'is-ok'
+                : (in_array($evOutcome, ['denied', 'failed', 'rejected', 'error', 'refused', 'invalid'], true) ? 'is-bad' : 'is-idle');
+            $actorLabel = $event->actor_label ?? $event->actor;
+            $actorKind = $event->actor_kind ?? null;
+            $subjectLabel = property_exists($event, 'subject_label') ? $event->subject_label : ($event->subject ?? null);
+            $subjectUrl = $event->subject_url ?? null;
+        @endphp
+        <tr class="{{ $evRow }}">
+            <td class="when" data-label="When (UTC)">{{ substr((string) $event->created_at, 0, 16) }}</td>
+            <td class="ev" data-label="Event"><code>{{ $event->event }}</code>@if($subjectLabel)<small>@if($subjectUrl)<a href="{{ $subjectUrl }}">{{ $subjectLabel }}</a>@else{{ $subjectLabel }}@endif</small>@endif</td>
+            <td data-label="Actor">{{ $actorLabel }}@if($actorKind === 'agent') <span class="chip muted">agent</span>@endif</td>
+            <td data-label="Outcome">@include('outcome', ['outcome' => $event->outcome])</td>
+        </tr>
+    @endforeach
+    </tbody>
 </table></div>
+@endif
 @endif
 @endsection

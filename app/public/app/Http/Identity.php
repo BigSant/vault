@@ -38,7 +38,7 @@ final class Identity
             $this->secrets->write('auth/'.$id, ['totp' => $totp->getSecret()], 0);
             $user = User::create(['id' => $id, 'name' => $d['name'], 'email' => strtolower($d['email']), 'password' => Hash::make($d['password'])]);
             $ws = (string) Str::uuid();
-            DB::table('workspaces')->insert(['id' => $ws, 'name' => 'Asmeniniai', 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('workspaces')->insert(['id' => $ws, 'name' => 'Personal', 'created_at' => now(), 'updated_at' => now()]);
             DB::table('members')->insert(['workspace_id' => $ws, 'user_id' => $id, 'role' => 'owner']);
             DB::table('settings')->where('key', 'bootstrap_used')->update(['value' => '1']);
             $this->access->audit($ws, 'owner.setup', $id, 'ok', 'user:'.$id);

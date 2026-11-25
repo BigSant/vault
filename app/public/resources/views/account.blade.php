@@ -28,7 +28,7 @@
         <label><span>Current password</span><input name="current_password" type="password" required maxlength="200" autocomplete="current-password"></label>
         <label><span>New password</span><input name="password" type="password" required minlength="14" maxlength="200" autocomplete="new-password"></label>
         <label><span>Repeat</span><input name="password_confirmation" type="password" required maxlength="200" autocomplete="new-password"></label>
-        <div class="form-foot"><p class="note">At least 14 characters. Every session signs out, this one too.</p><button class="stop">Change and sign out</button></div>
+        <div class="form-foot"><p class="note">At least 14 characters. Signs out every session, this one too.</p><button class="stop">Change password and sign out</button></div>
     </form>
 </div>
 
@@ -40,7 +40,7 @@
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
     <tbody>
     @foreach($navSpaces as $s)
-        <tr><td><a href="/?workspace={{ $s->id }}">{{ $s->name }}</a></td><td><span class="chip {{ $s->role === 'owner' ? 'warn' : ($s->role === 'editor' ? 'ok' : 'steel') }}">{{ $s->role }}</span></td></tr>
+        <tr><td><a href="/?workspace={{ $s->id }}">{{ $s->name }}</a></td><td><span class="chip role">{{ $s->role }}</span></td></tr>
     @endforeach
     </tbody>
 </table></div>
@@ -49,6 +49,6 @@
 
 <h2>Sign out</h2>
 <form class="inline" method="post" action="/logout">@csrf
-    <button>Lock</button><span class="note">Ends this session. Sign in again with your password and authenticator code.</span>
+    <button>Sign out</button><span class="note">Ends this session. Sign in again with your password and authenticator code.</span>
 </form>
 @endsection
