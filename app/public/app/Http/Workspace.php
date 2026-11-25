@@ -697,9 +697,10 @@ final class Workspace
         $names = $this->actorNames($workspace, $actors);
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
-            'request' => ['operation'], 'member' => ['member', 'owner'], 'session' => ['session'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+            'request' => ['operation'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+        $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'];
         $rules = ['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)),
-            'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:ok,denied,failed',
+            'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:'.implode(',', array_keys($outcomeLabels)),
             'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d'];
         $filters = $r->only(array_keys($rules));
         $validator = validator($filters, $rules);
@@ -738,7 +739,7 @@ final class Workspace
             $query->where('actor', $actor);
         }
         if ($outcome = $filters['outcome'] ?? null) {
-            $query->where('outcome', $outcome);
+            $query->whereIn('outcome', $outcome === 'ok' ? ['ok', 'succeeded'] : [$outcome]);
         }
         if ($from = $filters['from'] ?? null) {
             $query->whereDate('created_at', '>=', $from);
@@ -749,6 +750,6 @@ final class Workspace
         $events = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(50)->withQueryString();
         $this->resolveEvents($workspace, $events->getCollection(), $names);
 
-        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry', 'filterErrors'));
+        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry', 'filterErrors', 'outcomeLabels'));
     }
 }

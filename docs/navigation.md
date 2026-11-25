@@ -82,7 +82,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   and agent use follow as one small summary line ("3 production · 2 used by agents in 7 days"). Reviewers disagreed
   both ways; do not reopen it. While the rotation-due filter is on, its stat is underlined and says "Clear ×".
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
-  wait), details (the facts table), secret values (reveal), versions, agent access (owners; read-only grants with a link to Grants
+  wait), details (the facts table), secret values (reveal; while values are on screen a plain "Hide values" button
+  conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again";
+  the values hide by themselves after 30 seconds either way), versions, agent access (owners; read-only grants with a link to Grants
   filtered by this entry), recent requests, activity, and Archive last.
   Under Recent requests and under Activity a `.more-link` leads to the workspace log filtered by this entry
   ("Request activity for this entry →", "All activity for this entry →").
@@ -141,6 +143,9 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open; on phone an environment row is one line (sign,
   count, Edit). One shared password block (`confirm-setup`) above the cards serves every form of the page.
 - `/workspaces/{w}/types` — the entry types as folds under the tabs, then the h2 section "Add an entry type".
+  One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
+  after the confirmation expired is held as "Save entry type Login", "Remove entry type Login" or "Add entry type
+  FTP server". New field rows start with Required unchecked, in a fold and in the add form alike.
 
 ### Activity (owner)
 
@@ -191,10 +196,14 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    `'confirm-decide'` above the waiting board, `'confirm-members'` above the members board). Where a page has
    such a block, its other sensitive actions use it too, so the page has one password field: Restore (Versions)
    and Archive entry on the entry page; every form of Setup › Projects (`'confirm-setup'` above the project
-   cards); Revoke and the add form on Identities (`'confirm-agents'`) and Grants (`'confirm-grants'`), above the
-   board. A form card on such a page (Add a member, Add an agent, Add a grant, the environment template) holds a
+   cards); every form of Setup › Entry types (`'confirm-types'` above the folds: Save entry type, Remove entry
+   type, Add entry type; no fold has a block of its own); Revoke and the add form on Identities
+   (`'confirm-agents'`) and Grants (`'confirm-grants'`), above the board. A form card on such a page (Add a
+   member, Add an agent, Add a grant, Add a project, the environment template, Add an entry type) holds a
    deferred block (`'primary' => '<id>'`, `'fallback' => true`): nothing while valid, a pointer to the one field
-   when expired, and a field of its own only in `<noscript>`. Everything else goes to the confirm page, which
+   when expired, and a field of its own only in `<noscript>`. A page whose list is still empty has no shared
+   block (no agents, no grants, no entry types): its add form then holds an ordinary block with its own field.
+   Everything else goes to the confirm page, which
    offers "Continue: <action>" after the password, so no action has to be repeated;
    their forms carry `data-confirm-from="<id>"` and `app.js` copies the password into the form that is sent. A
    submit without the password is held and stays visible: the focus moves to the field and a button under it names
@@ -210,7 +219,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    or reveal, restore or archive below." A password that is not right is a validation error on `confirm_password` (303 back to the page, never
    the confirm page): for a form with `data-confirm-from` the summary stands above the shared block (the primary
    one while a block is deferred), its message links to and is repeated under that block's field, the focus goes
-   to the field and the action that failed is held again under its name. Without script
+   to the field and the action that failed is held again under its name. The one exception: when the form came
+   back with a secret field emptied (the summary says "Secret fields are not refilled." and carries
+   `data-unfilled`), the action is not held again and the focus goes to that emptied field, so the form is never
+   sent without it. Without script
    the confirm page is the fallback. A page states its confirmation once: on an entry page with waiting
    requests, the block above them carries "Password confirmed until …" and, once expired, the page's one password field;
    the Reveal block (`'primary' => 'confirm-decide'`) then shows nothing while valid and a pointer to that field
@@ -237,6 +249,9 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    Booleans are `label.check` checkboxes everywhere; array rows use explicit indices (`env_production[3]`).
 10. **Actions only when possible**: no Revoke on inactive items; a form whose required choice is empty shows an
     empty state linking to where to fix it instead of an enabled submit.
+11. **Secret inputs** (a password input in `.with-button`) get a Reveal/Hide toggle from app.js. It is switched
+    off while the field is empty, on as soon as something is typed or generated, and a field emptied while shown
+    is masked again.
 
 ## Additions to the ops design system
 

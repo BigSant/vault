@@ -34,6 +34,12 @@
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
 <p class="note">An entry type defines an entry’s encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
 
+{{-- One password block for the page, above the entry types: every form below names it (data-confirm-from), so an
+     expired confirmation asks here and holds the action under its name ("Save entry type Login"). The add form
+     only points to it. With no entry types there is nothing above the add form, which then has its own field. --}}
+@unless($types->isEmpty())
+@include('confirm-inline', ['verb' => 'change entry types', 'ask' => 'Enter your current password, then save, add or remove below.', 'shared' => 'confirm-types'])
+@endunless
 @if($types->isEmpty())
     <div class="empty capped"><b>No entry types yet</b>An entry needs an entry type. <a href="#add-type">Add the first entry type</a></div>
 @else
@@ -70,7 +76,7 @@
     <details class="fold type-fold capped" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
         <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> entry type {{ $type->name }}</span></span></summary>
         <div class="inner">
-            <form method="post" action="{{ $typePath }}">@csrf
+            <form method="post" action="{{ $typePath }}" data-confirm-from="confirm-types">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
                 <label><span>Type name <small>key <code>{{ $type->key }}</code></small></span><input name="name" value="{{ $oldTypeEdit && is_string(old('name')) ? old('name') : $type->name }}" required maxlength="80"></label>
                 <div class="scroll"><table class="list edit">
@@ -92,12 +98,11 @@
                         </tr>
                     </tbody>
                 </table></div>
-                @include('confirm-inline', ['verb' => 'save this entry type'])
                 <div class="form-foot"><p class="note">An empty last row is ignored.</p>
-                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Field</button><button aria-label="Save entry type {{ $type->name }}">Save entry type</button></div></div>
+                    <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Field</button><button aria-label="Save entry type {{ $type->name }}" data-held-name="Save entry type {{ $type->name }}" data-held-lead="Save entry type " data-held-data="{{ $type->name }}">Save entry type</button></div></div>
             </form>
             @if($used === 0)
-                <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type “{{ $type->name }}”?">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}">Remove entry type</button></form>
+                <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type “{{ $type->name }}”?" data-confirm-from="confirm-types">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}" data-held-name="Remove entry type {{ $type->name }}" data-held-lead="Remove entry type " data-held-data="{{ $type->name }}">Remove entry type</button></form>
             @endif
         </div>
     </details>
@@ -116,7 +121,7 @@
 
 <h2 id="add-type">Add an entry type</h2>
 
-    <form class="action" method="post" action="{{ $addTypePath }}">@csrf
+    <form class="action" method="post" action="{{ $addTypePath }}"@unless($types->isEmpty()) data-confirm-from="confirm-types"@endunless>@csrf
         <label><span>Type name</span><input name="name" value="{{ $oldAddType && is_string(old('name')) ? old('name') : '' }}" required maxlength="80" placeholder="FTP server"></label>
         @php $nextNewIdx = count($newRows); @endphp
         <table class="list edit type-new">
@@ -126,10 +131,14 @@
                 @php $for = $f['label'] !== '' ? $f['label'] : 'row '.$loop->iteration; @endphp
                 <tr><td data-label="Field label"><input type="hidden" name="field_key[{{ $i }}]" value=""><input name="field_label[{{ $i }}]" value="{{ $f['label'] }}" maxlength="80" aria-label="Label for {{ $for }}"></td><td data-label="Kind">{!! $kindSelect($i, $f['kind'], $for) !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $i }}]" value="1" @checked((bool) $f['required']) aria-label="Required for {{ $for }}"> <span class="phone-only">Required</span></label></td></tr>
             @endforeach
-                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[{{ $nextNewIdx }}]" value=""><input name="field_label[{{ $nextNewIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect($nextNewIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextNewIdx }}]" value="1" checked aria-label="Required for the new field"> <span class="phone-only">Required</span></label></td></tr>
+                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[{{ $nextNewIdx }}]" value=""><input name="field_label[{{ $nextNewIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect($nextNewIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextNewIdx }}]" value="1" aria-label="Required for the new field"> <span class="phone-only">Required</span></label></td></tr>
             </tbody>
         </table>
-        @include('confirm-inline', ['verb' => 'add this entry type'])
-        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new" aria-label="Add a field to the new entry type">+ Field</button><button class="go">Add entry type</button></div></div>
+        @if($types->isEmpty())
+            @include('confirm-inline', ['verb' => 'add this entry type'])
+        @else
+            @include('confirm-inline', ['verb' => 'add this entry type', 'shared' => 'confirm-add-type', 'primary' => 'confirm-types', 'primaryShown' => true, 'primaryWhere' => 'above the entry types', 'fallback' => true])
+        @endif
+        <div class="form-foot"><p class="note">Field keys are made from the labels.</p><div class="controls"><button type="button" data-add-row="rows-new" aria-label="Add a field to the new entry type">+ Field</button><button class="go" data-held-name="Add entry type " data-held-field="name">Add entry type</button></div></div>
     </form>
 @endsection

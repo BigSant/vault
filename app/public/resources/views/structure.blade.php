@@ -28,7 +28,8 @@
 <p class="note">A project groups entries by environment. Only empty projects and environments can be removed (archived entries count as entries).</p>
 
 {{-- One password block for the page, above the projects: every form below names it (data-confirm-from), so an
-     expired confirmation asks here and holds the action under its name. The template form only points to it. --}}
+     expired confirmation asks here and holds the action under its name. The two form cards below (Add a project,
+     the template) only point to it, with a field of their own in <noscript>. --}}
 @include('confirm-inline', ['verb' => 'change projects', 'ask' => 'Enter your current password, then save, add or remove below.', 'shared' => 'confirm-setup'])
 {{-- The documented deck: two project cards side by side at --wide, one column below that. --}}
 <div class="deck project-list">
@@ -116,6 +117,7 @@
 <h2 id="add-project">Add a project</h2>
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/projects" data-confirm-from="confirm-setup">@csrf<input type="hidden" name="back" value="structure">
     <label><span>Name</span><input name="name" value="{{ $oldAddProject ? old('name') : '' }}" required maxlength="100" placeholder="e.g. billing"></label>
+    @include('confirm-inline', ['verb' => 'add this project', 'shared' => 'confirm-add-project', 'primary' => 'confirm-setup', 'primaryShown' => true, 'primaryWhere' => 'above the projects', 'fallback' => true])
     <div class="form-foot"><p class="note">Projects you add start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go" data-held-name="Add project: " data-held-field="name">Add project</button></div>
 </form>
 

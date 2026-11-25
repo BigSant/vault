@@ -111,7 +111,8 @@
              here, in place, and never sends a reveal to the confirm page. While requests wait for this owner, their
              block at the top of the page ("confirm-decide") is the page's one confirmation state and one password
              field: this block then shows nothing while the confirmation is valid, and points up when it expired.
-             Restore (Versions) and Archive entry name this block too, so they are held here like a reveal. --}}
+             Restore (Versions) and Archive entry name this block too, so they are held here like a reveal.
+             While values are on screen, "Hide values" (first in the foot, script only) conceals them right away. --}}
         @include('confirm-inline', ['verb' => 'reveal, restore or archive', 'ask' => 'Enter your current password, then reveal values, restore a version or archive the entry.', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
@@ -119,6 +120,8 @@
                  While values are on screen no Reveal is the solid button: "Reveal again" turns solid when app.js hides
                  them (data-go-when-hidden). data-held-name: the held button's wording, the entry name in its own case. --}}
             <div class="controls">
+                {{-- Shown by app.js while values are on screen: conceals them at once, before the 30 seconds end. Plain, never solid. --}}
+                @isset($secret)<button type="button" data-hide-values hidden>Hide values</button>@endisset
                 @if($shownOlder)
                 <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<button aria-label="Reveal current values of {{ $entry->name }}" data-held-name="Reveal current: {{ $entry->name }}">Reveal current</button></form>
                 <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf<input type="hidden" name="version" value="{{ $shownOlder }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button data-go-when-hidden aria-label="Reveal version {{ $shownOlder }} again: values of {{ $entry->name }}" data-held-name="Reveal version {{ $shownOlder }} again: {{ $entry->name }}">Reveal version {{ $shownOlder }} again</button></form>

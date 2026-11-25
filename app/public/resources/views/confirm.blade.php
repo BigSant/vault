@@ -3,20 +3,28 @@
 @section('quiet-nav', '1')
 @section('content')
 <h1>Password confirmation</h1>
+@if($pending ?? null)
+    @php $label = is_array($pending['label']) ? $pending['label'] : ['verb' => 'Continue']; @endphp
+    @section('pending-label'){{ $label['verb'] }}@if(isset($label['name'])) <span class="name">{{ $label['name'] }}</span>@endif{{ empty($label['suffix']) ? '' : ' '.$label['suffix'] }}
+    @endsection
+    <p>Action to confirm<br><strong>@if($label['verb'] === 'Continue')the action you started
+        @else
+            @yield('pending-label')
+        @endif</strong></p>
+@endif
 @if($ready ?? false)
 <form class="action" method="post" action="{{ $pending['path'] }}">@csrf
     @foreach($pending['fields'] as $name => $value)
         <input type="hidden" name="{{ $name }}" value="{{ $value }}">
     @endforeach
     <p role="status">Password confirmed. Your action is ready.</p>
-    <div class="controls"><a class="btn" href="{{ $return }}">Cancel</a><button class="go">Continue: {{ $pending['label'] }}</button></div>
+    <div class="controls"><a class="btn" href="{{ $return }}">Cancel</a><button class="go">@yield('pending-label')</button></div>
 </form>
 @else
 <form class="action" method="post" action="/confirm">@csrf
     <input type="hidden" name="return" value="{{ $return }}">
     @if($pending ?? null)
         <input type="hidden" name="pending" value="{{ $pending['nonce'] }}">
-        <p>Waiting action: <strong>{{ $pending['label'] }}</strong></p>
     @endif
     @if($failed)
         <div class="callout bad" id="confirm-status" role="alert"><p>That password is not right. Try again.</p></div>

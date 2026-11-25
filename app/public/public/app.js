@@ -10,6 +10,9 @@ const isoField = field => { if (field?.matches?.('input[placeholder="YYYY-MM-DD"
 // Enter in the field: the value is put right before the browser checks the pattern.
 document.addEventListener('keydown', event => { if (event.key === 'Enter') isoField(event.target); }, true);
 document.addEventListener('submit', event => event.target.querySelectorAll?.('input[placeholder="YYYY-MM-DD"]').forEach(isoField), true);
+// The buttons that send a form. form.elements, not a query inside the form: a submit button may stand outside its
+// form (form="…": Save project in a form foot).
+const submitters = form => [...form.elements].filter(el => el.matches('button:not([type=button])'));
 // A hidden value cannot be copied any more, so its Copy button is switched off too and gets its first wording back.
 // data-hidden-text says what to do when the value cannot be revealed again (the one-time agent token).
 document.querySelectorAll('[data-copy]').forEach(button => { button.dataset.label = button.textContent; });
@@ -21,16 +24,34 @@ const hideSecrets = (selector = '[data-secret]') => document.querySelectorAll(se
 // MFA enrollment keys stay visible until the form is submitted; other secrets auto-hide.
 // An older version on screen (data-version) is named in everything that is said and shown after the hide; the note
 // above the values (data-hidden-note) changes from "hide again after 30 seconds" to what happened.
-if (document.querySelector('[data-secret]:not([data-keep])')) setTimeout(() => {
-  const version = document.querySelector('[data-secret][data-version]')?.dataset.version;
-  hideSecrets('[data-secret]:not([data-keep])');
-  document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
-  // With the values gone, revealing them again is the page's main action: its button turns solid.
-  // (Not while an action is held: the held button is then the one solid button, and the release restores this one.)
-  const holding = document.querySelector('.confirm-inline [data-held-row]:not([hidden])');
-  document.querySelectorAll('[data-go-when-hidden]').forEach(button => { if (holding) button.dataset.heldGo = '1'; else button.classList.add('go'); });
-  say(version ? 'Version ' + version + ' values hidden again. Copy is off until you reveal version ' + version + ' again.' : 'Secret values hidden again. Copy is off until you reveal them again.');
-}, 30000);
+// "Hide values" ([data-hide-values], shown by script while values are on screen) does the same at once, on demand:
+// every revealed field is concealed, its Copy is switched off, it is said, and the focus moves to the button that
+// reveals the values again. The button goes with the values, also when the 30 seconds end first.
+if (document.querySelector('[data-secret]:not([data-keep])')) {
+  const hideNow = [...document.querySelectorAll('[data-hide-values]')];
+  let concealed = false;
+  const conceal = manual => {
+    if (concealed) return;
+    concealed = true;
+    clearTimeout(timer);
+    const version = document.querySelector('[data-secret][data-version]')?.dataset.version;
+    hideSecrets('[data-secret]:not([data-keep])');
+    document.querySelectorAll('[data-hidden-note]').forEach(note => { note.textContent = note.dataset.hiddenNote; });
+    // With the values gone, revealing them again is the page's main action: its button turns solid.
+    // (Not while an action is held: the held button is then the one solid button, and the release restores this one.)
+    const holding = document.querySelector('.confirm-inline [data-held-row]:not([hidden])');
+    const again = [...document.querySelectorAll('[data-go-when-hidden]')];
+    again.forEach(button => { if (holding) button.dataset.heldGo = '1'; else button.classList.add('go'); });
+    // The focus never stays on a button that is gone: it moves to the way back to the values.
+    const focused = manual || hideNow.includes(document.activeElement);
+    hideNow.forEach(button => { button.hidden = true; });
+    if (focused) again[0]?.focus();
+    const tail = version ? 'Copy is off until you reveal version ' + version + ' again.' : 'Copy is off until you reveal them again.';
+    say((version ? 'Version ' + version + ' values hidden' : 'Secret values hidden') + (manual ? '. ' : ' again. ') + tail);
+  };
+  const timer = setTimeout(() => conceal(false), 30000);
+  hideNow.forEach(button => { button.hidden = false; button.addEventListener('click', () => conceal(true)); });
+}
 // The enrollment QR encodes the same key, so it goes too.
 addEventListener('pagehide', () => { hideSecrets(); document.querySelectorAll('.totp-qr').forEach(img => img.remove()); });
 document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
@@ -155,8 +176,20 @@ const wireReveal = (root = document) => root.querySelectorAll('.with-button > in
     show.setAttribute('aria-label', verb + ' ' + name);
   };
   const mask = () => { input.type = 'password'; sync(); };
+  // An empty field has nothing to reveal: the button is off until something is typed or generated, and a field
+  // that is emptied while shown is masked again.
+  const fit = () => {
+    const empty = input.value === '';
+    if (empty && input.type !== 'password') mask();
+    show.disabled = empty;
+  };
   sync();
+  fit();
+  ['input', 'change'].forEach(type => input.addEventListener(type, fit));
+  // A value the browser put back (back/forward, autofill on load) counts too.
+  addEventListener('pageshow', fit);
   show.addEventListener('click', () => {
+    if (input.value === '') { fit(); return; }
     const visible = input.type === 'password';
     input.type = visible ? 'text' : 'password';
     sync();
@@ -306,7 +339,8 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
 // is valid, because a form on the same page states it.
 // The held button's wording: the pressed button's data-held-name, plus the chosen option of the form field named by
 // data-held-field ("Change Dana's role to " + "Editor"; a change of that field while held changes the wording).
-// Data in it keeps its case: what follows ": ", or the data-held-data text after data-held-lead ("Change " + "Dana").
+// Data in it keeps its case: what follows ": ", the data-held-data text after data-held-lead ("Change " + "Dana"),
+// or the field's value after a wording without a colon ("Add entry type " + "FTP server").
 // While an action is held, the held button is the page's one solid button: every other solid button or link in the
 // page ("Reveal current", "Add member", "Add project") is plain until the hold ends, and solid again after it.
 const confirmBoxes = new Map();
@@ -375,7 +409,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     const held = state.held;
     if (held && !held.form.isConnected) {
       const form = [...document.querySelectorAll('form[data-confirm-from="' + box.id + '"]')].find(candidate => candidate.getAttribute('action') === held.action && [...candidate.elements].every(el => el.type !== 'hidden' || el.name !== 'version' || el.value === held.version));
-      const button = form && [...form.querySelectorAll('button:not([type=button])')].find(candidate => candidate.value === held.value);
+      const button = form && submitters(form).find(candidate => candidate.value === held.value);
       state.held = form && button && !button.disabled ? { ...held, form, button } : null;
     }
     return state.held;
@@ -411,6 +445,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     const cut = name.indexOf(': ');
     if (marked && name.startsWith(lead + marked)) text.append(lead, data(marked), name.slice(lead.length + marked.length));
     else if (cut >= 0) text.append(name.slice(0, cut + 2), data(name.slice(cut + 2)));
+    else if (button?.dataset.heldField && button.dataset.heldName && name.length > button.dataset.heldName.length && name.startsWith(button.dataset.heldName)) text.append(button.dataset.heldName, data(name.slice(button.dataset.heldName.length)));
     else text.append(name);
     heldButton.replaceChildren(text);
   };
@@ -449,7 +484,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
       say(gone ? 'That action is no longer available. Choose an action below.' : 'Password entered. Now choose an action below.');
       return;
     }
-    const button = held?.button || form.querySelector('button:not([type=button])');
+    const button = held?.button || submitters(form)[0];
     if (button?.disabled) { state.release(); line('That action is no longer available. Choose an action below.'); say('That action is no longer available. Choose an action below.'); return; }
     // The held button names the action and was pressed on purpose: a form that asks first (data-confirm: Remove)
     // does not ask again.
@@ -482,7 +517,7 @@ document.addEventListener('submit', event => {
   if (!state.check()) return;
   if (!state.input.value) {
     event.preventDefault();
-    state.hold(form, event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])'));
+    state.hold(form, event.submitter instanceof HTMLButtonElement ? event.submitter : submitters(form)[0]);
     return;
   }
   const copy = document.createElement('input');
@@ -521,7 +556,7 @@ if (guard) {
     form.addEventListener('submit', event => {
       if (!guarding || event.defaultPrevented) return;
       if (mine.armed()) { if (mine.tooSoon()) event.preventDefault(); return; }
-      const button = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])');
+      const button = event.submitter instanceof HTMLButtonElement ? event.submitter : submitters(form)[0];
       if (!button) return;
       event.preventDefault();
       only(mine);
@@ -572,7 +607,7 @@ document.querySelectorAll('form[data-confirm]').forEach(form => {
       if (step.tooSoon()) event.preventDefault();
       return;
     }
-    const button = event.submitter instanceof HTMLButtonElement ? event.submitter : form.querySelector('button:not([type=button])');
+    const button = event.submitter instanceof HTMLButtonElement ? event.submitter : submitters(form)[0];
     if (!button) return;
     event.preventDefault();
     step.arm(button);
@@ -591,7 +626,7 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
   // The empty "Choose an action" placeholder is not an action: it is never switched off or counted.
   const options = [...actionSelect.options].filter(option => option.value);
   options.forEach(option => { option.dataset.text = option.textContent; });
-  const submit = form.querySelector('button:not([type=button])');
+  const submit = submitters(form)[0];
   const note = document.createElement('p');
   note.className = 'note';
   note.id = 'grant-action-note';
@@ -1023,13 +1058,21 @@ if (summary) {
     // The password is typed again right away: the focus goes to the field (the message is its description), and
     // the action that failed is held again under its name, so the new password and Enter send it. Not when the
     // form needs something else that was not refilled (a site MFA code): then the row is filled in first.
-    // form.elements: a submit button may stand outside its form (form="…": Save project in a form foot).
-    const buttons = [...form.elements].filter(candidate => candidate.matches('button:not([type=button])'));
+    const buttons = submitters(form);
     const button = buttons.find(candidate => candidate.name && values[candidate.name] === candidate.value) || (buttons.length === 1 ? buttons[0] : null);
     const message = items.find(item => item.dataset.field === 'confirm_password')?.textContent.trim().replace(/\.$/, '') || 'Current password is not right';
-    if (button && !button.disabled && form.checkValidity()) wrongPassword.hold(form, button, message + '. Enter your current password again');
-    else { say(message + '.'); wrongPassword.input.focus({ preventScroll: true }); }
-    summary.scrollIntoView({ block: 'center' });
+    // data-unfilled: something was typed into a secret field of the form (an initial password) and came back
+    // empty. The action is not held again, or the new password and Enter would send the form without it: the
+    // focus goes to that secret field, which is filled in first.
+    const unfilled = summary.hasAttribute('data-unfilled');
+    const cleared = unfilled ? [...form.elements].find(el => el.matches('input[type=password]') && el.name !== 'confirm_password' && usable(el) && el.value === '') : null;
+    if (!unfilled && button && !button.disabled && form.checkValidity()) wrongPassword.hold(form, button, message + '. Enter your current password again');
+    else if (cleared) {
+      say(message + '. Secret fields are not refilled: enter ' + fieldName(cleared) + ' again, then your current password.');
+      cleared.scrollIntoView({ block: 'center' });
+      cleared.focus({ preventScroll: true });
+    } else { say(message + '.'); wrongPassword.input.focus({ preventScroll: true }); }
+    if (!cleared) summary.scrollIntoView({ block: 'center' });
   } else {
     summary.focus({ preventScroll: true });
     summary.scrollIntoView({ block: 'center' });

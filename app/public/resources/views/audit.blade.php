@@ -17,7 +17,6 @@
         @if($entry)<input type="hidden" name="entry" value="{{ $entry->id }}">@endif
         <label>Event group <select name="group"><option value="">All groups</option>@foreach(array_keys($groups) as $group)<option value="{{ $group }}" @selected(request('group') === $group)>{{ ucfirst($group) }}</option>@endforeach</select></label>
         <label>Actor <select name="actor"><option value="">All actors</option>@foreach($actorOptions as $key => $label)<option value="{{ $key }}" @selected(request('actor') === $key)>{{ $label }}{{ str_starts_with($key, 'machine:') ? ' · agent' : '' }}</option>@endforeach</select></label>
-        @php $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed']; @endphp
         <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach($outcomeLabels as $outcome => $outcomeLabel)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcomeLabel }}</option>@endforeach</select></label>
         <label>From (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
         <label>To (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>

@@ -586,16 +586,49 @@ final class VaultTest extends TestCase
             ->assertViewHas('events', fn ($events) => $events->total() === 0);
     }
 
+    public function test_confirmation_labels_preserve_display_names_and_identify_actions(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $entry = $this->entry();
+        [$machine, $token] = $this->machine($entry, true);
+        $operation = $this->withToken($token)->postJson('/api/v1/execute', [
+            'entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'label-request',
+        ])->assertJsonPath('state', 'pending')->json('id');
+        $decision = "$base/operations/$operation/decision";
+        $this->withSession(['confirmed_at' => time() - 301]);
+        foreach ([
+            ["$base/grants", ['entry_id' => $entry, 'machine_id' => $machine, 'action' => 'test.http'], 'Add grant', 'test.http for ai-os on Private name'],
+            [$decision, ['decision' => 'approve'], 'Allow once:', 'test.http on Private name'],
+            [$decision, ['decision' => 'deny'], 'Deny:', 'test.http on Private name'],
+            ["$base/types", ['name' => 'Mixed Case'], 'Save entry type', 'Mixed Case'],
+            ["$base/types/api_key/delete", [], 'Remove entry type', DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'api_key')->value('name')],
+            ["/entries/$entry/destroy", [], 'Destroy', 'Private name'],
+        ] as [$path, $fields, $verb, $name]) {
+            $this->post($path, $fields)->assertForbidden()->assertSeeText('Action to confirm')
+                ->assertSee($verb.' <span class="name">'.$name.'</span>', false);
+        }
+        $this->post("/entries/$entry/unarchive")->assertForbidden()
+            ->assertSee('Restore <span class="name">Private name</span> from archive', false);
+        $this->post("$base/grants")->assertForbidden()->assertSeeText('the action you started');
+        $ready = $this->post('/confirm', ['pending' => session('pending_action.nonce'), 'current_password' => 'Synthetic-password-123!'])->assertOk();
+        $this->assertMatchesRegularExpression('~<button class="go">\s*Continue\s*</button>~', $ready->getContent());
+    }
+
     public function test_activity_filters_by_outcome_and_inclusive_dates(): void
     {
-        foreach ([['01', 'denied'], ['02', 'ok'], ['02', 'denied'], ['03', 'denied']] as [$day, $outcome]) {
+        foreach ([['01', 'denied'], ['02', 'ok'], ['02', 'denied'], ['03', 'denied'], ['04', 'succeeded'], ['04', 'failed'], ['04', 'expired'], ['04', 'revoked']] as [$day, $outcome]) {
             DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
                 'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
         }
         $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertDontSee('class="filter-status"', false)->assertDontSeeText('Page 1 of 1');
-        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK');
+        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK')
+            ->assertViewHas('events', fn ($events) => $events->pluck('outcome')->sort()->values()->all() === ['ok', 'succeeded']);
+        foreach (['failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'] as $value => $label) {
+            $this->get('/workspaces/'.$this->workspace.'/audit?outcome='.$value)->assertSeeText('Outcome: '.$label)
+                ->assertViewHas('events', fn ($events) => $events->pluck('outcome')->all() === [$value]);
+        }
         $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
-            ->assertOk()->assertSeeText('Showing 1 of 4 events')->assertSeeText('Outcome: Denied')
+            ->assertOk()->assertSeeText('Showing 1 of 8 events')->assertSeeText('Outcome: Denied')
             ->assertSeeText('From: 2026-01-02')->assertSeeText('To: 2026-01-02')
             ->assertViewHas('events', fn ($events) => $events->first()->created_at === '2026-01-02 23:59:59' && $events->first()->outcome === 'denied');
     }

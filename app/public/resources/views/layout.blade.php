@@ -84,7 +84,7 @@
 @endphp
 {!! substr($page, 0, $headEnd) !!}
 @if($formErrors)
-<div class="callout bad error-summary" id="form-errors" tabindex="-1" data-form="{{ session('error_form') }}" data-sent="{{ json_encode((object) $sent) }}">
+<div class="callout bad error-summary" id="form-errors" tabindex="-1" data-form="{{ session('error_form') }}" data-sent="{{ json_encode((object) $sent) }}"@if(session('error_unfilled')) data-unfilled @endif>
     <p><b>Check the form.</b> Nothing was saved.@if(session('error_unfilled')) Secret fields are not refilled.@endif</p>
     <ul>@foreach($formErrors as $field => $messages)@foreach(array_slice($messages, 0, 2) as $message)<li data-field="{{ $field }}">{{ $message }}</li>@endforeach @endforeach</ul>
 </div>

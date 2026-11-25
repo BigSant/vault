@@ -379,7 +379,8 @@ details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
 main.login{max-width:520px;margin:0 auto;padding:10vh 16px 24px}
 main.login .mark{display:block;margin:0 0 22px;text-align:center}
 main.login form.action,main.login .card{padding:20px 22px}
-main.login label{grid-template-columns:10.5em minmax(0,1fr)}
+main.login label,main.login .field{grid-template-columns:10.5em minmax(0,1fr)}
+main.login .field>label{display:block;margin:0}
 .totp-qr{display:block;width:240px;height:240px;margin:6px auto 14px;background:var(--qr-light);padding:8px;border-radius:4px;image-rendering:pixelated}
 
 @media (max-width:900px){
@@ -397,7 +398,7 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
 .form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
-label,main.login label{grid-template-columns:minmax(0,1fr);gap:4px}
+label,main.login label,main.login .field{grid-template-columns:minmax(0,1fr);gap:4px}
 .toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}.toolbar :is(button,.btn){min-height:40px}.toolbar>a:not(.btn),.toolbar .clear{min-height:40px}
 .board,.board tbody,.board tr,.board td{display:block;width:100%}
 /* Column heads stay for screen readers (app.js adds the table roles the block layout takes away). */
@@ -450,7 +451,7 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 @media (min-width:1181px){
 /* Six columns fit --wide: tighter cells, and the MFA field never gets narrower than eight digits (8ch plus its padding). */
 .board.requests :is(th,td):not(:first-child){padding-left:8px;padding-right:8px}
-.board.requests form.mfa input{min-width:calc(8ch + 24px)}
+.board.requests form.mfa label input{min-width:calc(8ch + 24px)}
 /* Allow once and Deny share one row. */
 .board.requests td.decision{white-space:nowrap}
 .board.requests td.decision .controls{flex-wrap:nowrap}
@@ -624,6 +625,8 @@ td>.field-error{margin-top:4px}
 form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error{margin:-4px 0 8px calc(13px*14 + 10px)}
 main.login form>.field-error{margin-left:calc(13px*10.5 + 10px)}
 label.stack+.field-error,label.check+.field-error{margin-left:0}
+/* Under the field of a shared block the message is the last thing before the held button: no pull-up, no gap of its own. */
+.confirm-inline.shared>.field-error{margin-top:4px;margin-bottom:0}
 @media (max-width:900px){form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error,main.login form>.field-error{margin-left:0}}
 /* A standalone card that is not a form (revealed values, the one-time token) keeps the form card width. */
 .card.solo{max-width:var(--card);margin-bottom:14px}
@@ -762,6 +765,11 @@ form.action details.import-ref{background:var(--panel-2)}
    agent use follow as one small summary line, "3 production · 2 used by agents in 7 days". */
 .stats.entry-stats{display:block}
 .entry-stats>.stat:nth-child(-n+2){display:inline-block;width:calc(50% - 6px);vertical-align:top;margin-bottom:10px}
+/* While the rotation-due filter is on, its stat also says "Clear ×": it takes the wider share, so the label and
+   "Clear ×" stay on one line down to 360 px ("active entries" still fits the narrower one). */
+.entry-stats:has(>.stat-link.is-on)>.stat:first-child{width:calc(42% - 6px)}
+.entry-stats>.stat-link.is-on{width:calc(58% - 6px);white-space:nowrap}
+.entry-stats>.stat-link.is-on>span:first-of-type{margin-right:0}
 .entry-stats>.stat:nth-child(n+3){display:inline;font-size:12px;color:var(--dim)}
 .entry-stats>.stat:nth-child(n+3) b{display:inline;margin-right:.5em;font:700 12px/1.5 var(--mono);color:var(--ink)}
 .entry-stats>.stat:nth-child(n+3) span{letter-spacing:0;text-transform:none}
