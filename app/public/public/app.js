@@ -1,5 +1,15 @@
 // Screen readers hear short status changes through the polite live region in the layout.
 const say = text => { const live = document.getElementById('live'); if (live) { live.textContent = ''; setTimeout(() => { live.textContent = text; }, 50); } };
+// Date fields are text in ISO form (placeholder YYYY-MM-DD). A phone keyboard may make "-" awkward, so eight digits
+// (20261109) and the same date with "/" or "." become 2026-11-09 when the field changes, loses the focus or its
+// form is sent (capture: before the other submit handlers read the value). Anything else is left for the pattern
+// and the server to refuse.
+const isoDate = value => { const m = String(value).trim().match(/^(\d{4})([-\/.]?)(\d{2})\2(\d{2})$/); return m ? m[1] + '-' + m[3] + '-' + m[4] : value; };
+const isoField = field => { if (field?.matches?.('input[placeholder="YYYY-MM-DD"]')) { const next = isoDate(field.value); if (next !== field.value) field.value = next; } };
+['change', 'focusout'].forEach(type => document.addEventListener(type, event => isoField(event.target)));
+// Enter in the field: the value is put right before the browser checks the pattern.
+document.addEventListener('keydown', event => { if (event.key === 'Enter') isoField(event.target); }, true);
+document.addEventListener('submit', event => event.target.querySelectorAll?.('input[placeholder="YYYY-MM-DD"]').forEach(isoField), true);
 // A hidden value cannot be copied any more, so its Copy button is switched off too and gets its first wording back.
 // data-hidden-text says what to do when the value cannot be revealed again (the one-time agent token).
 document.querySelectorAll('[data-copy]').forEach(button => { button.dataset.label = button.textContent; });
@@ -552,9 +562,13 @@ tableRoles();
 // The page is never reloaded. While the page is visible (also while nothing waits, so a new request shows up), the
 // page's address (data-refresh-url) is fetched every 30 seconds and only the content of the [data-refresh] regions
 // is replaced: the request sections, the waiting heading and the header's waiting count. A hidden tab pauses and
-// catches up when it is looked at again. A region that holds the focus or a started input is left alone until the
-// next round. What changed is said in the live region; "Refresh requests" beside the waiting heading does the same
-// on demand, and "Checked HH:MM UTC" next to it says when the page last matched the server.
+// catches up when it is looked at again. A request board is merged row by row (rows match by data-request): only
+// a row that holds the focus or a started input is left as it is, and its siblings are updated, added and removed
+// around it, so a new request shows up while the owner types a code into another one. The waiting heading counts
+// the rows shown. What changed is said in the live region; "Refresh requests" beside the waiting heading does the
+// same on demand, and "Queue checked HH:MM UTC" next to it says when the page last matched the server. A round
+// that failed, or a row in use that no longer matches the server, reads "Last updated HH:MM UTC · refresh delayed":
+// the time does not advance.
 const regions = () => [...document.querySelectorAll('[data-refresh]')];
 const refreshUrl = regions().map(region => region.dataset.refreshUrl).find(Boolean);
 if (refreshUrl) {
@@ -608,7 +622,41 @@ if (refreshUrl) {
   // The server's clock, for "Checked HH:MM UTC": the offset comes from the status line's data-now.
   const stamp = document.querySelector('[data-refresh-status][data-now]');
   const clockSkew = stamp ? Number(stamp.dataset.now) * 1000 - Date.now() : 0;
-  const checked = () => 'Queue checked ' + new Date(Date.now() + clockSkew).toISOString().slice(11, 16) + ' UTC';
+  const clock = () => new Date(Date.now() + clockSkew).toISOString().slice(11, 16);
+  // When the page last matched the server: the time the server printed, then every round that went through.
+  let last = stamp?.textContent.match(/\d\d:\d\d/)?.[0] || clock();
+  const checked = () => 'Queue checked ' + (last = clock()) + ' UTC';
+  const delayed = (why = 'refresh delayed') => 'Last updated ' + last + ' UTC \u00B7 ' + why;
+  // One board, row by row. The rows in use stay where they are (moving a row would drop its focus); every other row
+  // is taken from the fresh page and put before or after them in the fresh order. Returns null when no row is in
+  // use (the region is then replaced whole), else how many kept rows no longer match the server: gone from this
+  // board, or in another state.
+  const mergeRows = (region, next) => {
+    // An expired row is switched off: what was typed in it no longer holds it, only the focus does.
+    const kept = [...region.querySelectorAll('table.requests tbody tr[data-request]')].filter(row => row.dataset.late ? row.contains(document.activeElement) : inUse(row));
+    if (!kept.length) return null;
+    const body = kept[0].parentNode;
+    const fresh = [...next.querySelectorAll('table.requests tbody tr[data-request]')];
+    const states = new Map(fresh.map(row => [row.dataset.request, row.dataset.state]));
+    [...body.children].forEach(row => { if (!kept.includes(row)) row.remove(); });
+    let at = 0;
+    fresh.forEach(row => {
+      const i = kept.findIndex(mine => mine.dataset.request === row.dataset.request);
+      if (i >= 0) { at = Math.max(at, i + 1); return; }
+      body.insertBefore(document.adoptNode(row), kept[at] || null);
+    });
+    return kept.filter(row => !row.dataset.late && states.get(row.dataset.request) !== row.dataset.state).length;
+  };
+  // The waiting heading says how many rows are shown under it.
+  const heading = () => {
+    const title = document.querySelector('[data-refresh="waiting-title"]');
+    const board = document.querySelector('[data-refresh="waiting"]');
+    if (!title || !board || !/^(\d+ requests?|Requests) waiting for you$/.test(title.textContent.trim())) return;
+    const n = waitingIn(board).size;
+    const text = n === 0 ? 'Requests waiting for you' : n === 1 ? '1 request waiting for you' : n + ' requests waiting for you';
+    if (title.textContent !== text) title.textContent = text;
+  };
+  const plain = el => el.textContent.replace(/\s+/g, ' ').trim();
   // The waiting heading row and its jump link (the entry page) show only while their region holds something. A row
   // that holds the focus stays until the focus has left it.
   const showWith = () => document.querySelectorAll('[data-shown-with]').forEach(el => {
@@ -624,6 +672,8 @@ if (refreshUrl) {
   let used = Date.now();
   ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
   const refresh = async manual => {
+    // Stopped for want of a press: the status says so instead of standing still without a word.
+    if (!manual && !running && !document.hidden && Date.now() - used > 900000) status(delayed('automatic refresh paused'));
     if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;
     running = true;
     due = Date.now() + 30000;
@@ -638,11 +688,15 @@ if (refreshUrl) {
       regions().forEach(region => {
         const next = fresh.querySelector('[data-refresh="' + region.dataset.refresh + '"]');
         if (!next) return;
-        if (inUse(region)) { skipped = true; return; }
+        const stale = mergeRows(region, next);
+        if (stale !== null) { if (stale) skipped = true; tableRoles(region); return; }
+        // In use outside a request row (the nav, a board's frame): left alone; that only counts when it differs.
+        if (inUse(region)) { if (plain(region) !== plain(next)) skipped = true; return; }
         region.replaceChildren(...next.childNodes);
         tableRoles(region);
       });
       tick();
+      heading();
       const after = waitingIn(document);
       showWith();
       const arrived = [...after.keys()].filter(id => !before.has(id)).length;
@@ -654,14 +708,16 @@ if (refreshUrl) {
         parts.push('Request ' + ({ approved: 'allowed', running: 'allowed and running' }[state] || state || 'no longer waiting'));
       } else if (gone.length) parts.push(gone.length + ' requests no longer waiting');
       if (arrived || gone.length) parts.push(after.size ? count(after.size) : 'No requests waiting');
-      if (skipped && manual) parts.push('The section you are working in was left as it is');
+      if (skipped && manual) parts.push('The part you are working in was left as it is');
       const text = parts.length ? parts.join('. ') + '.' : '';
-      if (text) say(text); else if (manual) say('Requests are up to date.');
+      if (text) say(text); else if (manual && !skipped) say('Requests are up to date.');
       // A press always gets an answer in words; a quiet round only moves the time.
-      status((text ? text + ' ' : manual ? 'Up to date. ' : '') + checked());
+      // The time advances only when everything shown matches the server.
+      status((text ? text + ' ' : manual && !skipped ? 'Up to date. ' : '') + (skipped ? delayed() : checked()));
     } catch {
-      // No connection or a server error: the next round tries again; a press says so.
-      if (manual) { status('Could not refresh. Check the connection and try again.'); say('Could not refresh requests.'); }
+      // No connection or a server error: the next round tries again, and the time of the last good round stays.
+      if (manual) { status('Could not refresh. Check the connection and try again. ' + delayed()); say('Could not refresh requests.'); }
+      else status(delayed());
     } finally { running = false; }
   };
   setInterval(() => refresh(false), 5000);

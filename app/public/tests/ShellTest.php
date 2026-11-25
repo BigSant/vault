@@ -473,6 +473,13 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;', $script);
         $this->assertStringContainsString('chip.focus({ preventScroll: true })', $script);
         $this->assertStringNotContainsString("getElementById('content')?.focus", $script);
+        // A board is merged row by row: only the row in use is kept, its siblings change around it, and the heading counts the rows
+        // shown. A round that failed or left a stale row behind does not advance the time.
+        $this->assertStringContainsString("const kept = [...region.querySelectorAll('table.requests tbody tr[data-request]')]", $script);
+        $this->assertStringContainsString('body.insertBefore(document.adoptNode(row), kept[at] || null);', $script);
+        $this->assertStringContainsString("'Last updated ' + last + ' UTC \\u00B7 ' + why", $script);
+        $this->assertStringContainsString('else status(delayed());', $script);
+        $this->assertStringNotContainsString('if (inUse(region)) { skipped = true; return; }', $script);
         $this->get($this->base.'/structure')->assertOk()->assertDontSee('<h2>Projects', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
             // No h2 repeats the active tab: the project cards follow the tabs, and the two forms keep their h2.
             ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries by environment.', '<div class="project-list">', '<h2 id="add-project">Add a project</h2>', '<h2 id="template">Environment template</h2>'], false)
@@ -632,8 +639,14 @@ final class ShellTest extends TestCase
             ->assertSee('<p class="reload-types" data-reload-types-row hidden><button type="button" data-reload-types>Reload types</button>', false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             ->assertSee('Agents refer to this entry by its alias')
-            ->assertSee('<input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false);
+            ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
+            // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
+            ->assertDontSee('inputmode="numeric" pattern="\d{4}', false);
+        $this->get($this->base.'/audit')->assertOk()->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="from"', false)
+            ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="to"', false);
         $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString("match(/^(\\d{4})([-\\/.]?)(\\d{2})\\2(\\d{2})$/)", $script);
+        $this->assertStringContainsString("input[placeholder=\"YYYY-MM-DD\"]", $script);
         $this->assertStringContainsString("document.querySelectorAll('[data-reload-types]')", $script);
         $this->assertStringContainsString('rows.replaceChildren(', $script);
         $this->get($this->base.'/agents')->assertOk()->assertSee('The agent can do nothing until you add a grant.');

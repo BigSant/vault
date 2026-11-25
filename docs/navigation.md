@@ -100,8 +100,12 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   saying which agent asks to run which action on which entry and environment, then recent history. This is where
   Allow once / Deny / Continue sign-in live. Each waiting row shows the time left. While the page is visible
   (also while nothing waits; a hidden tab pauses), app.js re-fetches it every 30 s and swaps only the
-  `[data-refresh]` regions (the request sections, the waiting heading and the header nav count), never while focus
-  or a started input is inside them. "Refresh requests" and "Checked HH:MM UTC" sit beside the waiting heading,
+  `[data-refresh]` regions (the request sections, the waiting heading and the header nav count). A request board is
+  merged row by row (rows match by `data-request`): only the row that holds the focus or a started input is left
+  as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading counts
+  the rows shown. "Refresh requests" and "Queue checked HH:MM UTC" sit beside the waiting heading; when a round
+  fails, or a row in use no longer matches the server, the status reads "Last updated HH:MM UTC · refresh delayed"
+  and the time does not advance,
   here and on an owner's entry page; the button works without script. A request that expires while it holds the
   focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
@@ -220,8 +224,9 @@ keyed by request path for labels that differ per form). Messages thrown by hand 
 names in one mapping in `activity.blade.php`; the code stays as secondary text (visually hidden on phones, where
 the card leads with the readable name and its outcome, then the subject, then when and who). Date fields are text
 fields in ISO form, never the browser's date picker (its display format follows the device, not the data):
-`type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"`, with "UTC, YYYY-MM-DD"
-in the label; the server validates the date.
+`type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"`, with "UTC, YYYY-MM-DD" in the label; the server
+validates the date. No `inputmode="numeric"`: a phone's number pad may have no "-". app.js (`isoDate`) rewrites
+`YYYYMMDD`, `YYYY/MM/DD` and `YYYY.MM.DD` to `YYYY-MM-DD` when the field changes, loses the focus or its form is sent.
 
 
 ## Known gaps

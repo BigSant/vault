@@ -87,7 +87,7 @@
     <fieldset>
         <legend>Tags and rotation</legend>
         <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="billing, admin"></label>
-        <label><span>Rotation reminder <small>UTC, YYYY-MM-DD</small></span><input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
+        <label><span>Rotation reminder <small>UTC, YYYY-MM-DD</small></span><input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
     </fieldset>
     @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">

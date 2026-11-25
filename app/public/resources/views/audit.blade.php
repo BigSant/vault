@@ -11,8 +11,8 @@
         <label>Actor <select name="actor"><option value="">All actors</option>@foreach($actorOptions as $key => $label)<option value="{{ $key }}" @selected(request('actor') === $key)>{{ $label }}{{ str_starts_with($key, 'machine:') ? ' · agent' : '' }}</option>@endforeach</select></label>
         @php $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed']; @endphp
         <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach($outcomeLabels as $outcome => $outcomeLabel)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcomeLabel }}</option>@endforeach</select></label>
-        <label>From (UTC)<input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
-        <label>To (UTC)<input type="text" inputmode="numeric" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>
+        <label>From (UTC)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
+        <label>To (UTC)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>
         <button>Apply</button>
     </form>
 </details>
