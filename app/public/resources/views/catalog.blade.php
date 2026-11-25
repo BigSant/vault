@@ -102,7 +102,7 @@
     @foreach($entries as $e)
         @php $due = $e->rotate_at && strtotime($e->rotate_at) < $now; @endphp
         <tr class="{{ $e->state === 'archived' ? 'is-idle' : ($due ? 'is-wait' : 'is-ok') }}">
-            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}?from={{ rawurlencode($from) }}">{{ $e->name }}</a>@if($e->state === 'archived') <span class="chip muted">archived</span>@elseif($due)<small><span class="chip warn">rotation due</span> since {{ substr($e->rotate_at, 0, 10) }}</small>@endif @if($e->tags)<small class="entry-tags">Tags: {{ $e->tags }}</small>@endif</td>
+            <td class="name full" data-label="Entry"><a href="/entries/{{ $e->id }}?from={{ rawurlencode($from) }}">{{ $e->name }}</a>@if($e->state === 'archived')<small><span class="chip muted">archived</span></small>@elseif($due)<small><span class="chip warn">rotation due</span> since {{ substr($e->rotate_at, 0, 10) }}</small>@endif @if($e->tags)<small class="entry-tags">Tags: {{ $e->tags }}</small>@endif</td>
             <td class="proj" data-label="Project">{{ $e->project }}</td>
             <td class="env" data-label="Environment">@include('sign', ['name' => $e->environment, 'production' => $e->production])</td>
             <td class="type" data-label="Type"><span class="k" aria-hidden="true">· </span>{{ $typeNames[$e->type] ?? $e->type }}</td>

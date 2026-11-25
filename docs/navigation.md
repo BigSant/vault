@@ -135,11 +135,19 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   as it is, and its siblings are updated, added and removed around it without moving it; the waiting heading
   is always "Requests waiting for you" with the number of rows shown as a `chip warn` beside it (as in the header nav). "Refresh requests" and "Checked HH:MM UTC" sit beside the waiting heading; when a round
   fails, or a row in use no longer matches the server, the status reads "Check delayed · last checked HH:MM UTC"
-  ("Automatic check paused · …" after 15 idle minutes; the status keeps to the one verb, check)
+  ("Automatic check stopped after 15 idle minutes · …"; the status keeps to the one verb, check)
   and the time does not advance,
   here and on an owner's entry page; the button works without script. A request that expires while it holds the
   focus keeps it: the focus moves to that row's expired status, and the announcement names the action and entry. After
   the history a `.more-link` "All request activity →" leads to the workspace log (`/audit?group=request`).
+  Beside "Refresh requests" sits a quiet toggle, "Pause automatic updates" (`button.quiet[data-refresh-pause]`,
+  `aria-pressed`, shown by script only), here and on an owner's entry page. While it is pressed it reads "Resume
+  automatic updates", no automatic round runs and nothing is swapped; "Refresh requests" still checks once, and
+  the status reads "Paused · last checked HH:MM UTC". Resuming checks at once. The choice is kept for the browser
+  session (`sessionStorage`, in try/catch: without storage it holds for the page). A row still switches itself
+  off at its deadline while paused: that is the row's own clock, and allowing an expired request must not look
+  possible. A manual refresh that leaves a row in use as it is names it: "Request 5cda3b60 will update when you
+  leave this row."
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
@@ -348,3 +356,26 @@ validates the date. An import that fails names the item by its place in the arra
 - A workspace cannot be renamed or deleted from the web UI yet.
 - Account changes only the sign-in password. A person's name and email, and re-enrolment of the authenticator
   (a lost or replaced device), are not in Account: they are operator recovery only.
+
+## Request updates, titles and labels
+
+- **Titles.** A page inside a workspace names it: `<title>Grants · Acme production · Vault</title>`. Pages outside
+  one (Account, Add a workspace, the confirm and sign-in pages) stay "Account · Vault".
+- **Table names.** Every board has `aria-labelledby`: its section h2 where it has one (the request boards, and
+  Versions, Agent access and Activity on an entry page), else the current tab (`id="tab-current"`: Identities,
+  Grants) or the page h1 (`id="page-title"`: Members, Activity).
+- **Field hints** sit under the field, never in the label column: `.field > label, input, small.hint`
+  (Initial password, Agent alias). The hint stays the field's `aria-describedby`.
+- **Placeholders.** An example placeholder starts with "e.g. " ("e.g. shop-stage-admin"). A format
+  ("YYYY-MM-DD") and an instruction ("Leave blank to keep", the search hint) are not examples. A placeholder
+  never repeats its label or column head.
+- **Rotation due stat.** While its filter is on, "Clear ×" is a line of its own under the label, in normal case.
+- **Two-button form foot on phones.** The buttons share one row, the submit last; a long add label is shortened
+  with `.wide-only` ("+ Add" for "+ Add an environment"; the accessible name stays whole).
+- **Entries list.** "archived" and "rotation due" chips both sit under the entry name.
+- **Import** speaks of entries only: "every entry is checked", "Entry 2: …".
+- **Confirm prompts** (`data-confirm`) use no quotation marks: "Remove environment qa?".
+- **Validation messages** name a field by its visible label ("Require owner approval for every run", "6-digit
+  code", "Type DELETE to destroy"). The select's empty option repeats its label: "Choose a project / environment".
+- **Environment template rows** are labelled "Environment" on phones (the column head is not shown there).
+- **Account.** The head row is as wide as the cards (`.capped`), so "Sign out" ends where they end.

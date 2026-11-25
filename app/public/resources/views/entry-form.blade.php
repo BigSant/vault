@@ -18,8 +18,8 @@
     <fieldset>
         <legend>Details</legend>
         <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
-        {{-- The hint is the field's description (aria-describedby), not part of its name. --}}
-        <div class="field"><div class="field-name"><label for="entry-alias"><span>Agent alias</span></label><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="shop-stage-admin" aria-describedby="entry-alias-hint"></div>
+        {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
+        <div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div>
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
@@ -41,7 +41,7 @@
         @else
             @php $selectedEnv = old('environment_id'); @endphp
             <label><span>Project / environment</span><select name="environment_id" required>
-                <option value="">Choose an environment</option>
+                <option value="">Choose a project / environment</option>
                 @foreach($environments as $e)
                     <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
                 @endforeach
@@ -91,7 +91,7 @@
 
     <fieldset>
         <legend>Tags and rotation</legend>
-        <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="billing, admin"></label>
+        <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="e.g. billing, admin"></label>
         <label><span>Rotation reminder <small>UTC, YYYY-MM-DD</small></span><input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
     </fieldset>
     @include('confirm-inline', ['verb' => 'save'])

@@ -57,7 +57,7 @@
                 <div class="form-foot">
                     <p class="note">@if($projectEntries > 0)Holds {{ $entries($projectEntries) }}, so it cannot be removed.@endif</p>
                     <div class="controls">
-                        @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}" data-held-name="Remove project: {{ $project->name }}">Remove project</button></form>@endif
+                        @if($projectEntries === 0)<form method="post" action="{{ $projPath }}/delete" data-confirm="Remove project {{ $project->name }} and all its environments?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}" data-held-name="Remove project: {{ $project->name }}">Remove project</button></form>@endif
                         <button form="{{ $projFormId }}" aria-label="Save project {{ $project->name }}" data-held-name="Save project: {{ $project->name }}">Save project</button>
                     </div>
                 </div>
@@ -88,7 +88,7 @@
                     <div class="form-foot">
                         <p class="note">@if($n > 0)Holds {{ $entries($n) }}, so it cannot be removed.@endif</p>
                         <div class="controls">
-                            @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment “{{ $env->name }}”?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove environment {{ $where }}" data-held-name="Remove environment: {{ $project->name }} / {{ $env->name }}">Remove</button></form>@endif
+                            @if($n === 0)<form method="post" action="{{ $envPath }}/delete" data-confirm="Remove environment {{ $env->name }}?" data-confirm-from="confirm-setup">@csrf<button class="stop" aria-label="Remove environment {{ $where }}" data-held-name="Remove environment: {{ $project->name }} / {{ $env->name }}">Remove</button></form>@endif
                             <button form="{{ $formId }}" aria-label="Save environment {{ $where }}" data-held-name="Save environment: {{ $project->name }} / {{ $env->name }}">Save environment</button>
                         </div>
                     </div>
@@ -102,7 +102,7 @@
             <div class="inner">
                 <form method="post" action="/workspaces/{{ $space->id }}/environments" data-confirm-from="confirm-setup">@csrf
                     <input type="hidden" name="project_id" value="{{ $project->id }}"><input type="hidden" name="back" value="structure">
-                    <label><span>Name</span><input name="name" value="{{ $oldAddEnv && is_string(old('name')) ? old('name') : '' }}" required maxlength="60" placeholder="staging" aria-label="Environment name for project {{ $project->name }}"></label>
+                    <label><span>Name</span><input name="name" value="{{ $oldAddEnv && is_string(old('name')) ? old('name') : '' }}" required maxlength="60" placeholder="e.g. staging" aria-label="Environment name for project {{ $project->name }}"></label>
                     <label class="check"><input type="checkbox" name="production" value="1" @checked($oldAddEnv && old('production') === '1') aria-label="Production for environment in project {{ $project->name }}"> Production</label>
                     <div class="form-foot"><button aria-label="Add environment to project {{ $project->name }}" data-held-name="Add environment to project: {{ $project->name }}">Add environment</button></div>
                 </form>
@@ -129,12 +129,12 @@
         <tbody id="template-rows">
         @foreach($templateRows as $i => $env)
             @php $rowName = $env['name'] !== '' ? $env['name'] : 'row '.$loop->iteration; @endphp
-            <tr><td data-label=""><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> <span class="phone-only">Production</span></label></td></tr>
+            <tr><td data-label="Environment"><input name="env_name[{{ $i }}]" value="{{ $env['name'] }}" maxlength="60" aria-label="Environment name, row {{ $loop->iteration }}"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $i }}]" value="1" @checked($env['production']) aria-label="Production for {{ $rowName }}"> <span class="phone-only">Production</span></label></td></tr>
         @endforeach
-            <tr data-row-template><td data-label=""><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="e.g. qa" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
+            <tr data-row-template><td data-label="Environment"><input name="env_name[{{ $nextTemplateIdx }}]" maxlength="60" placeholder="e.g. qa" aria-label="Additional environment name"></td><td data-label=""><label class="check"><input type="checkbox" name="env_production[{{ $nextTemplateIdx }}]" value="1" aria-label="Production for additional environment"> <span class="phone-only">Production</span></label></td></tr>
         </tbody>
     </table>
     @include('confirm-inline', ['verb' => 'save this template', 'shared' => 'confirm-template', 'primary' => 'confirm-setup', 'primaryShown' => true, 'fallback' => true])
-    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows" aria-label="Add an environment to the template">+ Add an environment</button><button data-held-name="Save environment template">Save template</button></div></div>
+    <div class="form-foot"><p class="note">Clear a name to drop it from the template.</p><div class="controls"><button type="button" data-add-row="template-rows" aria-label="Add an environment to the template"><span>+ Add<span class="wide-only"> an environment</span></span></button><button data-held-name="Save environment template">Save template</button></div></div>
 </form>
 @endsection

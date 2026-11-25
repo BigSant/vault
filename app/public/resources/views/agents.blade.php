@@ -10,7 +10,7 @@
 {{-- Revoke never goes to the confirm page while script runs: one shared password block above the board, as on
      Members. "Add an agent" names it too and only points to it when the confirmation has expired. --}}
 @include('confirm-inline', ['verb' => 'change agents', 'ask' => 'Enter your current password, then revoke or add an agent below.', 'shared' => 'confirm-agents'])
-<div class="scroll"><table class="board compact-board identities">
+<div class="scroll"><table class="board compact-board identities" aria-labelledby="tab-current">
     <thead><tr><th scope="col">Agent</th><th scope="col">End date (UTC)</th><th scope="col">Active grants</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     @foreach($machines as $m)

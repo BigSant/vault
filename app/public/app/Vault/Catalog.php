@@ -327,7 +327,7 @@ final class Catalog
         }
         foreach ($rows as $i => $row) {
             if (! $row instanceof \stdClass) {
-                throw ValidationException::withMessages(['import' => 'Item '.($i + 1).' is not an entry object. '.$message]);
+                throw ValidationException::withMessages(['import' => 'Entry '.($i + 1).' is not an entry object. '.$message]);
             }
         }
         $rows = json_decode($json, true);
@@ -337,8 +337,8 @@ final class Catalog
                 abort_unless($this->access->environment($data['environment_id'])->workspace_id === $workspace, 404);
                 $this->checkType($workspace, $data);
             } catch (ValidationException $e) {
-                // The messages name fields and rules, never values; the item is named by its place in the array.
-                throw ValidationException::withMessages(['import' => array_map(fn ($text) => 'Item '.($i + 1).': '.$text, array_slice(array_merge(...array_values($e->errors())), 0, 2))]);
+                // The messages name fields and rules, never values; the entry is named by its place in the array.
+                throw ValidationException::withMessages(['import' => array_map(fn ($text) => 'Entry '.($i + 1).': '.$text, array_slice(array_merge(...array_values($e->errors())), 0, 2))]);
             }
         }
 

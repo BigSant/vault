@@ -142,7 +142,7 @@
 
 <h2 id="versions">Versions</h2>
 <p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when.@endif</p>
-<div class="scroll"><table class="board compact-board versions">
+<div class="scroll"><table class="board compact-board versions" aria-labelledby="versions">
     <thead><tr><th scope="col">Version</th><th scope="col">Saved (UTC)</th><th scope="col">By</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"><span class="sr-only">Actions</span></th>@endif</tr></thead>
     <tbody>
     @forelse($history as $h)
@@ -203,7 +203,7 @@
 @if($grants->isEmpty())
     <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></div>
 @else
-<div class="scroll"><table class="board compact-board access">
+<div class="scroll"><table class="board compact-board access" aria-labelledby="access">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th></tr></thead>
     <tbody>
     @foreach($grants as $grant)
@@ -227,7 +227,7 @@
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">Request activity for this entry →</a></p>
 <h2 id="activity">Activity</h2>
 <p class="note">The last 10 events for this entry and its requests.</p>
-@include('activity', ['events' => $events, 'hideSubject' => $entry->id])
+@include('activity', ['events' => $events, 'hideSubject' => $entry->id, 'labelledby' => 'activity'])
 <p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}">All activity for this entry →</a></p>
 @endif
 

@@ -38,7 +38,7 @@
         @endunless
     </div>
 @else
-<div class="scroll"><table class="board compact-board grants">
+<div class="scroll"><table class="board compact-board grants" aria-labelledby="tab-current">
     <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Entry</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>
     @foreach($grants as $g)

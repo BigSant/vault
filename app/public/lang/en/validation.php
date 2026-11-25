@@ -53,7 +53,7 @@ return [
         'current_password' => 'Current password',
         'confirm_password' => 'Current password',
         'bootstrap_code' => 'Activation code',
-        'code' => 'Authenticator code',
+        'code' => '6-digit code',
         // Entries
         'environment_id' => 'Project / environment',
         'alias' => 'Agent alias',
@@ -64,14 +64,14 @@ return [
         'secret_fields' => 'Secret values',
         'clear_fields' => 'Clear the current value',
         'version' => 'Version',
-        'confirmation' => 'Type DELETE',
+        'confirmation' => 'Type DELETE to destroy',
         'import' => 'Entries (JSON)',
         // Agents, grants, members
         'days' => 'Valid for (days)',
         'machine_id' => 'Agent',
         'entry_id' => 'Entry',
         'action' => 'Action',
-        'approval' => 'Ask me before every run',
+        'approval' => 'Require owner approval for every run',
         'decision' => 'Decision',
         'role' => 'Role',
         // Setup

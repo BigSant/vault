@@ -1,6 +1,7 @@
 {{-- Subjects are names resolved by the controller ($event->subject_label, $event->subject_url); a subject that no
      longer resolves reads "removed item", never a raw id.
      $filtered: the caller applied a filter, so an empty list means "nothing matches", not "nothing happened".
+     $labelledby: the id of the heading that names the table (the section h2 on an entry page, the h1 on Activity).
      $requestActions (view composer in AppServiceProvider): request id => action, for the events about a request. --}}
 @php
     // The one place that names audit events for people. Keys are the stored codes; a code missing here is shown
@@ -27,7 +28,7 @@
 @if($events->isEmpty())
     <div class="empty">{{ empty($filtered) ? 'No activity yet.' : 'No matching activity.' }}</div>
 @else
-<div class="scroll"><table class="board compact-board activity">
+<div class="scroll"><table class="board compact-board activity"@isset($labelledby) aria-labelledby="{{ $labelledby }}"@endisset>
     <thead><tr><th scope="col">When (UTC)</th><th scope="col">Actor</th><th scope="col">Event</th>@empty($hideSubject)<th scope="col">Subject</th>@endempty<th scope="col">Outcome</th></tr></thead>
     <tbody>@foreach($events as $event)
         @php $stripe = match ($event->outcome) {

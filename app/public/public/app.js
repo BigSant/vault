@@ -750,6 +750,11 @@ tableRoles();
 // same on demand, and "Checked HH:MM UTC" next to it says when the page last matched the server. A round
 // that failed, or a row in use that no longer matches the server, reads "Check delayed · last checked HH:MM UTC":
 // the time does not advance. The status uses the one verb, check.
+// "Pause automatic updates" beside "Refresh requests" (a quiet aria-pressed toggle, shown by this script) stops the
+// automatic rounds: nothing on the page is swapped until "Refresh requests" is pressed or the toggle, then reading
+// "Resume automatic updates", is pressed again. While paused the status reads "Paused · last checked HH:MM UTC".
+// The choice is kept for the browser session (sessionStorage), so it holds across the Requests page and entry
+// pages. A row still switches itself off at its deadline: that is the row's own clock, not a swap.
 const regions = () => [...document.querySelectorAll('[data-refresh]')];
 const refreshUrl = regions().map(region => region.dataset.refreshUrl).find(Boolean);
 if (refreshUrl) {
@@ -810,7 +815,7 @@ if (refreshUrl) {
   const delayed = (why = 'Check delayed') => why + ' \u00B7 last checked ' + last + ' UTC';
   // One board, row by row. The rows in use stay where they are (moving a row would drop its focus); every other row
   // is taken from the fresh page and put before or after them in the fresh order. Returns null when no row is in
-  // use (the region is then replaced whole), else how many kept rows no longer match the server: gone from this
+  // use (the region is then replaced whole), else the kept rows that no longer match the server: gone from this
   // board, or in another state.
   const mergeRows = (region, next) => {
     // An expired row is switched off: what was typed in it no longer holds it, only the focus does.
@@ -826,7 +831,7 @@ if (refreshUrl) {
       if (i >= 0) { at = Math.max(at, i + 1); return; }
       body.insertBefore(document.adoptNode(row), kept[at] || null);
     });
-    return kept.filter(row => !row.dataset.late && states.get(row.dataset.request) !== row.dataset.state).length;
+    return kept.filter(row => !row.dataset.late && states.get(row.dataset.request) !== row.dataset.state);
   };
   // The waiting heading says how many rows are shown under it.
   const heading = () => {
@@ -863,9 +868,24 @@ if (refreshUrl) {
   // session alive; a press on "Refresh requests" still works.
   let used = Date.now();
   ['keydown', 'pointerdown'].forEach(type => addEventListener(type, () => { used = Date.now(); }, { passive: true, capture: true }));
+  // Paused by the owner: no automatic round runs. Storage may be unavailable (private window, blocked site data);
+  // the toggle then works for this page only.
+  const pauseKey = 'vault.requests.paused';
+  let paused = false;
+  try { paused = sessionStorage.getItem(pauseKey) === '1'; } catch {}
+  const pausedText = () => 'Paused \u00B7 last checked ' + last + ' UTC';
+  const pauseButtons = () => document.querySelectorAll('[data-refresh-pause]');
+  const showPause = () => pauseButtons().forEach(button => {
+    button.hidden = false;
+    button.setAttribute('aria-pressed', String(paused));
+    button.textContent = paused ? 'Resume automatic updates' : 'Pause automatic updates';
+  });
+  showPause();
+  if (paused) status(pausedText());
   const refresh = async manual => {
+    if (!manual && paused) return;
     // Stopped for want of a press: the status says so instead of standing still without a word.
-    if (!manual && !running && !document.hidden && Date.now() - used > 900000) status(delayed('Automatic check paused'));
+    if (!manual && !running && !document.hidden && Date.now() - used > 900000) status(delayed('Automatic check stopped after 15 idle minutes'));
     if (running || (!manual && (document.hidden || Date.now() < due || Date.now() - used > 900000))) return;
     running = true;
     due = Date.now() + 30000;
@@ -877,11 +897,13 @@ if (refreshUrl) {
       const fresh = new DOMParser().parseFromString(await response.text(), 'text/html');
       const before = waitingIn(document);
       let skipped = false;
+      // The requests whose row is in use and no longer matches the server, by their short id.
+      const held = [];
       regions().forEach(region => {
         const next = fresh.querySelector('[data-refresh="' + region.dataset.refresh + '"]');
         if (!next) return;
         const stale = mergeRows(region, next);
-        if (stale !== null) { if (stale) skipped = true; tableRoles(region); return; }
+        if (stale !== null) { if (stale.length) { skipped = true; held.push(...stale.map(row => row.dataset.request.slice(0, 8))); } tableRoles(region); return; }
         // In use outside a request row (the nav, a board's frame): left alone; that only counts when it differs.
         if (inUse(region)) { if (plain(region) !== plain(next)) skipped = true; return; }
         region.replaceChildren(...next.childNodes);
@@ -900,21 +922,41 @@ if (refreshUrl) {
         parts.push('Request ' + ({ approved: 'allowed', running: 'allowed and running' }[state] || state || 'no longer waiting'));
       } else if (gone.length) parts.push(gone.length + ' requests no longer waiting');
       if (arrived || gone.length) parts.push(after.size ? count(after.size) : 'No requests waiting');
-      if (skipped && manual) parts.push('The part you are working in was left as it is');
+      // A row in use is named: "Request 5cda3b60 will update when you leave this row."
+      if (skipped && manual) parts.push(held.length === 1 ? 'Request ' + held[0] + ' will update when you leave this row'
+        : held.length ? 'Requests ' + held.join(', ') + ' will update when you leave their rows' : 'The part you are working in will update when you leave it');
       const text = parts.length ? parts.join('. ') + '.' : '';
       if (text) say(text); else if (manual && !skipped) say('Requests are up to date.');
       // A press always gets an answer in words; a quiet round only moves the time.
       // The time advances only when everything shown matches the server.
-      status((text ? text + ' ' : manual && !skipped ? 'Up to date. ' : '') + (skipped ? delayed() : checked()));
+      // Paused: a press still checks once; the status keeps saying that nothing updates by itself.
+      const stamped = skipped ? delayed() : checked();
+      status((text ? text + ' ' : manual && !skipped ? 'Up to date. ' : '') + (paused ? pausedText() : stamped));
     } catch {
       // No connection or a server error: the next round tries again, and the time of the last good round stays.
-      if (manual) { status('No answer from the server: try again. ' + delayed()); say('Could not check for requests.'); }
+      if (manual) { status('No answer from the server: try again. ' + (paused ? pausedText() : delayed())); say('Could not check for requests.'); }
       else status(delayed());
     } finally { running = false; }
   };
   setInterval(() => refresh(false), 5000);
   document.addEventListener('visibilitychange', () => refresh(false));
   document.addEventListener('click', event => {
+    const toggle = event.target.closest?.('[data-refresh-pause]');
+    if (toggle) {
+      paused = !paused;
+      try { paused ? sessionStorage.setItem(pauseKey, '1') : sessionStorage.removeItem(pauseKey); } catch {}
+      showPause();
+      if (paused) { status(pausedText()); say('Automatic updates paused. Refresh requests still checks once.'); }
+      else {
+        // Resuming checks at once, so the page is current again without a wait; the toggle keeps the focus.
+        say('Automatic updates resumed.');
+        status('Checked ' + last + ' UTC');
+        used = Date.now();
+        due = 0;
+        refresh(false);
+      }
+      return;
+    }
     const button = event.target.closest?.('[data-refresh-now]');
     if (!button || event.ctrlKey || event.metaKey || event.shiftKey || event.button) return;
     event.preventDefault();

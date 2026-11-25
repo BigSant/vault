@@ -196,7 +196,12 @@ font-weight:600;padding:0 12px 2px}
 .section-head[hidden]{display:none}
 .refresh-row{display:flex;flex-direction:row-reverse;align-items:center;gap:8px 12px;flex-wrap:wrap;margin:0}
 .refresh-row .note{margin:0}
-.refresh-row .btn{flex:none;white-space:nowrap}
+.refresh-row :is(.btn,button){flex:none;white-space:nowrap}
+/* "Pause automatic updates": a quiet toggle (aria-pressed) beside "Refresh requests". Pressed, it reads "Resume
+   automatic updates" and carries the amber edge, so the paused state shows on the control as well as in the status. */
+button.quiet{background:none;border-color:transparent;color:var(--dim);font-weight:600}
+button.quiet:hover{border-color:var(--edge);color:var(--ink)}
+button.quiet[aria-pressed=true]{border-color:var(--amber-edge);color:var(--amber)}
 /* What follows the tabs starts at the same height on every tab, a heading or not. */
 .tabs+.section-head,.tabs+h2{margin-top:0}
 .board .line{display:block}
@@ -474,7 +479,9 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
    field, which needs eight digits and no more (its label may run on above the button). The field has one width
    wherever the board is a table: on Requests, and on an entry page, where the cell would have room for more. */
 .board.requests td.entry{min-width:12.8em}
-.board.requests form.mfa label{flex:0 0 9em;min-width:0}
+.board.requests form.mfa label{flex:0 0 8.6em;min-width:0}
+/* The last cell keeps the board's normal right padding (12 px), so "Continue sign-in" does not sit on the edge. */
+.board.requests :is(th,td):last-child{padding-right:12px}
 /* "Requests waiting for you" and "Recent requests" are two boards with the same leading columns: Agent, Action,
    Entry, State and Requested have one width each, so a column starts at the same place in both, and the last
    column (Decision or Finished) takes what is left. The widths are what the fullest cell needs: a nine-letter
@@ -568,7 +575,7 @@ details.fold[open]{border-top:2px solid var(--amber)}
 details.fold:target{border-color:var(--amber)}
 .fold-name{font-weight:700;font-size:14px;margin-right:auto;overflow-wrap:anywhere}
 .fold-foot{display:flex;justify-content:flex-end;margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--rule)}
-p.fold-foot{display:block}
+p.fold-foot{display:block;max-width:none}
 /* Input with a button beside it; the button may also sit next to the whole label. */
 .with-button>input,.with-button>label{flex:1;min-width:0}
 .with-button>label{margin:0}
@@ -783,9 +790,9 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
 /* The filter that is on: an underline as wide as the label, at every width. */
 .stat-link.is-on>span:first-of-type{display:inline-block;padding-bottom:3px;box-shadow:inset 0 -2px 0 var(--amber)}
 .stat-link.has-due b{color:var(--amber)}
-/* The filter that is on says how to leave it: "Clear ×" beside the label, in the link colour. */
-.stat-link.is-on>span:first-of-type{margin-right:8px}
-.stat .stat-clear{color:var(--amber);white-space:nowrap}
+/* The filter that is on says how to leave it: "Clear ×" on a line of its own under the label, in the link colour
+   and in normal case (the label is uppercase; this is the action). */
+.stat .stat-clear{display:block;margin-top:5px;color:var(--amber);white-space:nowrap;text-transform:none;letter-spacing:0;font-size:13px}
 .stat-link:hover .stat-clear{text-decoration:underline}
 /* Add an entry: the detour to Setup is one line under the Type field, starting where the inputs start (the label
    column is 14em of the label's 13px, plus the gap): the note, then "Reload types". What a reload did is the line
@@ -798,9 +805,11 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
 /* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of "Reload types". */
 @media (max-width:900px){.type-detour{margin-left:0;gap:12px}}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
-.field>label,.field-name>label{display:block;margin:0}
-/* A field's hint under its name: its description (aria-describedby), outside the label. */
-.field-name .hint{display:block;margin-top:2px;color:var(--faint);font-size:12px}
+.field>label{display:block;margin:0}
+/* A field's hint: its description (aria-describedby), outside the label, on a line of its own under the field (the
+   last column: beside the label column on desktop, under the input on phones). */
+.field>.hint{grid-column:-2/-1;color:var(--faint);font-size:12px}
+@media (min-width:901px){.field>.hint{margin-top:-6px}}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
 .list.import-format td.key,.list.import-format td.key code,.list.import-types td.type-key code{white-space:nowrap;overflow-wrap:normal}
 .list.import-ids td.env-name>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -816,10 +825,13 @@ form.action details.import-ref{background:var(--panel-2)}
 /* Import: the form and the Format reference are two columns of a deck where both fit; each starts with its h2.
    "Format ↓" in the intro is for the stacked page only: two columns need 1052 px, plus the page padding. */
 .import-deck>section>:last-child{margin-bottom:0}
+/* The intro is followed by the deck at once: the first h2 keeps a normal paragraph gap, not a section break. */
+.import-deck>section:first-child>h2:first-child{margin-top:6px}
 @media (min-width:1108px){
 .format-jump{display:none!important}
 /* The form keeps the room its reference tables need: an environment ID and its Copy ID share one line. */
 .import-deck{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.import-deck>section>h2:first-child{margin-top:6px}
 }
 /* The ID and its button never part; the table starts and ends at the fold's own padding, and its first head may
    take two lines before anything scrolls sideways. */
@@ -850,6 +862,8 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.entries td.name{display:contents}
 .board.entries td.name>a{order:0}
 .board.entries td.name>small:not(.entry-tags),.board.entries td.name>.chip{order:0}
+/* "archived" and "rotation due" sit under the name, never beside it, however short the name is. */
+.board.entries td.name>small:not(.entry-tags){flex-basis:100%}
 .board.entries td.name .entry-tags{order:4;flex-basis:100%}
 /* The card has no other control, so the name link covers it: the whole card is the tap target. */
 .board.entries tr{position:relative}
@@ -1029,6 +1043,9 @@ details.type-fold .list.edit td:is(.req,.remove){order:2;flex:0 1 auto;width:aut
 details.type-fold .list.edit td.remove{margin-left:auto}
 .card details.env-add>summary{min-height:40px}
 .list.edit td[data-label=""]::before{content:none}
+/* A foot with two buttons keeps them on one row, the submit last; a long add label is shortened (.wide-only). */
+.form-foot .controls:has(>[data-add-row]){flex-wrap:nowrap}
+.wide-only{display:none}
 }
 
 /* Phone tap targets: everything that is pressed is at least 40 px high. Links in running text keep their line.

@@ -1,7 +1,7 @@
 @extends('layout')
 @section('title', 'Activity')
 @section('content')
-<h1>Activity</h1>
+<h1 id="page-title">Activity</h1>
 @php $filterCount = count(array_filter(request()->only(['entry', 'group', 'actor', 'outcome', 'from', 'to']))); @endphp
 {{-- A filter value that cannot be used (a date that does not exist, an unknown choice) is left out, never an error
      page: the controller passes $filterErrors (filter name => one message) and drops those filters from the query. --}}
@@ -33,7 +33,7 @@
     @endforeach
 </p>
 @endif
-@include('activity', ['events' => $events, 'filtered' => $filterCount > 0])
+@include('activity', ['events' => $events, 'filtered' => $filterCount > 0, 'labelledby' => 'page-title'])
 @if($events->hasPages())
 <nav class="pager" aria-label="Activity pages"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></nav>
 @endif

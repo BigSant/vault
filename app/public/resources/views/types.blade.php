@@ -93,7 +93,7 @@
                         </tr>
                     @endforeach
                         <tr data-row-template>
-                            <td class="field-label" data-label="Field label"><input type="hidden" name="field_key[{{ $nextEditIdx }}]" value=""><input name="field_label[{{ $nextEditIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td>
+                            <td class="field-label" data-label="Field label"><input type="hidden" name="field_key[{{ $nextEditIdx }}]" value=""><input name="field_label[{{ $nextEditIdx }}]" maxlength="80" aria-label="Label for the new field"></td>
                             <td class="kind" data-label="Kind">{!! $kindSelect($nextEditIdx, 'text', 'the new field') !!}</td><td class="req" data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextEditIdx }}]" value="1" aria-label="Required for the new field"> <span class="phone-only">Required</span></label></td><td class="key" data-label=""></td><td class="remove" data-label=""></td>
                         </tr>
                     </tbody>
@@ -102,7 +102,7 @@
                     <div class="controls"><button type="button" data-add-row="rows-{{ $type->key }}" aria-label="Add a field to {{ $type->name }}">+ Add a field</button><button aria-label="Save entry type {{ $type->name }}" data-held-name="Save entry type {{ $type->name }}" data-held-lead="Save entry type " data-held-data="{{ $type->name }}">Save entry type</button></div></div>
             </form>
             @if($used === 0)
-                <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type “{{ $type->name }}”?" data-confirm-from="confirm-types">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}" data-held-name="Remove entry type {{ $type->name }}" data-held-lead="Remove entry type " data-held-data="{{ $type->name }}">Remove entry type</button></form>
+                <form class="fold-foot" method="post" action="{{ $typePath }}/delete" data-confirm="Remove entry type {{ $type->name }}?" data-confirm-from="confirm-types">@csrf<button class="stop" aria-label="Remove entry type {{ $type->name }}" data-held-name="Remove entry type {{ $type->name }}" data-held-lead="Remove entry type " data-held-data="{{ $type->name }}">Remove entry type</button></form>
             @else
                 {{-- As on Projects: why there is no Remove. --}}
                 <p class="note fold-foot">Used by {{ $plural($used, 'entry', 'entries') }}, so it cannot be removed.</p>
@@ -125,7 +125,7 @@
 <h2 id="add-type">Add an entry type</h2>
 
     <form class="action" method="post" action="{{ $addTypePath }}"@unless($types->isEmpty()) data-confirm-from="confirm-types"@endunless>@csrf
-        <label><span>Type name</span><input name="name" value="{{ $oldAddType && is_string(old('name')) ? old('name') : '' }}" required maxlength="80" placeholder="FTP server"></label>
+        <label><span>Type name</span><input name="name" value="{{ $oldAddType && is_string(old('name')) ? old('name') : '' }}" required maxlength="80" placeholder="e.g. FTP server"></label>
         @php $nextNewIdx = count($newRows); @endphp
         <table class="list edit type-new">
             <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
@@ -134,7 +134,7 @@
                 @php $for = $f['label'] !== '' ? $f['label'] : 'row '.$loop->iteration; @endphp
                 <tr><td data-label="Field label"><input type="hidden" name="field_key[{{ $i }}]" value=""><input name="field_label[{{ $i }}]" value="{{ $f['label'] }}" maxlength="80" aria-label="Label for {{ $for }}"></td><td data-label="Kind">{!! $kindSelect($i, $f['kind'], $for) !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $i }}]" value="1" @checked((bool) $f['required']) aria-label="Required for {{ $for }}"> <span class="phone-only">Required</span></label></td></tr>
             @endforeach
-                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[{{ $nextNewIdx }}]" value=""><input name="field_label[{{ $nextNewIdx }}]" maxlength="80" placeholder="Field label" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect($nextNewIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextNewIdx }}]" value="1" aria-label="Required for the new field"> <span class="phone-only">Required</span></label></td></tr>
+                <tr data-row-template><td data-label="Field label"><input type="hidden" name="field_key[{{ $nextNewIdx }}]" value=""><input name="field_label[{{ $nextNewIdx }}]" maxlength="80" aria-label="Label for the new field"></td><td data-label="Kind">{!! $kindSelect($nextNewIdx, 'text', 'the new field') !!}</td><td data-label=""><label class="check"><input type="checkbox" name="field_required[{{ $nextNewIdx }}]" value="1" aria-label="Required for the new field"> <span class="phone-only">Required</span></label></td></tr>
             </tbody>
         </table>
         @if($types->isEmpty())

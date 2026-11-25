@@ -81,13 +81,13 @@ final class ShellTest extends TestCase
         $this->signIn('editor');
         $this->get($this->base.'/structure')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="location">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false)
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'href="'.$this->base.'/structure"', 'class="on" id="tab-current" aria-current="page"', 'Projects', 'href="'.$this->base.'/types"', 'Entry types'], false)
             // The add form is reached from the head row, as on Members; the tabs follow it directly, with no jump links.
             ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-project">+ Add a project</a></div>'."\n".'<nav class="tabs"', false)
             ->assertSee('<h2 id="add-project">', false)->assertDontSee('On this page');
         $this->get($this->base.'/types')->assertOk()
             ->assertSee('<a class="btn on" href="'.$this->base.'/structure" aria-current="location">Setup</a>', false)
-            ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" aria-current="page"', 'Entry types'], false)
+            ->assertSeeInOrder(['aria-label="Setup sections"', 'Projects', 'href="'.$this->base.'/types"', 'class="on" id="tab-current" aria-current="page"', 'Entry types'], false)
             ->assertSee('<div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add an entry type</a></div>'."\n".'<nav class="tabs"', false)
             // Headings, links and buttons of this tab say "entry type"; a field label may say "Type".
             ->assertSeeInOrder(['<h2 id="add-type">Add an entry type</h2>', '<span>Type name</span>', '<button class="go" data-held-name="Add entry type " data-held-field="name">Add entry type</button>'], false)
@@ -101,7 +101,7 @@ final class ShellTest extends TestCase
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('<a class="btn on" href="/?workspace='.$this->workspace.'" aria-current="location">Entries</a>', false);
         $this->signIn('owner');
         $this->get($this->base.'/grants')->assertOk()->assertSee('<a class="btn on" href="'.$this->base.'/requests" aria-current="location">Agents</a>', false)
-            ->assertSeeInOrder(['aria-label="Agents sections"', 'href="'.$this->base.'/grants"', 'class="on" aria-current="page"', 'Grants'], false);
+            ->assertSeeInOrder(['aria-label="Agents sections"', 'href="'.$this->base.'/grants"', 'class="on" id="tab-current" aria-current="page"', 'Grants'], false);
         $this->get($this->base.'/members')->assertOk()->assertSee('<a class="btn on" href="'.$this->base.'/members" aria-current="page">Members</a>', false);
     }
 
@@ -156,14 +156,14 @@ final class ShellTest extends TestCase
         $this->get($this->base.'/members')->assertOk()->assertSee('Secret fields are not refilled.')->assertSee('data-unfilled', false);
     }
 
-    public function test_round_13_structure_and_wording(): void
+    public function test_structure_and_wording(): void
     {
         $this->signIn('owner', time() - 301);
         // Requests: the history ends with the way to the whole log.
         $this->get($this->base.'/requests')->assertOk()
             ->assertSeeInOrder(['Recent requests', '<a class="more-link" href="'.$this->base.'/audit?group=request">All request activity →</a>'], false);
         // Account, confirmation needed: chip and link only in the facts row; the card keeps its subtitle; no foot note; no Sign out section.
-        $this->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span> <a href="#confirm" data-focus="account-confirm-password">Confirm your password</a>', false)
+        $this->get('/account')->assertOk()->assertSee('<span class="chip muted">needed</span> <a class="more-link" href="#confirm" data-focus="account-confirm-password">Confirm your password</a>', false)
             ->assertDontSee('to reveal values or change access')->assertDontSee('Reveals and access changes are written')
             ->assertSee('<h3>Password confirmation<small>Valid for 5 minutes.', false)->assertDontSee('<h2>Sign out</h2>', false)->assertSee('aria-label="Sign out of this session"', false);
         // No heading inside a summary, in any view.
@@ -382,7 +382,7 @@ final class ShellTest extends TestCase
             ->assertSee('data-confirm="Remove Dana from this workspace?" data-confirm-from="confirm-members">', false)
             ->assertSee('data-held-name="Remove Dana" data-held-lead="Remove " data-held-data="Dana">Remove</button>', false)
             ->assertSee('<small>Add another owner before changing your role.</small>', false)
-            ->assertSee('id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small>', false);
+            ->assertSee('id="first-password-hint">Blank for an existing account. At least 14 characters for a new one.</small>', false);
         $this->assertSame(1, substr_count($page->getContent(), 'id="confirm-members"'));
         $this->assertSame(3, substr_count($page->getContent(), 'data-confirm-from="confirm-members"'));
         // Outside <noscript> the page has one password field that can be used: the shared block's.
@@ -622,7 +622,66 @@ final class ShellTest extends TestCase
         $this->assertSame('', $end('<p>No heading</p>'));
     }
 
-    public function test_round_14_one_grant_card_shared_request_columns_and_small_copy(): void
+    public function test_pause_toggle_titles_labelled_tables_and_copy(): void
+    {
+        $view = fn (string $name) => (string) file_get_contents(resource_path('views/'.$name.'.blade.php'));
+        $css = (string) file_get_contents(public_path('app.css'));
+        $js = (string) file_get_contents(public_path('app.js'));
+        $this->signIn('owner');
+        $this->waitingRequest();
+        // "Pause automatic updates": a quiet aria-pressed toggle beside "Refresh requests", shown by script only.
+        $this->get($this->base.'/requests')->assertOk()
+            ->assertSee('<title>Requests · Main space · Vault</title>', false)
+            ->assertSeeInOrder(['data-refresh-now>Refresh requests</a> <button type="button" class="quiet" data-refresh-pause aria-pressed="false" hidden>Pause automatic updates</button>', 'data-refresh-status'], false)
+            ->assertSee('<h2 id="waiting" data-refresh="waiting-title">', false);
+        $this->assertStringContainsString('<table class="board compact-board requests" aria-labelledby="{{ $id }}"', $view('operations'));
+        foreach (["const pauseKey = 'vault.requests.paused';", 'if (!manual && paused) return;', "'Paused \\u00B7 last checked ' + last + ' UTC'", "'Resume automatic updates' : 'Pause automatic updates'",
+            "button.setAttribute('aria-pressed', String(paused));", "try { paused = sessionStorage.getItem(pauseKey) === '1'; } catch {}",
+            "'Request ' + held[0] + ' will update when you leave this row'"] as $line) {
+            $this->assertStringContainsString($line, $js);
+        }
+        $this->assertStringNotContainsString('The part you are working in was left as it is', $js);
+        // Titles name the workspace on its pages, and only there.
+        $this->get($this->base.'/grants')->assertOk()->assertSee('<title>Grants · Main space · Vault</title>', false)->assertSee('id="tab-current" aria-current="page"', false);
+        $this->get('/account')->assertOk()->assertSee('<title>Account · Vault</title>', false);
+        // Every board is named by its heading.
+        $this->assertStringContainsString('<table class="board compact-board grants" aria-labelledby="tab-current">', $view('grants'));
+        $this->assertStringContainsString('<table class="board compact-board identities" aria-labelledby="tab-current">', $view('agents'));
+        $this->assertStringContainsString('<table class="board compact-board members" aria-labelledby="page-title">', $view('members'));
+        $this->assertStringContainsString('<table class="board compact-board versions" aria-labelledby="versions">', $view('entry'));
+        $this->assertStringContainsString('<table class="board compact-board access" aria-labelledby="access">', $view('entry'));
+        $this->assertStringContainsString("'labelledby' => 'activity'", $view('entry'));
+        $this->assertStringContainsString("'labelledby' => 'page-title'", $view('audit'));
+        // Example placeholders start with "e.g. "; a format (YYYY-MM-DD) and an instruction are not examples.
+        foreach (['entry-form', 'workspace-new', 'structure', 'types', 'agents'] as $name) {
+            preg_match_all('/placeholder="([^"]*)"/', $view($name), $found);
+            foreach ($found[1] as $placeholder) {
+                $this->assertTrue(str_starts_with($placeholder, 'e.g. ') || in_array($placeholder, ['YYYY-MM-DD', 'Leave blank to keep'], true), $name.': '.$placeholder);
+            }
+        }
+        $this->assertStringNotContainsString('placeholder="Field label"', $view('types'));
+        // Confirm prompts carry no quotation marks.
+        foreach (['types', 'structure', 'members', 'agents', 'grants', 'entry'] as $name) {
+            preg_match_all('/data-confirm="([^"]*)"/', $view($name), $found);
+            foreach ($found[1] as $prompt) {
+                $this->assertDoesNotMatchRegularExpression('/[“”‘’]|&quot;/u', $prompt, $name);
+            }
+        }
+        $this->assertStringContainsString('<option value="">Choose a project / environment</option>', $view('entry-form'));
+        $this->assertStringContainsString('every entry is checked before any secret', $view('import'));
+        $this->assertStringContainsString('<tr><td data-label="Environment"><input name="env_name[{{ $i }}]"', $view('structure'));
+        $this->assertStringContainsString("@if(\$e->state === 'archived')<small><span class=\"chip muted\">archived</span></small>@elseif(\$due)<small><span class=\"chip warn\">rotation due</span>", $view('catalog'));
+        // Validation names fields by their visible labels.
+        $this->assertSame('Require owner approval for every run', trans('validation.attributes.approval'));
+        $this->assertSame('6-digit code', trans('validation.attributes.code'));
+        $this->assertSame('Type DELETE to destroy', trans('validation.attributes.confirmation'));
+        foreach (['.field>.hint{grid-column:-2/-1;color:var(--faint);font-size:12px}', 'p.fold-foot{display:block;max-width:none}', '.stat .stat-clear{display:block;', 'text-transform:none;letter-spacing:0;font-size:13px}',
+            '.form-foot .controls:has(>[data-add-row]){flex-wrap:nowrap}', 'button.quiet[aria-pressed=true]{'] as $rule) {
+            $this->assertStringContainsString($rule, $css);
+        }
+    }
+
+    public function test_one_grant_card_shared_request_columns_and_small_copy(): void
     {
         $view = fn (string $name) => (string) file_get_contents(resource_path('views/'.$name.'.blade.php'));
         $css = (string) file_get_contents(public_path('app.css'));
@@ -666,7 +725,7 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('Viewers see entry details.', $view('members'));
         $this->assertStringNotContainsString('metadata', $view('members'));
         $this->assertSame(2, substr_count($view('types'), '>+ Add a field</button>'));
-        $this->assertStringContainsString('aria-label="Add an environment to the template">+ Add an environment</button>', $view('structure'));
+        $this->assertStringContainsString('aria-label="Add an environment to the template"><span>+ Add<span class="wide-only"> an environment</span></span></button>', $view('structure'));
         $this->assertStringContainsString('placeholder="e.g. qa" aria-label="Additional environment name"', $view('structure'));
         $this->assertSame(2, substr_count($view('account'), '<span class="with-button"><input id="new-password'));
         // Straight apostrophes in every text of the UI.
@@ -722,7 +781,7 @@ final class ShellTest extends TestCase
             // Changing the password is no destructive action: the plain button, like Sign out.
             ->assertSee('<button>Change password and sign out</button>', false)
             // Sign out is no section: one plain button in the head row beside the h1.
-            ->assertSee('<div class="head"><h1>Account</h1><form method="post" action="/logout">', false)->assertDontSee('<h2>Sign out</h2>', false)
+            ->assertSee('<div class="head capped"><h1>Account</h1><form method="post" action="/logout">', false)->assertDontSee('<h2>Sign out</h2>', false)
             ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
         // The footer line belongs to the Entries pages and the Agents area only.
         $foot = '<p class="foot">Secret values stay in the vault. Agents only get action results.</p>';
@@ -764,7 +823,7 @@ final class ShellTest extends TestCase
         $this->view('outcome', ['outcome' => 'revoked'])->assertSee('>cancelled</span>', false);
         $this->assertStringContainsString("{{ \$n }} {{ \$what }} {{ \$n === 1 ? 'field is' : 'fields are' }} no longer in the type", (string) file_get_contents(resource_path('views/entry.blade.php')));
         $this->assertStringNotContainsString('Read-only summary', (string) file_get_contents(resource_path('views/entry.blade.php')));
-        $this->get($this->base.'/structure')->assertOk()->assertDontSee('<td data-label="Environment">', false)->assertSee('aria-label="Additional environment name"', false);
+        $this->get($this->base.'/structure')->assertOk()->assertSee('<td data-label="Environment">', false)->assertSee('aria-label="Additional environment name"', false);
         $this->assertStringContainsString('<button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button>', (string) file_get_contents(resource_path('views/grants.blade.php')));
         $this->assertStringContainsString('<span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden>', (string) file_get_contents(resource_path('views/operations.blade.php')));
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
@@ -908,8 +967,8 @@ final class ShellTest extends TestCase
             ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Edit entry types (new tab)</a>', '<button type="button" data-reload-types title=', ' hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             // The alias hint is the field's description, not part of its name.
-            ->assertSee('<label for="entry-alias"><span>Agent alias</span></label><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small>', false)
-            ->assertSee('placeholder="shop-stage-admin" aria-describedby="entry-alias-hint">', false)
+            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
+            ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">', false)
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
             ->assertDontSee('inputmode="numeric" pattern="\d{4}', false);

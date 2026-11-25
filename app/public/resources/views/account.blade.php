@@ -1,8 +1,9 @@
 @extends('layout')
 @section('title', 'Account')
 @section('content')
-{{-- Sign out is no section of the page: one plain button in the head row, beside the h1. --}}
-<div class="head"><h1>Account</h1><form method="post" action="/logout">@csrf<button aria-label="Sign out of this session">Sign out</button></form></div>
+{{-- Sign out is no section of the page: one plain button in the head row, beside the h1. The row is as wide as
+     the cards under it (.capped), so the button ends where they end. --}}
+<div class="head capped"><h1>Account</h1><form method="post" action="/logout">@csrf<button aria-label="Sign out of this session">Sign out</button></form></div>
 <table class="facts">
     <tr><th scope="row">Name</th><td>{{ $user->name }}</td></tr>
     <tr><th scope="row">Email</th><td>{{ $user->email }}</td></tr>
@@ -10,7 +11,7 @@
         @if($confirmedUntil)
             <span class="chip ok">valid</span> until {{ gmdate('H:i', $confirmedUntil) }} UTC
         @else
-            <span class="chip muted">needed</span> <a href="#confirm" data-focus="account-confirm-password">Confirm your password</a>
+            <span class="chip muted">needed</span> <a class="more-link" href="#confirm" data-focus="account-confirm-password">Confirm your password</a>
         @endif
     </td></tr>
 </table>

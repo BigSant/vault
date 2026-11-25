@@ -386,7 +386,7 @@ final class VaultTest extends TestCase
         return $row['id'];
     }
 
-    public function test_round_14_due_count_in_view_entry_page_caps_and_import_item_errors(): void
+    public function test_due_count_in_view_entry_page_caps_and_import_item_errors(): void
     {
         $entry = $this->entry();
         $other = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Other due', 'alias' => 'other-due',
@@ -418,11 +418,11 @@ final class VaultTest extends TestCase
         $good = ['environment_id' => $this->environment, 'name' => 'Imported', 'alias' => 'imported', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}'];
         $this->get($url)->assertOk();
         $this->post($url, ['import' => json_encode([$good, ['name' => 'No environment', 'alias' => 'x', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}']])])
-            ->assertStatus(303)->assertSessionHas('form_errors', fn ($errors) => count($errors['import']) >= 1 && str_starts_with($errors['import'][0], 'Item 2: ')
+            ->assertStatus(303)->assertSessionHas('form_errors', fn ($errors) => count($errors['import']) >= 1 && str_starts_with($errors['import'][0], 'Entry 2: ')
                 && ! str_contains(json_encode($errors), 'synthetic-value'));
         $this->assertSame(0, DB::table('entries')->where('name', 'Imported')->count());
         $this->post($url, ['import' => json_encode([$good, 'text'])])->assertStatus(303)
-            ->assertSessionHas('form_errors', fn ($errors) => $errors['import'] === ['Item 2 is not an entry object. Paste a JSON array of 1 to 50 entry objects.']);
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['import'] === ['Entry 2 is not an entry object. Paste a JSON array of 1 to 50 entry objects.']);
     }
 
     public function test_grant_approval_and_due_filter(): void
@@ -463,7 +463,7 @@ final class VaultTest extends TestCase
         app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         $this->get('/?state=archived')->assertSee('<h1>Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
-            ->assertSeeText('State: Archived')->assertSee('<span class="chip muted">archived</span>', false)->assertDontSeeText('used by agents');
+            ->assertSeeText('State: Archived')->assertSee('<small><span class="chip muted">archived</span></small>', false)->assertDontSeeText('used by agents');
         $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entry');
     }
 
@@ -552,7 +552,7 @@ final class VaultTest extends TestCase
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
         $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
-            ->assertSee('<label for="first-password"><span>Initial password</span></label><small class="hint" id="first-password-hint">Leave blank for an existing account. At least 14 characters for a new one.</small>', false)
+            ->assertSee('<button type="button" data-generate="first-password" aria-label="Generate initial password">Generate</button></span><small class="hint" id="first-password-hint">Blank for an existing account. At least 14 characters for a new one.</small></div>', false)
             ->assertSee('aria-describedby="first-password-hint"', false)
             ->assertSee('aria-label="Generate initial password"', false)
             ->assertDontSee('aria-label="Role for Owner"', false);
@@ -600,7 +600,7 @@ final class VaultTest extends TestCase
         $cases = [
             ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter an initial password for a new user.'],
             ['import', ['import' => '{'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
-            ['import', ['import' => '[[]]'], 'import', 'Item 1 is not an entry object. Paste a JSON array of 1 to 50 entry objects.'],
+            ['import', ['import' => '[[]]'], 'import', 'Entry 1 is not an entry object. Paste a JSON array of 1 to 50 entry objects.'],
         ];
         foreach ($cases as [$page, $input, $field, $message]) {
             $url = $base.'/'.$page;
