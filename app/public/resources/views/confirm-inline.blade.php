@@ -1,15 +1,16 @@
 {{-- Password field for a long sensitive form, so an expired confirmation never loses what was typed.
-     Params: $verb (default 'save'). Uses the shared $confirmedUntil. Renders nothing while the confirmation
-     has more than 4 minutes left; Access::recent() accepts confirm_password from the POST body. --}}
+     Params: $verb (default 'save'). Uses the shared $confirmedUntil. Always rendered, but hidden (and its field
+     disabled) while the confirmation has more than 4 minutes left: app.js shows it when the time comes, so a form
+     left open still gets the field. Without script the server's choice stands, as before.
+     Access::recent() accepts confirm_password from the POST body. --}}
 @php
     $until = isset($confirmedUntil) ? (int) $confirmedUntil : null;
     $expired = $until === null || $until <= time();
+    $early = ! $expired && $until - time() >= 240;
     $verb = $verb ?? 'save';
 @endphp
-@if($expired || $until - time() < 240)
-<div class="confirm-inline">
-    <h3>Confirm it is you</h3>
-    <p class="note">@if($expired)Your password confirmation has expired.@else Your password confirmation ends at {{ gmdate('H:i', $until) }} UTC.@endif Enter your password to {{ $verb }}.</p>
-    <label><span>Current password</span><input type="password" name="confirm_password" autocomplete="current-password" @if($expired) required @endif></label>
+<div class="confirm-inline" data-confirmed-until="{{ (int) $until }}" data-now="{{ time() }}" @if($early) hidden @endif>
+    <p class="block-label">Confirm it is you</p>
+    <p class="note"><span data-when="ending" @if($expired) hidden @endif>Your password confirmation ends{{ $until ? ' at '.gmdate('H:i', $until).' UTC' : ' soon' }}.</span><span data-when="expired" @unless($expired) hidden @endunless>Your password confirmation has expired.</span> Enter your password to {{ $verb }}.</p>
+    <label><span>Current password</span><input type="password" name="confirm_password" autocomplete="current-password" @if($expired) required @endif @if($early) disabled @endif></label>
 </div>
-@endif

@@ -21,15 +21,18 @@
 <a class="back" href="/?workspace={{ $entry->workspace_id }}">← Entries</a>
 <div class="head">
     <div>
-        <h1 class="name">{{ $entry->name }}</h1>
+        <div class="title-row">
+            <h1 class="name">{{ $entry->name }}</h1>
+            @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
+        </div>
         <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
     </div>
-    @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Update</a>@endif
 </div>
 @if($isEditor)
-{{-- Jump links: the sections in page order, each named like its heading. --}}
+{{-- Jump links: the sections in page order, each named like its heading. Links, not actions. --}}
 <nav class="subnav" aria-label="Entry sections">
-    @if($isOwner && $waitingCount > 0)<a href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif
+    <span class="subnav-label" aria-hidden="true">On this page</span>
+    @if($isOwner && $waitingCount > 0)<a class="is-wait" href="#waiting">{{ $waitingCount === 1 ? '1 request waiting for you' : $waitingCount.' requests waiting for you' }}</a>@endif
     <a href="#values">Secret values</a><a href="#versions">Versions</a>
     @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
     @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
@@ -40,7 +43,7 @@
     <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
     <tr><th scope="row">Tags</th><td>{{ $entry->tags ?: '—' }}</td></tr>
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
-    <tr><th scope="row">Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">due</span>@endif</td></tr>
+    <tr><th scope="row">Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
 
 @if($isOwner && $waitingCount > 0)
@@ -59,7 +62,7 @@
         @endif
         @foreach($secret as $field => $value)
             <div class="secret-row">
-                <div class="block-label">{{ $label($field) }}
+                <div class="block-label">@if(isset($labels[$field])){{ $labels[$field] }}@else<code class="name">{{ $field }}</code>@endif
                     @if(!isset($labels[$field]))<span class="chip muted">no longer in type</span>@endif
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
                 </div>
@@ -80,7 +83,7 @@
     @if($canEdit)
         <div class="form-foot">
             <p class="note">Every reveal goes to the activity log. You may be asked to confirm your password first. Older versions are under Versions.</p>
-            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal">@csrf @if($shownCurrent)<button aria-label="Reveal the current values of {{ $entry->name }} again">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
+            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf @if($shownCurrent)<button aria-label="Reveal the current values of {{ $entry->name }} again">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}">Reveal current</button>@endif</form>
         </div>
     @endif
 </div>
@@ -122,7 +125,7 @@
             @if($canEdit)
             <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Reveal version {{ $h['version'] }} values">Reveal</button></form>
                     @if($h['version'] !== $current)
                         <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}">Restore</button></form>
                     @endif

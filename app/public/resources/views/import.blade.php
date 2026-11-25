@@ -12,7 +12,7 @@
 <h2>Paste entries</h2>
 @if($environments->isEmpty())
 <div class="empty">
-    <p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Create a project in Setup</a> first.</p>
+    <p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure">Add a project in Setup</a> first.</p>
 </div>
 @else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
@@ -26,16 +26,16 @@
 @endif
 
 <h2>Format</h2>
-<p class="note">Send a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
+<p class="note">Paste a JSON array of entry objects. Every entry's <code>type</code> must exist in this workspace and include all required fields for that type.</p>
 
 <details class="import-ref">
-    <summary>Environment ids <span class="muted">({{ $environments->count() }})</span></summary>
+    <summary>Environment IDs <span class="muted">({{ $environments->count() }})</span></summary>
     <div class="inner">
         @if($environments->isEmpty())
             <p class="note">No environments in this workspace yet. Add a project in <a href="/workspaces/{{ $space->id }}/structure">Setup</a> first.</p>
         @else
             <div class="scroll"><table class="list import-ids">
-                <thead><tr><th scope="col">Project / environment</th><th scope="col">environment_id</th></tr></thead>
+                <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
                 <tbody>
                 @foreach($environments as $env)
                     <tr>

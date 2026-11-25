@@ -24,7 +24,8 @@ Use these words in every UI text. Code names may differ.
 - **Grant** — one agent may run one action with one entry. Not "permission".
 - **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
-- **Sign out** — not "Lock".
+- **Sign out** — not "Lock". **Add …** for every create action. **Edit entry**. **Expires (UTC)**.
+  **rotation due**. Password fields are labelled **Current password**.
 - Roles are shown as neutral `chip role`, never with state colours.
 - A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it.
 
@@ -122,8 +123,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    broader. No h2 that repeats the active tab, no h1→h3 skips, no h2 inside a card.
 3. **Form foot.** The note sits left or above; buttons sit right at natural width on every screen size.
 4. **Long sensitive forms** include `@include('confirm-inline')`, so an expired confirmation never loses input.
-5. **Filter bars** (Entries, Grants, Activity): labelled selects, an **Apply** button, **Clear filters** only when
-   a filter is set, and "Showing N of M" with one chip per active filter.
+5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` drawer
+   (open on desktop, closed on phone) holding a `.toolbar` with labelled selects and one **Apply** button. When a
+   filter is set, a `.filter-status` line says "Showing N of M", shows one chip per active filter and holds the
+   only **Clear filters** link.
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
    inline label: "Requested …", "Finished …", "Expires …", "Expired …". Approval reads "asks every time" or
    "runs without asking".

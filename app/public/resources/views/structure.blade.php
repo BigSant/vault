@@ -5,7 +5,7 @@
     $yesNo = fn ($name, $on) => '<select name="'.e($name).'"><option value="0">no</option><option value="1"'.($on ? ' selected' : '').'>yes</option></select>';
     $entries = fn (int $n) => $n.' '.($n === 1 ? 'entry' : 'entries');
 @endphp
-<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-project">Add a project</a></div></div>
+<div class="head"><h1>Setup</h1><div class="controls"><a class="btn" href="#add-project">Add project</a></div></div>
 @include('tabs', ['area' => 'setup', 'current' => 'structure', 'space' => $space])
 <div class="stats">
     <div class="stat"><b>{{ $projects->count() }}</b><span>projects</span></div>
@@ -18,13 +18,13 @@
     @php $envs = $environments[$project->id] ?? collect(); $projectEntries = $envs->sum(fn ($e) => $counts[$e->id] ?? 0); @endphp
     <h2 id="p-{{ $project->id }}"><span class="name">{{ $project->name }}</span> <span class="count">{{ $entries($projectEntries) }}</span></h2>
     <div class="card">
-        <details class="fold"><summary>Project settings <span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span></summary>
+        <details class="fold"><summary><span class="fold-name">Project settings</span> <span class="fold-act">Edit<span class="sr-only"> project {{ $project->name }}</span></span></summary>
         <div class="inner">
             <form class="inline" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}">@csrf
                 <input name="name" value="{{ $project->name }}" required maxlength="100" aria-label="Name of project {{ $project->name }}"><button aria-label="Rename project {{ $project->name }}">Rename</button>
             </form>
             @if($projectEntries === 0)
-                <form class="controls" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
+                <form class="fold-foot" method="post" action="/workspaces/{{ $space->id }}/projects/{{ $project->id }}/delete" data-confirm="Remove project “{{ $project->name }}” and all its environments?">@csrf<button class="stop" aria-label="Remove project {{ $project->name }}">Remove project</button></form>
             @endif
         </div>
         </details>
@@ -32,8 +32,7 @@
             @php $formId = 'env-'.$env->id; $n = $counts[$env->id] ?? 0; $where = $env->name.' in project '.$project->name; @endphp
             <details class="fold env">
                 <summary>
-                    <span class="fold-name">@include('sign', ['name' => $env->name, 'production' => $env->production])</span>
-                    <span class="fold-meta">production: {{ $env->production ? 'yes' : 'no' }}</span>
+                    <span class="fold-name">@include('sign', ['name' => $env->name, 'production' => $env->production])@if($env->production)<span class="sr-only"> (production)</span>@endif</span>
                     <span class="fold-meta">{{ $entries($n) }}</span>
                     <span class="fold-act">Edit<span class="sr-only"> environment {{ $where }}</span></span>
                 </summary>
@@ -65,8 +64,8 @@
     <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>
 @endforelse
 
-<h2>Add a project</h2>
-<form class="action" id="add-project" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
+<h2 id="add-project">Add project</h2>
+<form class="action" method="post" action="/workspaces/{{ $space->id }}/projects">@csrf<input type="hidden" name="back" value="structure">
     <label><span>Name</span><input name="name" required maxlength="100" placeholder="shop"></label>
     <div class="form-foot"><p class="note">New projects start with: {{ implode(', ', array_column($template, 'name')) ?: 'no environments' }}.</p><button class="go">Add project</button></div>
 </form>

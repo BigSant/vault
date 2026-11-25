@@ -11,7 +11,7 @@
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form. An empty field keeps its current value, and every save creates a new version.@endif</p>
 @if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
 <div class="empty">
-    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $workspace }}/structure">Create a project in Setup</a> first.</p>@endif
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $workspace }}/structure">Add a project in Setup</a> first.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
@@ -59,7 +59,7 @@
             @if($f['kind'] === 'secret')
                 <div class="field" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless>
                     <label for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span></label>
-                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}">Generate</button></span>
+                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)><button type="button" data-generate="{{ $id }}" aria-label="Generate {{ $f['label'] }}">Generate</button></span>
                 </div>
             @else
                 <label data-types="{{ $t->key }}" for="{{ $id }}" @unless($activeType) hidden @endunless><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>

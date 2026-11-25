@@ -246,7 +246,9 @@ final class VaultTest extends TestCase
         $entry = $this->entry();
         [$machine, , $grant] = $this->machine($entry, true);
         $url = '/workspaces/'.$this->workspace.'/grants';
-        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters');
+        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters')
+            ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
+            ->assertSeeText('test.http — needs token');
         $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1')
             ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
         DB::table('grants')->where('id', $grant)->update(['approval' => false]);
@@ -256,6 +258,14 @@ final class VaultTest extends TestCase
         $this->get('/?due=1')->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => now()->subDay()]);
+        $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
+            'environment' => $this->environment, 'q' => 'Private', 'type' => 'api_key'];
+        foreach ([false, true] as $due) {
+            $current = $filters + ($due ? ['due' => 1] : []) + ['page' => 2];
+            $target = $filters + ($due ? [] : ['due' => 1]);
+            $this->get('/?'.http_build_query($current))->assertOk()
+                ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
+        }
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
     }
 
@@ -302,6 +312,10 @@ final class VaultTest extends TestCase
         $member = User::create(['id' => (string) Str::uuid(), 'name' => 'Member', 'email' => 'member@example.test', 'password' => 'unused']);
         $identity = ['email' => $member->email, 'name' => $member->name];
         $url = '/workspaces/'.$this->workspace.'/members';
+        $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
+            ->assertDontSee('aria-label="Role for Owner"', false);
+        $this->post($url, $identity + ['role' => 'owner'])->assertRedirect($url);
+        $this->get($url)->assertSee('aria-label="Role for Owner"', false)->assertDontSeeText('Add another owner');
         $this->post($url, $identity + ['role' => 'viewer'])->assertRedirect($url);
         $this->get($url)->assertOk()->assertSee('aria-label="Role for Member"', false)->assertSee('Remove Member from this workspace?');
         $this->post($url, $identity + ['role' => 'editor'])->assertRedirect($url);

@@ -22,6 +22,8 @@ const fields = () => document.querySelectorAll('[data-types]').forEach(el => {
   el.querySelectorAll('input,textarea').forEach(input => { input.disabled = !active; input.required = active && input.closest('form').dataset.editing !== '1' && !input.hasAttribute('data-optional'); });
 });
 if (type) { type.addEventListener('change', fields); fields(); }
+// The visible label of a field, without its hint: "Password", "API token".
+const fieldName = input => input.closest('.field, label')?.querySelector('label span, span')?.firstChild?.textContent?.trim() || 'value';
 document.querySelectorAll('[data-generate]').forEach(button => button.addEventListener('click', () => {
   const input = document.getElementById(button.dataset.generate);
   if (!input) return;
@@ -29,29 +31,34 @@ document.querySelectorAll('[data-generate]').forEach(button => button.addEventLi
   input.value = btoa(String.fromCharCode(...bytes));
   input.dispatchEvent(new Event('input', { bubbles: true }));
   button.textContent = 'Generated';
-  say('Value generated. Use Show to check it.');
+  const name = fieldName(input);
+  say(name + ' generated. Use Show ' + name + ' to check it.');
 }));
 // Every Generate button gets a Show/Hide companion, so a generated or typed value can be checked before saving.
 document.querySelectorAll('[data-generate]').forEach(button => {
   const input = document.getElementById(button.dataset.generate);
   if (!input || input.type !== 'password') return;
-  const name = input.closest('.field, label')?.querySelector('label span, span')?.firstChild?.textContent?.trim() || 'value';
+  const name = fieldName(input);
   const show = document.createElement('button');
   show.type = 'button';
-  show.textContent = 'Show';
-  show.setAttribute('aria-pressed', 'false');
-  show.setAttribute('aria-label', 'Show ' + name);
+  // The button names what a press does, in text and accessible name alike; the announcement reuses the words.
+  const sync = () => {
+    const verb = input.type === 'password' ? 'Show' : 'Hide';
+    show.textContent = verb;
+    show.setAttribute('aria-label', verb + ' ' + name);
+  };
+  const mask = () => { input.type = 'password'; sync(); };
+  sync();
   show.addEventListener('click', () => {
     const visible = input.type === 'password';
     input.type = visible ? 'text' : 'password';
-    show.textContent = visible ? 'Hide' : 'Show';
-    show.setAttribute('aria-pressed', String(visible));
-    say(name + (visible ? ' shown' : ' hidden'));
+    sync();
+    say(name + (visible ? ' shown. Hide ' + name + ' to mask it again.' : ' hidden. Show ' + name + ' to check it.'));
   });
   button.before(show);
   // A shown value never stays on screen through a submit or a page change.
-  input.form?.addEventListener('submit', () => { input.type = 'password'; });
-  addEventListener('pagehide', () => { input.type = 'password'; });
+  input.form?.addEventListener('submit', mask);
+  addEventListener('pagehide', mask);
 });
 // Entry type editor: add another empty field row.
 document.querySelectorAll('[data-add-row]').forEach(button => button.addEventListener('click', () => {
@@ -66,9 +73,87 @@ document.querySelectorAll('[data-add-row]').forEach(button => button.addEventLis
   rows.appendChild(row);
   row.querySelector('input:not([type=hidden])')?.focus();
 }));
+// Inline password confirmation: the block is in every long sensitive form, hidden while the confirmation has more
+// than 4 minutes left. It appears when the time comes, when the tab is looked at again, and at the latest on submit.
+document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box => {
+  const input = box.querySelector('input[type=password]');
+  if (!input) return;
+  // The server's clock decides; data-now turns it into an offset from this device's clock.
+  const skew = box.dataset.now ? Number(box.dataset.now) * 1000 - Date.now() : 0;
+  const until = Number(box.dataset.confirmedUntil) * 1000;
+  const check = () => {
+    const left = until - (Date.now() + skew);
+    if (left >= 240000) return false;
+    const expired = left <= 0;
+    const appeared = box.hidden;
+    box.hidden = false;
+    input.disabled = false;
+    input.required = expired;
+    box.querySelectorAll('[data-when]').forEach(el => { el.hidden = (el.dataset.when === 'expired') !== expired; });
+    if (appeared) say(expired ? 'Your password confirmation has expired. Enter your current password in this form.' : 'Your password confirmation ends soon. Enter your current password in this form.');
+    return expired;
+  };
+  check();
+  setInterval(check, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  box.closest('form')?.addEventListener('submit', event => {
+    if (!check() || input.value) return;
+    event.preventDefault();
+    input.focus();
+    say('Your password confirmation has expired. Enter your current password to continue.');
+  });
+});
 document.querySelectorAll('[data-confirm]').forEach(form => form.addEventListener('submit', event => {
+  if (event.defaultPrevented) return;
   if (!confirm(form.dataset.confirm)) event.preventDefault();
 }));
+// Grant form: an action needs fields the chosen entry's type may not have. Options carry data-fields (entry: the
+// fields it has; action: the fields it reads), so impossible actions are switched off before the server says no.
+document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
+  const form = entrySelect.form;
+  const actionSelect = form?.querySelector('select[name=action]');
+  if (!actionSelect || !actionSelect.querySelector('option[data-fields]')) return;
+  const lacking = ' — needs fields this entry lacks';
+  const options = [...actionSelect.options];
+  options.forEach(option => { option.dataset.text = option.textContent; });
+  const submit = form.querySelector('button:not([type=button])');
+  const note = document.createElement('p');
+  note.className = 'note';
+  note.id = 'grant-action-note';
+  note.hidden = true;
+  note.textContent = 'No action can use this entry: its type lacks the fields every action reads. Choose another entry.';
+  actionSelect.closest('label')?.after(note);
+  const list = value => (value || '').split(',').map(key => key.trim()).filter(Boolean);
+  const sync = () => {
+    const chosen = entrySelect.selectedOptions[0];
+    const picked = Boolean(chosen?.value);
+    const has = new Set(list(chosen?.dataset.fields));
+    options.forEach(option => {
+      const fits = !picked || list(option.dataset.fields).every(key => has.has(key));
+      option.disabled = !fits;
+      option.textContent = option.dataset.text + (fits ? '' : lacking);
+    });
+    const valid = options.filter(option => !option.disabled);
+    if (actionSelect.selectedOptions[0]?.disabled && valid.length) valid[0].selected = true;
+    const none = picked && !valid.length;
+    if (submit) submit.disabled = none;
+    if (none) actionSelect.setAttribute('aria-describedby', note.id); else actionSelect.removeAttribute('aria-describedby');
+    if (none && note.hidden) say(note.textContent);
+    note.hidden = !none;
+  };
+  entrySelect.addEventListener('change', sync);
+  addEventListener('pageshow', sync);
+  sync();
+});
+// Filter bars: an inline bar on wide screens, a closed drawer on phones. A resize follows along until the user
+// opens or closes the bar themselves.
+const wide = matchMedia('(min-width: 901px)');
+const filterBars = document.querySelectorAll('details[data-wide-open]');
+filterBars.forEach(bar => {
+  if (wide.matches) bar.open = true;
+  bar.querySelector('summary')?.addEventListener('click', () => { bar.dataset.toggled = '1'; });
+});
+wide.addEventListener('change', () => filterBars.forEach(bar => { if (!bar.dataset.toggled) bar.open = wide.matches; }));
 // Header menus are <details>: only one stays open, and a click outside or Escape closes it.
 const menus = document.querySelectorAll('details.menu');
 menus.forEach(menu => menu.addEventListener('toggle', () => {

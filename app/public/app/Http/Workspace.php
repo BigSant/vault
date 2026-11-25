@@ -30,23 +30,25 @@ final class Workspace
         if ($r->query('due') === '1') {
             $r->query->remove('state');
         }
-        $projects = $space ? DB::table('projects')->where('workspace_id', $id)->get() : collect();
-        $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->get();
+        $projects = $space ? DB::table('projects')->where('workspace_id', $id)->orderBy('name')->get() : collect();
+        $environments = $space ? $this->workspaceEnvironments($id) : collect();
         $query = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('projects.workspace_id', $id)->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active')->select('entries.*', 'environments.name as environment', 'projects.name as project')
             ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
-        if ($r->filled('q')) {
-            $term = mb_substr((string) $r->query('q'), 0, 100);
-            $query->where(function ($q) use ($term) {
-                $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
-            });
-        }
+        $archivedCount = $r->query('state') === 'archived' ? (clone $query)->count() : 0;
         foreach (['project' => 'projects.id', 'environment' => 'environments.id', 'type' => 'entries.type'] as $filter => $column) {
             if ($r->filled($filter)) {
                 $query->where($column, $r->query($filter));
             }
         }
 
+        $scopeCount = (clone $query)->count();
+        if ($r->filled('q')) {
+            $term = mb_substr((string) $r->query('q'), 0, 100);
+            $query->where(function ($q) use ($term) {
+                $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
+            });
+        }
         if ($r->query('due') === '1') {
             $query->where('entries.rotate_at', '<', now());
         }
@@ -62,7 +64,7 @@ final class Workspace
         ] : ['active' => 0, 'due' => 0, 'production' => 0, 'used' => 0];
 
         return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
-            'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
+            'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'archivedCount' => $archivedCount, 'scopeCount' => $scopeCount, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
     }
 
     public function workspace(Request $r)
@@ -102,7 +104,7 @@ final class Workspace
     {
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $projects = DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->get();
-        $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->orderBy('name')->get()->groupBy('project_id');
+        $environments = $this->workspaceEnvironments($workspace)->groupBy('project_id');
         $counts = DB::table('entries')->whereIn('environment_id', $environments->flatten()->pluck('id'))->where('state', '!=', 'destroyed')->groupBy('environment_id')
             ->selectRaw('environment_id, COUNT(*) as total')->pluck('total', 'environment_id');
         $template = $this->structure->template($space);
@@ -299,7 +301,7 @@ final class Workspace
     private function workspaceEnvironments(string $workspace)
     {
         return DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
-            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderBy('environments.name')->get();
+            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderByDesc('environments.production')->orderBy('environments.name')->get();
     }
 
     public function importForm(string $workspace)
@@ -384,9 +386,11 @@ final class Workspace
             ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
             ->orderBy('action')->get();
         $actions = $this->ops->definitions();
-        $typeNames = $this->types->names($workspace);
+        $types = $this->types->all($workspace);
+        $typeNames = $types->pluck('name', 'key');
+        $typeFields = $types->mapWithKeys(fn ($type) => [$type->key => array_column(array_filter($type->fields, fn ($field) => $field['required']), 'key')]);
 
-        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions', 'typeNames', 'total'));
+        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions', 'typeNames', 'typeFields', 'total'));
     }
 
     public function members(string $workspace)

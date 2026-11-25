@@ -46,9 +46,9 @@
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><small>{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             <td class="name action" data-label="Action"><code>{{ $o->action }}</code><small class="muted" title="Request {{ $o->id }}">{{ substr($o->id, 0, 8) }}</small></td>
             <td class="state" data-label="State">@if(in_array($state, ['running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}"></span> @endif @include('outcome', ['outcome' => $state])</td>
-            <td class="when" data-label="Requested">@if($o->created_at ?? null)<small class="k">Requested</small> {{ $time($o->created_at) }} <small class="k">UTC</small>@else<span class="muted">request time unknown</span>@endif</td>
+            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> {{ $time($o->created_at) }} <small class="k">UTC</small>@else<span class="muted">request time unknown</span>@endif</td>
             @if($finished)
-            <td class="when" data-label="Finished">@if(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> {{ $time($o->updated_at) }} <small class="k">UTC</small>@endif</td>
+            <td class="when" data-label="Finished (UTC)">@if(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> {{ $time($o->updated_at) }} <small class="k">UTC</small>@endif</td>
             @else
             <td class="decision" data-label="Decision">
                 @if($o->state === 'pending')

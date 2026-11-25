@@ -99,6 +99,11 @@ h3{font:700 14px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;m
 h3 small{display:block;margin-top:3px;color:var(--faint);font:400 12px/1.4 var(--mono);overflow-wrap:anywhere;text-transform:none;letter-spacing:0}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 4px}
 .head h1{margin-bottom:6px}
+/* Title row: the name and its one action share a line on every screen size. */
+.head>div:only-child{flex:1;min-width:0}
+.title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.title-row h1{min-width:0}
+.title-row .btn{flex:none;white-space:nowrap}
 .head .sub{color:var(--dim);font-size:13px;margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .back{display:inline-block;margin:0 0 12px;font-size:13px}
 .note{color:var(--dim);font-size:13px}
@@ -157,6 +162,12 @@ font-weight:600;padding:0 12px 2px}
 .board .line{display:block}
 .board .line+.line{margin-top:3px}
 .board .line b{color:var(--dim);font-weight:600}
+/* Row actions (Revoke, Remove, Reveal, Restore) sit at the right edge in a column no wider than its buttons. */
+@media (min-width:901px){
+.board td:last-child:not(.decision):has(.controls,>form){width:1%;white-space:nowrap;text-align:right}
+.board td:last-child:not(.decision) .controls{justify-content:flex-end;flex-wrap:nowrap}
+.board td:last-child:not(.decision)>form{display:inline-flex;justify-content:flex-end;margin:0}
+}
 
 /* List: plain and dense */
 .list{width:100%;border-collapse:collapse}
@@ -210,6 +221,23 @@ input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px
 .toolbar :is(button,.btn){min-height:36px}
 .toolbar>a:not(.btn),.toolbar .clear{display:inline-flex;align-items:center;min-height:36px;font-size:13px}
 .toolbar .count{margin-left:auto;color:var(--dim);font-size:13px;align-self:center}
+/* Filter bar (Entries, Grants, Activity): <details class="filters" data-wide-open> holding one .toolbar form.
+   app.js opens it on wide screens, where it reads as an inline bar under a quiet summary line; on phones it is
+   a closed drawer. The status line below it carries the count, one chip per active filter and Clear filters. */
+details.filters{margin:0 0 10px}
+details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px}
+details.filters>summary::before,details.filters[open]>summary::before{flex:none;content:"\25B8"}
+details.filters[open]>summary::before{content:"\25BE"}
+details.filters .toolbar{margin:0;padding:4px 12px 12px}
+.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:none;font-size:13px;color:var(--dim)}
+.filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
+@media (min-width:901px){
+details.filters[data-wide-open]{background:none;border:none;border-radius:0}
+details.filters[data-wide-open]>summary{display:inline-flex;padding:0;margin:0 0 6px;font-size:12px;font-weight:400;color:var(--dim)}
+details.filters[data-wide-open]>summary:hover{color:var(--amber)}
+details.filters[data-wide-open] .toolbar{padding:0}
+}
+@media (max-width:900px){details.filters>summary{min-height:40px}}
 .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0}
 .inline label{margin:0}
 .inline input:not([type=checkbox]){width:auto;flex:1;min-width:10em}
@@ -243,7 +271,19 @@ pre[data-hidden]{color:var(--faint)}
 .changes{display:grid;gap:2px}
 .changes .muted{font-size:12px}
 .changes b{color:var(--dim);font-weight:600}
-.subnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+/* Jump links to the sections of a long page: one line of quiet underlined links, never button-like. */
+nav.subnav{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap;margin:4px 0 14px;padding:0 0 8px;border-bottom:1px dashed var(--rule);font-size:13px}
+nav.subnav .subnav-label{color:var(--faint);font-size:12px;white-space:nowrap}
+nav.subnav a,nav.subnav a:hover{display:inline-flex;align-items:center;min-height:28px;padding:0;border:none;border-radius:0;background:none;
+font:400 13px/1.3 var(--mono);letter-spacing:0;text-transform:none;white-space:nowrap;color:var(--dim);
+text-decoration:underline;text-decoration-color:var(--edge);text-decoration-thickness:1px;text-underline-offset:5px}
+nav.subnav a:hover{color:var(--amber);text-decoration-color:var(--amber)}
+nav.subnav a.is-wait{color:var(--amber);text-decoration-color:var(--amber-line)}
+@media (max-width:900px){
+nav.subnav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-right:-16px;padding-right:16px}
+nav.subnav::-webkit-scrollbar{display:none}
+nav.subnav a,nav.subnav a:hover{flex:none;min-height:40px;padding:0}
+}
 
 /* Sign-in */
 main.login{max-width:520px;margin:0 auto;padding:10vh 16px 24px}
@@ -347,6 +387,12 @@ details.fold:target{border-color:var(--amber)}
 .with-button>input,.with-button>label{flex:1;min-width:0}
 .with-button>label{margin:0}
 .with-button:has(>label){align-items:flex-end;margin:0 0 8px}
+/* Narrow phones: the buttons wrap under the field instead of squeezing it. */
+@media (max-width:420px){
+.with-button{flex-wrap:wrap;justify-content:flex-end}
+.with-button>input,.with-button>label{flex:1 1 60%;min-width:60%}
+.with-button:has(>button~button)>input{flex-basis:100%}
+}
 /* Counts beside a heading or in a fold summary are plain text, not chips. */
 h2 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacing:0;text-transform:none}
 .fold-name code{margin-left:6px;font-weight:400}
@@ -359,6 +405,9 @@ details[open]>summary .fold-act{color:var(--dim)}
 .card details.fold .form-foot{align-items:center}
 /* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
 @media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}.fold-act{margin-left:auto}}
+/* Password field inside a long form; hidden until the confirmation is about to end (app.js reveals it). */
+.confirm-inline{margin-top:16px;padding-top:12px;border-top:1px dashed var(--rule)}
+.confirm-inline .note{margin:0 0 8px}
 /* Error page inside the signed-in shell */
 .error-page{max-width:760px}
 
@@ -397,34 +446,18 @@ a.stat:hover span,a.stat.is-on span{color:var(--amber)}
 a.stat:hover span{text-decoration:underline}
 a.stat.is-on{box-shadow:inset 0 -2px 0 var(--amber);padding-bottom:2px}
 a.stat.has-due b{color:var(--amber)}
-.catalog-filter{margin:0 0 12px}
-.catalog-filter .search-row{display:flex;gap:8px;align-items:stretch;margin:0 0 8px}
-.catalog-filter .search-row input{flex:1;min-width:0}
-.catalog-filter .search-row button{flex:none;width:auto}
-details.filters{margin:0}
-details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px}
-details.filters .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:10px 12px;align-items:end;padding-top:4px}
-details.filters .filter-grid label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--dim)}
-details.filters .filter-grid label.check{flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-weight:400;font-size:13px;color:var(--ink);min-height:36px}
-details.filters .filter-grid .filter-actions{display:flex;align-items:center;justify-content:flex-end}
-.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:none;font-size:13px;color:var(--dim)}
-.filter-status .chip:not(.warn):not(.muted):not(.ok):not(.bad){font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
-.subnav a{display:inline-flex;align-items:center;min-height:32px;padding:4px 10px;border:1px solid var(--edge);border-radius:3px;background:var(--panel);color:var(--dim);font:600 12px/1.3 var(--mono)}
-.subnav a:hover{border-color:var(--amber);color:var(--amber);text-decoration:none}
-.head+.subnav{margin-top:4px}
+@media (max-width:600px){
+.stats .stat.secondary{display:none}
+}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
 .field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
-.confirm-inline{margin-top:16px;padding-top:12px;border-top:1px dashed var(--rule)}
-.confirm-inline .note{margin:0 0 8px}
 .list.import-format td.key,.list.import-format td.key code,.list.import-types td.type-key code{white-space:nowrap;overflow-wrap:normal}
 .list.import-ids td.env-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .list.import-ids td.env-id code{white-space:nowrap;overflow-wrap:normal}
 details.import-ref>.inner .note{margin:0}
 details.import-ref>.inner .scroll{margin:0}
 @media (max-width:900px){
-details.filters>summary{min-height:40px}
-.subnav a{min-height:40px;padding:8px 12px}
 .field{grid-template-columns:1fr;gap:4px}
 .field-val{min-height:0}
 .board.entries td.name{order:0}
@@ -454,6 +487,7 @@ details.filters>summary{min-height:40px}
 }
 
 /* agents area */
+.board.grants [data-label="Entry"] small,.board.members [data-label="Role"] small{display:block;margin-top:2px;color:var(--dim)}
 .members .controls{flex-wrap:nowrap}
 .members .controls select{width:auto}
 @media (max-width:900px){
@@ -464,11 +498,22 @@ details.filters>summary{min-height:40px}
 .board.grants tr{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center}
 .board.grants [data-label="Agent"]{grid-area:1/1}
 .board.grants [data-label="Action"]{grid-area:1/2/2/4}
-.board.grants [data-label="Entry"]{grid-area:2/1}
-.board.grants [data-label="State"]{grid-area:3/2;justify-self:end}
-.board.grants [data-label="Approval"]{grid-area:2/2/3/4;justify-self:end}
-.board.grants .when{grid-area:3/1;white-space:normal}
-.board.grants td:last-child{grid-area:3/3;justify-self:end}
+.board.grants [data-label="Entry"]{grid-area:2/1/3/4}
+.board.grants [data-label="State"]{grid-area:4/2;justify-self:end}
+.board.grants [data-label="Approval"]{grid-area:3/1/4/4}
+.board.grants .when{grid-area:4/1;white-space:normal}
+.board.grants td:last-child{grid-area:4/3;justify-self:end}
 .board.grants [data-label="Entry"] small{display:inline}
 .members td[data-label=""]:empty{display:none}
+}
+
+/* setup area */
+details.more.field-rules{margin:14px 0 0}
+details.more.field-rules>summary{color:var(--dim);font-weight:400}
+details.more.field-rules>summary:hover{color:var(--ink)}
+details.more.field-rules ul{margin:0;padding-left:20px}
+details.more.field-rules li+li{margin-top:4px}
+@media (max-width:900px){
+.list.edit td[data-label=""]::before{content:none}
+.card details.fold:not(.env)>summary .fold-name{flex:1 1 auto}
 }
