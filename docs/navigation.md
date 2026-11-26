@@ -141,11 +141,11 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   ("Request activity for this entry →", "All activity for this entry →").
   **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
   cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
-- `/entries/new`, `/entries/new?entry=` — add / update form. On the add form **Project** and **Environment** are two
+- `/entries/new`, `/entries/new?entry=` — add / update form. On the add form **Project**, **Environment** and **Type** are three
   choices, each a select that app.js turns into a searchable combobox (`select[data-search]`: a text field with the
   matches in a listbox under it; arrows move, Enter or a click chooses, Tab takes a single match, Escape restores;
   matching ignores case and accents; the select stays in the form, hidden, and carries the value; without script it
-  is the plain select). Before a project, an environment or an entry type exists, the form is an empty state naming
+  is the plain select; "Reload types" swaps the Type options and the combobox follows them). Before a project, an environment or an entry type exists, the form is an empty state naming
   each missing one with a link to its Setup tab. On the update form the project and environment are fixed text. Missing a type or a field never costs the draft.
   Under Type sits a closed disclosure (`details.type-detour`) whose summary is the question, always in view:
   "Missing a type or field?" ("Missing a field?" on the update form). The ordinary path stays short, on phones

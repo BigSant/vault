@@ -50,8 +50,8 @@
                  script there is no button, and the sentence printed here says so (data-script-text). --}}
             <details class="type-detour" data-reload-types-row><summary>Missing a field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></div></details>
         @else
-            {{-- Two choices: the project, and the environment from the workspace's one list. Both are selects that
-                 app.js turns into a searchable list (data-search); without script they stay plain selects. --}}
+            {{-- Three choices: the project, the environment from the workspace's one list, and the type. All are selects
+                 that app.js turns into a searchable list (data-search); without script they stay plain selects. --}}
             @php $selectedProject = old('project_id', request('project')); $selectedEnv = old('environment_id', request('environment')); @endphp
             <label><span>Project <small aria-hidden="true">required</small></span><select name="project_id" required data-search="Search projects">
                 <option value="">Choose a project</option>
@@ -61,7 +61,7 @@
                 <option value="">Choose an environment</option>
                 @foreach($environments as $e)<option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>@endforeach
             </select></label>
-            <label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>
+            <label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required data-search="Search types">
                 <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>

@@ -1033,7 +1033,7 @@ final class ShellTest extends TestCase
             ->assertSee('<label><span>Name <small aria-hidden="true">required</small></span><input name="name"', false)
             ->assertSee('<label><span>Project <small aria-hidden="true">required</small></span><select name="project_id" required data-search="Search projects">', false)
             ->assertSee('<label><span>Environment <small aria-hidden="true">required</small></span><select name="environment_id" required data-search="Search environments">', false)
-            ->assertSee('<label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>', false)
+            ->assertSee('<label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required data-search="Search types">', false)
             // The alias hint is the field's description, not part of its name. Adding, the alias follows the name and is not required.
             ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
             ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint" data-alias-from-name><small class="hint" id="entry-alias-hint">', false)
