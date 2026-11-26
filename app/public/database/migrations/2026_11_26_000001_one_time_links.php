@@ -44,6 +44,8 @@ return new class extends Migration
             $t->string('account', 200)->nullable();
             // HMAC of what an agent asked for: a retry with the same request_id must ask for the same thing.
             $t->string('digest', 64)->nullable();
+            // HMAC of the content template and passphrase an owner approves: a send checks the draft against it.
+            $t->string('sealed', 64)->nullable();
             $t->timestamp('expires_at')->nullable();
             $t->timestamp('checked_at')->nullable();
             // When what OpenBao held for the link was destroyed; maintenance retries until it is set.

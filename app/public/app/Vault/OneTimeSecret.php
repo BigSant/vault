@@ -19,7 +19,7 @@ final class OneTimeSecret
 
     /** Receipt states, mapped to the words Vault uses for a link. */
     private const STATES = ['new' => 'active', 'shared' => 'active', 'previewed' => 'previewed', 'revealed' => 'revealed',
-        'burned' => 'burned', 'expired' => 'expired', 'orphaned' => 'expired'];
+        'burned' => 'burned', 'expired' => 'expired', 'orphaned' => 'expired', 'received' => 'revealed', 'viewed' => 'previewed'];
 
     public static function origin(string $region): string
     {
@@ -58,15 +58,19 @@ final class OneTimeSecret
     public function state(object $settings, #[\SensitiveParameter] string $token, string $receipt): string
     {
         try {
-            $record = $this->send(fn () => $this->client($settings, $token)->get('receipt/'.rawurlencode($receipt)))['record'] ?? [];
+            $json = $this->send(fn () => $this->client($settings, $token)->get('receipt/'.rawurlencode($receipt)));
         } catch (OneTimeSecretError $e) {
             if ($e->status === 404) {
                 return 'expired';
             }
             throw $e;
         }
+        $record = $json['record'] ?? [];
+        $state = self::STATES[$record['state'] ?? ''] ?? throw new OneTimeSecretError(502);
+        // The service counts a visit that did not reveal the content apart from the state.
+        $visited = (int) ($json['details']['view_count'] ?? 0) > 0 || ! empty($record['first_access']) || in_array($record['is_previewed'] ?? null, [true, 'true', '1', 1], true);
 
-        return self::STATES[$record['state'] ?? ''] ?? throw new OneTimeSecretError(502);
+        return $state === 'active' && $visited ? 'previewed' : $state;
     }
 
     /**
@@ -99,7 +103,8 @@ final class OneTimeSecret
             throw new OneTimeSecretError(0);
         }
         if (! $response->successful()) {
-            throw new OneTimeSecretError($response->status());
+            $type = $response->json('error_type');
+            throw new OneTimeSecretError($response->status(), is_string($type) && preg_match('/^[A-Za-z]{1,60}$/D', $type) ? $type : null);
         }
         $json = $response->json();
 

@@ -43,6 +43,6 @@
         @else
             @include('confirm-inline', ['verb' => 'add this agent', 'shared' => 'confirm-add-agent', 'primary' => 'confirm-agents', 'primaryShown' => true, 'fallback' => true])
         @endif
-        <div class="form-foot"><p class="note">Up to 30 days. The agent can do nothing until you add a grant.</p><button class="go" data-held-name="Add agent: " data-held-field="name">Add agent</button></div>
+        <div class="form-foot"><p class="note">{{ $linksReady ? 'Up to 30 days. Actions and an entry\'s values need a grant.' : 'Up to 30 days. The agent can do nothing until you add a grant.' }}</p><button class="go" data-held-name="Add agent: " data-held-field="name">Add agent</button></div>
     </form>
 @endsection

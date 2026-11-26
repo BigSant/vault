@@ -113,14 +113,15 @@ final class Sharing
         $space = $this->access->workspace($workspace, ['owner']);
         $settings = $this->links->settings($workspace);
 
-        return view('onetimesecret', ['space' => $space, 'settings' => $settings, 'regions' => OneTimeSecret::REGIONS, 'lifetimes' => OneTimeSecret::LIFETIMES]);
+        return view('onetimesecret', ['space' => $space, 'settings' => $settings, 'regions' => OneTimeSecret::REGIONS, 'lifetimes' => OneTimeSecret::LIFETIMES,
+            'open' => $settings ? $this->links->openIn($settings) : 0]);
     }
 
     public function saveSettings(Request $r, string $workspace)
     {
         $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
-        $this->links->saveSettings($workspace, $r->only(['region', 'email', 'token', 'default_lifetime', 'max_lifetime']));
+        $this->links->saveSettings($workspace, $r->only(['region', 'email', 'token', 'default_lifetime', 'max_lifetime', 'orphan']));
 
         return redirect('/workspaces/'.$workspace.'/onetimesecret')->with('notice', 'Saved. Check the account to make sure Onetime Secret accepts it.');
     }
@@ -154,12 +155,14 @@ final class Sharing
         $d = $r->validate(['links' => 'required|in:0,1']);
         $machine = DB::table('machines')->where('id', $id)->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->first();
         abort_unless($machine, 404);
-        DB::table('machines')->where('id', $id)->update(['links' => $d['links'] === '1', 'updated_at' => now()]);
-        $open = 0;
-        if ($d['links'] === '0') {
+        // Under the agent's lock, like a new link: a request at the same moment comes wholly before or after.
+        $open = DB::transaction(function () use ($id, $d, $machine, $r) {
+            DB::table('machines')->where('id', $id)->lockForUpdate()->first();
+            DB::table('machines')->where('id', $id)->update(['links' => $d['links'] === '1', 'updated_at' => now()]);
+
             // What it asked for and was not sent yet is not sent any more; what is out is named in the notice.
-            $open = $this->links->stopFor($machine, 'user:'.$r->user()->id);
-        }
+            return $d['links'] === '0' ? $this->links->stopFor($machine, 'user:'.$r->user()->id) : 0;
+        });
         $this->access->audit($workspace, $d['links'] === '1' ? 'machine.links_allow' : 'machine.links_stop', $id);
 
         return redirect('/workspaces/'.$workspace.'/agents#agent-'.$id)->with('notice', match (true) {

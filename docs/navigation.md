@@ -301,7 +301,10 @@ Tabs under the h1 "Setup": **Projects · Entry types**, and for an owner **Oneti
   "Check account" (signs in, creates nothing), then "Change the account"; before: one sentence on what to prepare and
   "Set up the account". The form: Region, Account email, API token (required the first time, then "Leave blank to
   keep"; stored in OpenBao `settings/<workspace>`, never shown again), Default lifetime, Longest lifetime, the form's
-  own password block, "Save account". While set up, "Remove account" (a `stop` button with the two-step question, no
+  own password block, "Save account". While links of the current account are open, a "Change anyway" checkbox
+  (with a hint naming how many) stands above the password block: moving to another region or email without it is a
+  validation error, because Vault cannot check or burn those links afterwards; a new token for the same account
+  needs nothing. While set up, "Remove account" (a `stop` button with the two-step question, no
   password: it only takes the ability away and deletes the token) stands under "Check account".
 
 ### Activity (owner)

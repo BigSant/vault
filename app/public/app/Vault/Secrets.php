@@ -87,6 +87,14 @@ final class Secrets
         $this->write($path, $data, (int) ($meta['data']['current_version'] ?? 0));
     }
 
+    /** Destroys the given versions of a path for good (KV v2 destroy): an older token must not stay readable. */
+    public function destroyVersions(string $path, array $versions): void
+    {
+        if ($versions) {
+            $this->call('POST', 'secret/destroy/'.$this->path($path), ['versions' => array_values(array_map('intval', $versions))]);
+        }
+    }
+
     public function resetMfa(string $userId, #[\SensitiveParameter] string $seed): void
     {
         $path = $this->path('auth/'.$userId);

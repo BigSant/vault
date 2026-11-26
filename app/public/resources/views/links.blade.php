@@ -6,10 +6,10 @@
      ($draft), never through the session. --}}
 @php
     $draft = $draft ?? [];
-    $stateNames = ['pending' => 'waiting for approval', 'sending' => 'sending', 'active' => 'not opened', 'previewed' => 'previewed', 'revealed' => 'read',
+    $stateNames = ['reserved' => 'waiting for approval', 'pending' => 'waiting for approval', 'sending' => 'sending', 'active' => 'not opened', 'previewed' => 'previewed', 'revealed' => 'read',
         'burned' => 'burned', 'expired' => 'expired', 'cancelled' => 'cancelled', 'failed' => 'failed'];
-    $stateChips = ['pending' => 'warn', 'sending' => 'warn', 'active' => 'ok', 'previewed' => 'warn', 'revealed' => 'muted', 'burned' => 'muted', 'expired' => 'muted', 'cancelled' => 'muted', 'failed' => 'bad'];
-    $stripes = ['pending' => 'is-wait', 'sending' => 'is-wait', 'active' => 'is-ok', 'previewed' => 'is-wait', 'failed' => 'is-bad'];
+    $stateChips = ['reserved' => 'warn', 'pending' => 'warn', 'sending' => 'warn', 'active' => 'ok', 'previewed' => 'warn', 'revealed' => 'muted', 'burned' => 'muted', 'expired' => 'muted', 'cancelled' => 'muted', 'failed' => 'bad'];
+    $stripes = ['reserved' => 'is-wait', 'pending' => 'is-wait', 'sending' => 'is-wait', 'active' => 'is-ok', 'previewed' => 'is-wait', 'failed' => 'is-bad'];
     $isOwner = $space->role === 'owner';
     $fieldKeys = $type ? array_column($type->fields, 'key') : [];
     $text = $draft['text'] ?? ($entry ? \App\Vault\Links::template($type) : '');
@@ -40,9 +40,9 @@
         @php
             $title = $l->note ?? ($l->entry ?? 'Text only');
             $fields = json_decode((string) $l->fields, true) ?: [];
-            $open = in_array($l->state, ['pending', 'active', 'previewed'], true);
+            $open = in_array($l->state, ['reserved', 'pending', 'active', 'previewed'], true);
             $canBurn = $open && ($isOwner || $l->user_id === auth()->id());
-            $burnName = $l->state === 'pending' ? 'Cancel link '.$title : 'Burn link '.$title;
+            $burnName = in_array($l->state, ['reserved', 'pending'], true) ? 'Cancel link '.$title : 'Burn link '.$title;
         @endphp
         <tr class="{{ $stripes[$l->state] ?? 'is-idle' }}">
             {{-- Line 1: the note, else the entry (a link to it), else "Text only". Line 2: the entry when the note took
@@ -53,7 +53,7 @@
             <td class="when" data-label="Made (UTC)"><span class="nobreak"><small class="k">Made </small>{{ substr($l->created_at, 0, 16) }} <small class="k">UTC</small></span></td>
             {{-- Open: when the lifetime ends. Ended: when, as far as Vault knows (the lifetime's end for an expired link, else the check that found it ended). --}}
             @php [$endWord, $endAt] = match (true) {
-                in_array($l->state, ['pending', 'sending'], true) => [null, null],
+                in_array($l->state, ['reserved', 'pending', 'sending'], true) => [null, null],
                 $open => ['Expires', $l->expires_at],
                 $l->state === 'expired' && $l->expires_at => ['Expired', min($l->expires_at, $l->updated_at)],
                 default => ['Ended', $l->updated_at],
@@ -62,7 +62,7 @@
             {{-- "read" is the news when an agent's link held an entry's values: its own colour, not the muted end states. --}}
             @php $chip = $l->state === 'revealed' && $l->machine_id && $l->entry_id ? 'warn' : ($stateChips[$l->state] ?? 'muted'); @endphp
             <td class="state" data-label="State"><span class="chip {{ $chip }}">{{ $stateNames[$l->state] ?? $l->state }}</span></td>
-            <td data-label="">@if($canBurn)<form class="controls" method="post" action="/workspaces/{{ $space->id }}/links/{{ $l->id }}/burn" data-confirm="{{ $l->state === 'pending' ? 'Cancel this request? The link is never sent.' : 'Burn this link? It can no longer be opened.' }}">@csrf<button class="stop" aria-label="{{ $burnName }}">{{ $l->state === 'pending' ? 'Cancel' : 'Burn' }}</button></form>@endif</td>
+            <td data-label="">@if($canBurn)<form class="controls" method="post" action="/workspaces/{{ $space->id }}/links/{{ $l->id }}/burn" data-confirm="{{ in_array($l->state, ['reserved', 'pending'], true) ? 'Cancel this request? The link is never sent.' : 'Burn this link? It can no longer be opened.' }}">@csrf<button class="stop" aria-label="{{ $burnName }}">{{ in_array($l->state, ['reserved', 'pending'], true) ? 'Cancel' : 'Burn' }}</button></form>@endif</td>
         </tr>
     @endforeach
     </tbody>

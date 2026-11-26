@@ -120,7 +120,8 @@ final class Operations
             abort_if(DB::table('operations')->where('machine_id', $machine->id)->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '>', now())->count() >= 5, 429);
             $id = (string) Str::uuid();
             DB::table('operations')->insert(['id' => $id, 'machine_id' => $machine->id, 'grant_id' => $grant->id, 'entry_id' => $entry, 'action' => $action,
-                'version' => $grant->version, 'state' => $grant->approval ? 'pending' : 'approved', 'request_id' => $requestId,
+                // A one-time link with an entry's values is approved by an owner every time, whatever the grant says.
+                'version' => $grant->version, 'state' => $grant->approval || $action === Links::ACTION ? 'pending' : 'approved', 'request_id' => $requestId,
                 'expires_at' => now()->addMinutes(5), 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($machine->workspace_id, 'operation.request', $id, 'ok', 'machine:'.$machine->id);
             $op = DB::table('operations')->where('id', $id)->first();

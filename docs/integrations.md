@@ -60,7 +60,8 @@ endpoints (HTTP); an agent without the permission does not see the tools.
 `text` is the content, up to 10,000 characters. With `entry_id` it may name that entry's fields as `{{field}}`;
 Vault puts the values in when it sends the content, so the agent never handles them (without `text`: every field,
 one "Label: value" per line). Using an entry needs a grant of the action `onetimesecret.link` on it, and such a
-grant always requires owner approval (the Grants form refuses it otherwise): the answer is `"state": "pending"`
+grant always requires owner approval (the Grants form refuses it otherwise, and a request is opened as waiting
+whatever an older grant says; a request is sent only with the approving owner on record): the answer is `"state": "pending"`
 until the owner allows it on Requests, where the row names the fields, the lifetime and whether a passphrase guards
 it; the agent checks `vault_link_status`. An agent has at most 20 links open and 60 new ones an hour (429 beyond).
 When Onetime Secret refuses a text-only link (a lifetime beyond the plan: 422; the account: 503; its rate limit:
@@ -71,7 +72,15 @@ HMAC of entry, text, lifetime, passphrase and note is kept): it then gets the sa
 `failed` link needs a new `request_id`. `expires_at` is the lifetime Onetime Secret applied, which a plan may
 shorten. An owner's Stop (Identities) cancels the agent's links that were not sent yet; a request is sent only if
 the agent is still allowed, in the account and within the longest lifetime the workspace has at that moment, and
-only with the draft (text and passphrase) that was asked for. Each link keeps the region and account it was made in:
+only with the draft that was approved: the final template (every field when no text was given) and the passphrase
+are sealed with an HMAC when the request is made, and a draft that does not match is never sent. The link is handed
+to the agent only while it is allowed one-time links and, for an entry's values, still holds the grant. The
+request_id, the agent's limits and its permission are checked under the agent's row lock, the same lock Stop takes.
+A send that crashed after Onetime Secret answered is recovered from its kept receipt and followed; one that crashed
+before is failed. A link whose lifetime is over is asked about once more (read, burned or expired); while Onetime
+Secret does not answer its receipt is kept, for up to a week. Onetime Secret's "previewed" also covers a visit it
+counts without a state change (`view_count`, `first_access`). A plan limit (`EntitlementRequired`) is reported as a
+lifetime the plan does not allow (422 for an agent). Each link keeps the region and account it was made in:
 after the account changes, Vault no longer checks or burns older links (they end with their lifetime).
 
 **Boundary.** Whoever holds a link can open it once. An agent that may use an entry's values in a link can therefore

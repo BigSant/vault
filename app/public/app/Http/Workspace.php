@@ -606,10 +606,13 @@ final class Workspace
         });
 
         // The broker rechecks authorization before network requests and every second while waiting.
-        $open = $kind === 'machines' ? Links::openOf($id) : 0;
+        // Links already out are not taken back by a revoke: the notice names them, Links burns them.
+        $open = $kind === 'machines' ? Links::openOf($id)
+            : ($row->action === Links::ACTION ? DB::table('links')->where('machine_id', $row->machine_id)->where('entry_id', $row->entry_id)->whereIn('state', ['sending', 'active', 'previewed'])->count() : 0);
+        $what = $kind === 'machines' ? 'Agent '.$machine->name.' revoked. '.$open.' of its one-time links' : 'Grant revoked. '.$open.' one-time '.Str::plural('link', $open).' it made';
 
         return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'))
-            ->with('notice', $open ? 'Agent '.$machine->name.' revoked. '.$open.' of its one-time links can still be opened: burn them on Links if needed.' : null);
+            ->with('notice', $open ? $what.' can still be opened: burn them on Links if needed.' : null);
     }
 
     public function decision(Request $r, string $workspace, string $id)

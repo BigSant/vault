@@ -80,11 +80,20 @@ final class LinksTest extends TestCase
                     return Http::response([], 204);
                 }
 
-                return isset($this->backend[$data]) ? Http::response(['data' => ['current_version' => count($this->backend[$data])]]) : Http::response([], 404);
+                return isset($this->backend[$data]) ? Http::response(['data' => ['current_version' => max(array_keys($this->backend[$data])),
+                    'versions' => array_map(fn () => ['destroyed' => false], $this->backend[$data])]]) : Http::response([], 404);
+            }
+            if (str_starts_with($path, '/v1/secret/destroy/')) {
+                $data = '/v1/secret/data/'.substr($path, strlen('/v1/secret/destroy/'));
+                foreach ($request['versions'] as $version) {
+                    unset($this->backend[$data][$version]);
+                }
+
+                return Http::response([], 204);
             }
             if (str_starts_with($path, '/v1/secret/data/')) {
                 if ($request->method() === 'POST') {
-                    $current = count($this->backend[$path] ?? []);
+                    $current = $this->backend[$path] ?? [] ? max(array_keys($this->backend[$path])) : 0;
                     if ($request['options']['cas'] !== $current) {
                         return Http::response([], 400);
                     }
@@ -93,7 +102,7 @@ final class LinksTest extends TestCase
                     return Http::response(['data' => ['version' => $current + 1]]);
                 }
                 parse_str($url['query'] ?? '', $query);
-                $version = (int) ($query['version'] ?? count($this->backend[$path] ?? []));
+                $version = (int) ($query['version'] ?? ($this->backend[$path] ?? [] ? max(array_keys($this->backend[$path])) : 0));
 
                 return isset($this->backend[$path][$version]) ? Http::response(['data' => ['data' => $this->backend[$path][$version], 'metadata' => ['version' => $version]]]) : Http::response([], 404);
             }
@@ -335,17 +344,28 @@ final class LinksTest extends TestCase
         $this->assertSame([], $this->conceals());
     }
 
-    public function test_an_agent_entry_link_without_approval_is_sent_at_once(): void
+    public function test_an_old_grant_without_approval_still_waits_for_an_owner(): void
     {
         $this->setUpAccount();
         $entry = $this->entry();
         [$machine, $token] = $this->agent();
         $this->grant($machine, $entry, false);
-        $this->withToken($token)->postJson('/api/v1/links', ['entry_id' => $entry, 'text' => 'pw {{password}}', 'request_id' => 'entry-link-1'])
-            ->assertJsonPath('state', 'active')->assertDontSee($this->sentinel);
+        $pending = $this->withToken($token)->postJson('/api/v1/links', ['entry_id' => $entry, 'text' => 'pw {{password}}', 'request_id' => 'entry-link-1'])
+            ->assertJsonPath('state', 'pending')->assertDontSee($this->sentinel);
+        $this->assertSame([], $this->conceals());
+        // Approved without a person (approved_by) is not approved.
+        DB::table('operations')->update(['state' => 'approved']);
+        $this->withToken($token)->getJson('/api/v1/links/'.$pending->json('id'))->assertJsonPath('state', 'failed');
+        $this->assertSame([], $this->conceals());
+        $pending = $this->withToken($token)->postJson('/api/v1/links', ['entry_id' => $entry, 'text' => 'pw {{password}}', 'request_id' => 'entry-link-2'])->assertJsonPath('state', 'pending');
+        $this->post($this->base.'/operations/'.$pending->json('request').'/decision', ['decision' => 'approve'])->assertRedirect();
         $this->assertSame('pw '.$this->sentinel, $this->conceals()[0][2]['secret']['secret']);
-        $id = DB::table('links')->value('id');
-        $this->withToken($token)->postJson('/api/v1/links/'.$id.'/burn')->assertJsonPath('state', 'burned');
+        $this->withToken($token)->getJson('/api/v1/links/'.$pending->json('id'))->assertJsonPath('state', 'active');
+        // Once the grant is revoked the agent no longer gets the link.
+        DB::table('grants')->update(['revoked_at' => now()]);
+        $this->withToken($token)->getJson('/api/v1/links/'.$pending->json('id'))->assertJsonPath('link', null);
+        DB::table('grants')->update(['revoked_at' => null]);
+        $this->withToken($token)->postJson('/api/v1/links/'.$pending->json('id').'/burn')->assertJsonPath('state', 'burned');
     }
 
     public function test_mcp_tools_create_links(): void
@@ -449,7 +469,11 @@ final class LinksTest extends TestCase
         $this->setUpAccount();
         $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
         $id = DB::table('links')->value('id');
-        $this->post($this->base.'/onetimesecret', ['region' => 'uk', 'email' => 'links@example.test', 'default_lifetime' => 86400, 'max_lifetime' => 604800])->assertRedirect();
+        $change = ['region' => 'uk', 'email' => 'links@example.test', 'default_lifetime' => 86400, 'max_lifetime' => 604800];
+        $this->get($this->base.'/onetimesecret')->assertSeeText('Change anyway');
+        $this->post($this->base.'/onetimesecret', $change)->assertSessionHas('form_errors', fn ($e) => str_contains($e['email'][0], '1 one-time link made in the current account is still open'));
+        $this->assertSame('eu', DB::table('link_settings')->value('region'));
+        $this->post($this->base.'/onetimesecret', $change + ['orphan' => '1'])->assertRedirect();
         $this->receiptState = 'expired';
         $this->post($this->base.'/links/check')->assertSessionHas('notice', fn ($n) => str_starts_with($n, 'Checked 0 of 1 open links.'));
         $this->assertSame('active', DB::table('links')->value('state'));
@@ -526,7 +550,7 @@ final class LinksTest extends TestCase
         $path = '/v1/secret/data/settings/'.$this->workspace;
         $this->post($this->base.'/onetimesecret', ['region' => 'eu', 'email' => 'links@example.test', 'token' => "  synthetic-ots-token\n",
             'default_lifetime' => 86400, 'max_lifetime' => 604800])->assertRedirect();
-        $this->assertSame([1 => ['token' => 'synthetic-ots-token']], $this->backend[$path]);
+        $this->assertSame([2 => ['token' => 'synthetic-ots-token']], $this->backend[$path]);
         $this->post($this->base.'/onetimesecret/remove')->assertRedirect()->assertSessionHas('notice', fn ($n) => str_starts_with($n, 'Account removed.'));
         $this->assertArrayNotHasKey($path, $this->backend);
         $this->assertNull(DB::table('link_settings')->first());
@@ -540,5 +564,52 @@ final class LinksTest extends TestCase
         $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'open-link-1'])->assertOk();
         $this->post($this->base.'/revoke/machines/'.$machine)->assertRedirect()
             ->assertSessionHas('notice', 'Agent mailer revoked. 1 of its one-time links can still be opened: burn them on Links if needed.');
+    }
+
+    public function test_a_changed_draft_or_template_is_never_sent(): void
+    {
+        [, , $id, $op] = $this->pendingLink();
+        // Same keys, different text: the seal no longer matches.
+        $this->backend['/v1/secret/data/links/'.$id][2] = ['text' => 'user {{username}} pw {{password}}', 'passphrase' => 'synthetic-phrase'];
+        $this->post($this->base.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
+        $this->assertSame([], $this->conceals());
+        $this->assertSame('failed', DB::table('links')->where('id', $id)->value('state'));
+    }
+
+    public function test_a_send_that_crashed_after_keeping_its_receipt_is_followed(): void
+    {
+        [, , $id, $op] = $this->pendingLink();
+        $this->post($this->base.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
+        // As if the process died after the receipt was kept, before the row said "active".
+        DB::table('links')->where('id', $id)->update(['state' => 'sending', 'updated_at' => now()->subMinutes(3)]);
+        $this->get($this->base.'/links')->assertOk();
+        $this->assertSame('active', DB::table('links')->where('id', $id)->value('state'));
+        $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
+    }
+
+    public function test_an_unanswered_check_after_the_end_keeps_the_receipt(): void
+    {
+        $this->setUpAccount();
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
+        $id = DB::table('links')->value('id');
+        DB::table('links')->update(['expires_at' => now()->subMinute()]);
+        DB::table('link_settings')->update(['email' => 'links@example.test']);
+        $this->backend['/v1/secret/data/settings/'.$this->workspace][99] = ['token' => 'wrong-token'];
+        Artisan::call('vault:links');
+        $this->assertSame('active', DB::table('links')->value('state'));
+        $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
+        unset($this->backend['/v1/secret/data/settings/'.$this->workspace][99]);
+        $this->receiptState = 'burned';
+        Artisan::call('vault:links');
+        $this->assertSame('burned', DB::table('links')->value('state'));
+    }
+
+    public function test_a_retry_matches_the_ask_not_todays_settings(): void
+    {
+        $this->setUpAccount();
+        [, $token] = $this->agent();
+        $first = $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'same-ask-1'])->assertOk();
+        DB::table('link_settings')->update(['default_lifetime' => 3600, 'max_lifetime' => 3600]);
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'same-ask-1'])->assertJsonPath('id', $first->json('id'));
     }
 }
