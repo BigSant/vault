@@ -1,4 +1,5 @@
-# Environment and checkout come from ~/.config/vault/units.env (docs/operations.md), e.g.
+# Environment and checkout come from ~/.config/vault/units.env (docs/operations.md); without VAULT_ENV the unit
+# fails instead of acting on the local environment. E.g.
 #   VAULT_ENV=prod
 #   VAULT_CHECKOUT=/srv/vault
 [Unit]
@@ -6,5 +7,5 @@ Description=Vault one-time links: end what is over, check the open ones
 [Service]
 Type=oneshot
 EnvironmentFile=%E/vault/units.env
-ExecStart=/bin/sh -c 'cd "$${VAULT_CHECKOUT:?}" && exec bin/vault links'
+ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" && exec bin/vault links'
 UMask=0077

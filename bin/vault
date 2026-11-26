@@ -62,23 +62,31 @@ def handoff_directory():
         path.mkdir(mode=0o700)
     if not configured and path.is_dir() and not path.is_symlink() and path.stat().st_uid == os.getuid():
         # A default directory made earlier (or by Docker's bind mount for this user) gets the strict mode.
-        os.chmod(path, 0o750)
+        # 0700, or 2710 with the vault-handoff group (search only: a reader must know the operation ID). Never
+        # group access without that group: a shared primary group (users) would let every local user read files.
+        os.chmod(path, 0o700)
         try:
             group = grp.getgrnam('vault-handoff')
             if group.gr_gid in os.getgroups():
                 os.chown(path, -1, group.gr_gid)
-                os.chmod(path, 0o2750)
+                os.chmod(path, 0o2710)
         except KeyError:
             pass
     try:
         info = os.lstat(path)
     except FileNotFoundError:
         raise RuntimeError('Handoff directory missing; create it as in docs/operations.md (tmpfiles.d)') from None
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o027:
-        raise RuntimeError('Handoff directory must be a real directory owned by this user, mode 2750 or stricter (no symlink)')
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o067:
+        raise RuntimeError('Handoff directory must be a real directory owned by this user, mode 2710 or stricter (no symlink)')
     expected = env_setting('VAULT_HANDOFF_GID')
     if expected and info.st_gid != int(expected):
         raise RuntimeError('Handoff directory group differs from VAULT_HANDOFF_GID')
+    # The marker tells the broker this is the handoff directory: without it the broker writes and removes nothing.
+    marker = path/'.vault-handoff'
+    if not os.path.lexists(marker):
+        os.close(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
+    if not stat.S_ISREG(os.lstat(marker).st_mode) or os.lstat(marker).st_uid != os.getuid():
+        raise RuntimeError('Handoff directory marker must be a regular file owned by this user')
 
 
 def prepare():
@@ -245,7 +253,8 @@ if __name__ == '__main__':
         main()
     except RuntimeError as error:
         print(str(error)+'. Existing data and recovery material preserved.',file=sys.stderr)
-        sys.exit(1)
+        # 75 (EX_TEMPFAIL): try again later, e.g. a backup while operations are active (ops/vault-backup.service).
+        sys.exit(getattr(error,'exit_code',1))
     except Exception as error:
         print('Vault operator action failed ('+type(error).__name__+'). Existing data and recovery material preserved.',file=sys.stderr)
         sys.exit(1)

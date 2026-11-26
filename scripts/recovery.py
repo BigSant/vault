@@ -10,6 +10,11 @@ import tempfile
 import time
 
 
+class Busy(RuntimeError):
+    """Try again later: operations are active or another backup runs. bin/vault exits 75 (EX_TEMPFAIL)."""
+    exit_code=75
+
+
 class Recovery:
     MEMBERS = {'manifest.json','database.sql','openbao.snap','app.key','app-bao.json','broker-bao.json','broker.key','connectors.json'}
 
@@ -55,9 +60,11 @@ class Recovery:
             partial.unlink(missing_ok=True)
 
     def backup(self):
-        lock=open(self.data/'.backup.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        lock=open(self.data/'.backup.lock','a')
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:raise Busy('Another backup is running') from None
         active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
-        if int(active):raise RuntimeError('Active operations must finish before backup')
+        if int(active):raise Busy('Active operations must finish before backup')
         if subprocess.run(['docker','exec','-w','/',self.php,'test','-f','/var/www/html/storage/framework/maintenance.php'],capture_output=True).returncode==0:
             raise RuntimeError('Application is already in maintenance')
         directory=self.root/'backups';directory.mkdir(mode=0o700,exist_ok=True)
@@ -67,7 +74,7 @@ class Recovery:
             self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down']);down=True
             stopped=True;self.run(['docker','stop',self.php,self.broker])
             active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
-            if int(active):raise RuntimeError('An operation started while quiescing; retry after it finishes')
+            if int(active):raise Busy('An operation started while quiescing; retry after it finishes')
             with tempfile.TemporaryDirectory(prefix='vault-backup-') as tmp:
                 tmp=Path(tmp)
                 sql=self.run(['docker','exec','-w','/',self.mysql,'sh','-c',

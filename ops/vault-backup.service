@@ -1,14 +1,14 @@
-# Encrypted full backup (docs/operations.md). Environment and checkout come from ~/.config/vault/units.env.
-# A backup refuses to start while operations are active (a handoff lease lasts up to 30 min): it is retried every
-# 20 minutes, at most 6 times in 4 hours. Schedule the timer outside the executor's run window.
+# Encrypted full backup (docs/operations.md). Environment and checkout come from ~/.config/vault/units.env; without
+# VAULT_ENV the unit fails instead of backing up the local environment.
+# A backup refuses to start while operations are active (a handoff lease lasts up to 30 min) or another backup runs:
+# bin/vault then exits 75 and this unit tries again 20 minutes later, at most 11 more times (12 attempts, about
+# 3 h 40 min). Any other failure ends the unit at once. The retry is a loop, not Restart=, so the unit loads on every
+# systemd version (Ubuntu 22.04 ships 249). Schedule the timer outside the executor's run window.
 [Unit]
 Description=Vault encrypted backup
-StartLimitIntervalSec=4h
-StartLimitBurst=6
 [Service]
 Type=oneshot
 EnvironmentFile=%E/vault/units.env
-ExecStart=/bin/sh -c 'cd "$${VAULT_CHECKOUT:?}" && exec bin/vault backup'
-Restart=on-failure
-RestartSec=20min
+ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" || exit 1; n=1; while :; do bin/vault backup; rc=$$?; if [ "$$rc" -ne 75 ] || [ "$$n" -ge 12 ]; then exit "$$rc"; fi; n=$$((n+1)); sleep 1200; done'
+TimeoutStartSec=5h
 UMask=0077
