@@ -27,6 +27,8 @@ final class VaultTest extends TestCase
 
     private string $environment;
 
+    private string $project;
+
     private string $sentinel = 'synthetic-secret-never-in-agent-output';
 
     /** Runs once before the next backend secret read, to simulate a concurrent writer. */
@@ -84,7 +86,8 @@ final class VaultTest extends TestCase
         DB::table('workspaces')->insert(['id' => $this->workspace, 'name' => 'Test']);
         DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $this->owner->id, 'role' => 'owner']);
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'Test project']);
-        DB::table('environments')->insert(['id' => $this->environment, 'project_id' => $project, 'name' => 'stage']);
+        DB::table('environments')->insert(['id' => $this->environment, 'workspace_id' => $this->workspace, 'name' => 'stage']);
+        $this->project = $project;
         $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $this->owner->credentialRevision()]);
     }
 
@@ -98,7 +101,7 @@ final class VaultTest extends TestCase
 
     private function entry(): string
     {
-        return app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => $this->sentinel])]);
+        return app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => $this->sentinel])]);
     }
 
     public function test_catalog_entry_link_restores_only_same_workspace_list_filters(): void
@@ -172,10 +175,11 @@ final class VaultTest extends TestCase
         DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'ssh')
             ->update(['name' => 'A custom certificate', 'key' => 'custom_certificate']);
 
-        $page = $this->get($url)->assertOk()->assertSeeTextInOrder(['Paste entries', 'Environment IDs', 'Type and field keys'])
+        $page = $this->get($url)->assertOk()->assertSeeTextInOrder(['Paste entries', 'Project and environment IDs', 'Type and field keys'])
             ->assertSee('<code>passphrase</code> optional', false)->assertSee('<code>private_key</code> required', false);
         $row = json_decode($page->viewData('example'), true, flags: JSON_THROW_ON_ERROR)[0];
         $this->assertSame($this->environment, $row['environment_id']);
+        $this->assertSame($this->project, $row['project_id']);
         $this->assertSame('custom_certificate', $row['type']);
         $this->assertSame(['private_key' => 'replace-me'], $row['secret_fields']);
     }
@@ -188,7 +192,7 @@ final class VaultTest extends TestCase
             ->assertSee('"environment_id": "'.$this->environment.'"');
         DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
         $this->get($url)->assertOk();
-        $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
+        $row = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
         $this->post($url, ['import' => json_encode([$row])])->assertRedirect();
         $this->assertTrue(DB::table('entries')->where('alias', 'editor-import')->exists());
     }
@@ -263,7 +267,7 @@ final class VaultTest extends TestCase
         $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-1234'])->assertJsonPath('state', 'pending')->json('id');
         $this->post('/workspaces/'.$this->workspace.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
         $this->assertNotNull(app(Operations::class)->authorized($op));
-        app(Catalog::class)->update($id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => 'rotated-test-value'])]);
+        app(Catalog::class)->update($id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => 'rotated-test-value'])]);
         $this->assertNull(app(Operations::class)->authorized($op));
         $this->assertSame('revoked', DB::table('operations')->where('id', $op)->value('state'));
         $this->assertSame($this->sentinel, app(Catalog::class)->reveal($id, 1)['token']);
@@ -377,10 +381,11 @@ final class VaultTest extends TestCase
         $environment = (string) Str::uuid();
         DB::table('workspaces')->insert(['id' => $workspace, 'name' => 'Other']);
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $workspace, 'name' => 'Other project']);
-        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'test']);
+        DB::table('environments')->insert(['id' => $environment, 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'test']);
         $row = (array) DB::table('entries')->first();
         $row['id'] = (string) Str::uuid();
         $row['environment_id'] = $environment;
+        $row['project_id'] = $project;
         DB::table('entries')->insert($row);
 
         return $row['id'];
@@ -389,7 +394,7 @@ final class VaultTest extends TestCase
     public function test_due_count_in_view_entry_page_caps_and_import_item_errors(): void
     {
         $entry = $this->entry();
-        $other = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Other due', 'alias' => 'other-due',
+        $other = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Other due', 'alias' => 'other-due',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         DB::table('entries')->whereIn('id', [$entry, $other])->update(['rotate_at' => '2020-11-01 12:00:00']);
         // No filter: the workspace's number, the plain label.
@@ -417,7 +422,7 @@ final class VaultTest extends TestCase
 
         // Import: an error names the failing item by its place in the array, never its values.
         $url = '/workspaces/'.$this->workspace.'/import';
-        $good = ['environment_id' => $this->environment, 'name' => 'Imported', 'alias' => 'imported', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}'];
+        $good = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Imported', 'alias' => 'imported', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}'];
         $this->get($url)->assertOk();
         $this->post($url, ['import' => json_encode([$good, ['name' => 'No environment', 'alias' => 'x', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}']])])
             ->assertStatus(303)->assertSessionHas('form_errors', fn ($errors) => count($errors['import']) >= 1 && str_starts_with($errors['import'][0], 'Entry 2: ')
@@ -449,7 +454,7 @@ final class VaultTest extends TestCase
         $this->get('/?due=1')->assertSeeText('Showing 0 of 1 entry')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
             ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
         DB::table('entries')->where('id', $entry)->update(['rotate_at' => '2020-11-01 12:00:00']);
-        $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
+        $filters = ['workspace' => $this->workspace, 'project' => $this->project,
             'environment' => $this->environment, 'q' => 'Private', 'type' => 'api_key'];
         foreach ([false, true] as $due) {
             $current = $filters + ($due ? ['due' => 1] : []) + ['page' => 2];
@@ -462,7 +467,7 @@ final class VaultTest extends TestCase
         $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
         DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
         $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
-        app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
+        app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
             'type' => 'api_key', 'secret' => '{"token":"test"}']);
         $this->get('/?state=archived')->assertSee('<h1 id="page-title">Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
             ->assertSeeText('State: Archived')->assertSee('<small><span class="chip muted">archived</span></small>', false)->assertDontSeeText('used by agents');
@@ -577,11 +582,11 @@ final class VaultTest extends TestCase
         $page = '/entries/new?workspace='.$this->workspace;
         $this->get($page)->assertOk();
         $this->withSession(['confirmed_at' => time() - 301])->post('/entries', [
-            'name' => 'Draft entry', 'environment_id' => $this->environment,
+            'name' => 'Draft entry', 'project_id' => $this->project, 'environment_id' => $this->environment,
             'confirm_password' => 'wrong-password', 'secret_fields' => ['token' => $this->sentinel],
         ])->assertStatus(303)->assertRedirect($page)
             ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.'])
-            ->assertSessionHas('_old_input', ['name' => 'Draft entry', 'environment_id' => $this->environment]);
+            ->assertSessionHas('_old_input', ['name' => 'Draft entry', 'project_id' => $this->project, 'environment_id' => $this->environment]);
         $this->assertDatabaseCount('entries', 0);
     }
 
@@ -684,8 +689,10 @@ final class VaultTest extends TestCase
 
     public function test_import_validates_all_rows_before_any_write(): void
     {
-        $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-import"}'];
-        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row, [...$row, 'environment_id' => (string) Str::uuid()]])])->assertNotFound();
+        $row = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-import"}'];
+        // An environment of no (or another) workspace is named as the entry's error; nothing is written.
+        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row, [...$row, 'environment_id' => (string) Str::uuid()]])])
+            ->assertStatus(303)->assertSessionHas('form_errors', fn ($e) => $e['import'][0] === 'Entry 2: Choose an environment of this workspace.');
         $this->assertSame(0, DB::table('entries')->count());
         $this->assertSame([], $this->backend);
         $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertRedirect();
@@ -722,7 +729,7 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         [$machine,$token,$grant] = $this->machine($id);
-        app(Catalog::class)->update($id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'api_key', 'secret' => '{"token":"synthetic-rotation"}']);
+        app(Catalog::class)->update($id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'api_key', 'secret' => '{"token":"synthetic-rotation"}']);
         $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();
         $this->assertSame(3, DB::table('entries')->where('id', $id)->value('version'));
         $this->assertSame($this->sentinel, app(Catalog::class)->reveal($id)['token']);
@@ -738,7 +745,7 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         [$machine,$token] = $this->machine($id);
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertStatus(303)->assertSessionHasErrors('entry');
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertStatus(303)->assertSessionHasErrors('entry');
         $this->app['auth']->logout();
         $this->withToken($token)->postJson('/entries/'.$id.'/reveal')->assertRedirect('/login');
     }
@@ -789,8 +796,8 @@ final class VaultTest extends TestCase
 
     public function test_web_partial_edit_preserves_ssh_passphrase_and_imported_fields(): void
     {
-        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret' => json_encode(['private_key' => 'synthetic-key', 'passphrase' => 'synthetic-passphrase', 'custom' => 'synthetic-extra'])]);
-        $data = ['environment_id' => $this->environment, 'name' => 'Renamed key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret_fields' => ['private_key' => 'synthetic-new-key', 'passphrase' => '']];
+        $id = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret' => json_encode(['private_key' => 'synthetic-key', 'passphrase' => 'synthetic-passphrase', 'custom' => 'synthetic-extra'])]);
+        $data = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Renamed key', 'alias' => 'ssh-key', 'type' => 'ssh', 'secret_fields' => ['private_key' => 'synthetic-new-key', 'passphrase' => '']];
         $this->post('/entries/'.$id, $data)->assertRedirect();
         $this->assertSame(['private_key' => 'synthetic-new-key', 'passphrase' => 'synthetic-passphrase', 'custom' => 'synthetic-extra'], app(Catalog::class)->reveal($id));
         $this->post('/entries/'.$id, [...$data, 'clear_fields' => ['passphrase']])->assertRedirect();
@@ -830,7 +837,7 @@ final class VaultTest extends TestCase
         $this->assertNotSame('apple vault', end($names));
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('Server address')->assertSee('secret_fields[contrasena]', false);
 
-        $entry = ['environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];
+        $entry = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];
         $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => str_contains(implode(' ', $errors->all()), 'Contraseña'));
         $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test', 'contrasena' => $this->sentinel]])->assertRedirect();
         $this->assertSame(1, DB::table('entries')->where('type', 'ftp_server')->count());
@@ -850,7 +857,7 @@ final class VaultTest extends TestCase
         $this->post($types, ['name' => 'Access key', 'field_key' => ['token', ''], 'field_label' => ['Access token', 'Endpoint'],
             'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']])->assertRedirect();
         $this->get('/entries/'.$id)->assertOk()->assertSee('Access key');
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
             'secret_fields' => ['endpoint' => 'https://api.example.test']])->assertRedirect();
         $this->assertSame(['token' => $this->sentinel, 'endpoint' => 'https://api.example.test'], app(Catalog::class)->reveal($id));
         $this->post($types, ['name' => 'Access key', 'field_key' => ['token', 'endpoint'], 'field_label' => ['Access token', 'Endpoint'],
@@ -860,7 +867,7 @@ final class VaultTest extends TestCase
 
     public function test_grant_requires_fields_the_action_reads(): void
     {
-        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
+        $id = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
         $machine = (string) Str::uuid();
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertStatus(303)->assertSessionHasErrors();
@@ -872,38 +879,36 @@ final class VaultTest extends TestCase
         $base = '/workspaces/'.$this->workspace;
         $names = [0 => 'First', 1 => 'Second', 2 => 'Third', 8 => 'Added'];
         $checked = [0 => '1', 2 => '1', 8 => '1'];
-        $this->post($base.'/template', ['env_name' => $names, 'env_production' => $checked])->assertRedirect()->assertSessionHasNoErrors();
-        $template = DB::table('workspaces')->where('id', $this->workspace)->value('environment_template');
-        $this->assertSame([true, false, true, true], array_column(json_decode($template, true), 'production'));
-
         $this->post($base.'/types', ['name' => 'Sparse fields', 'field_label' => $names, 'field_required' => $checked])->assertRedirect()->assertSessionHasNoErrors();
         $fields = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'Sparse fields')->value('fields');
         $this->assertSame([true, false, true, true], array_column(json_decode($fields, true), 'required'));
     }
 
-    public function test_environment_template_rename_production_and_safe_delete(): void
+    public function test_shared_environments_rename_production_and_safe_delete(): void
     {
         $base = '/workspaces/'.$this->workspace;
-        $this->post($base.'/template', ['env_name' => ['dev', 'qa', 'live', ''], 'env_production' => ['0', '0', '1', '0']])->assertRedirect();
+        foreach ([['dev', '0'], ['qa', '0'], ['live', '1']] as [$name, $production]) {
+            $this->post($base.'/environments', ['name' => $name, 'production' => $production])->assertRedirect($base.'/environments');
+        }
         $this->post($base.'/projects', ['name' => 'Shop'])->assertRedirect();
         $project = DB::table('projects')->where('name', 'Shop')->value('id');
-        $envs = DB::table('environments')->where('project_id', $project)->orderBy('name')->get();
-        $this->assertSame(['dev', 'live', 'qa'], $envs->pluck('name')->all());
+        $envs = DB::table('environments')->where('workspace_id', $this->workspace)->orderBy('name')->get();
+        // One list for the workspace: a new project adds none.
+        $this->assertSame(['dev', 'live', 'qa', 'stage'], $envs->pluck('name')->all());
         $this->assertTrue((bool) $envs->firstWhere('name', 'live')->production);
         $this->post($base.'/projects', ['name' => 'Shop'])->assertStatus(303)->assertSessionHasErrors();
 
         $dev = $envs->firstWhere('name', 'dev')->id;
         $this->post($base.'/environments/'.$dev, ['name' => 'development', 'production' => '0'])->assertRedirect();
         $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertStatus(303)->assertSessionHasErrors();
-        $this->post($base.'/environments', ['project_id' => $project, 'name' => 'preprod', 'production' => '1'])->assertRedirect();
-        $this->assertTrue((bool) DB::table('environments')->where('project_id', $project)->where('name', 'preprod')->value('production'));
-        $this->get($base.'/structure')->assertOk()->assertSee('development')->assertSee('preprod');
+        $this->get($base.'/environments')->assertOk()->assertSee('development')->assertSee('live');
 
-        $this->post($base.'/environments/'.$this->environment.'/delete')->assertRedirect();
-        $this->assertFalse(DB::table('environments')->where('id', $this->environment)->exists());
+        // Any project may use any environment of the workspace.
+        $qa = $envs->firstWhere('name', 'qa')->id;
+        app(Catalog::class)->create(['project_id' => $project, 'environment_id' => $qa, 'name' => 'n', 'alias' => 'a', 'type' => 'api_key', 'secret' => '{"token":"t"}']);
         $this->post($base.'/environments/'.$dev.'/delete')->assertRedirect();
-        app(Catalog::class)->create(['environment_id' => $envs->firstWhere('name', 'qa')->id, 'name' => 'n', 'alias' => 'a', 'type' => 'api_key', 'secret' => '{"token":"t"}']);
-        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertStatus(303)->assertSessionHasErrors();
+        $this->assertFalse(DB::table('environments')->where('id', $dev)->exists());
+        $this->post($base.'/environments/'.$qa.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/projects/'.$project, ['name' => 'Shop 2'])->assertRedirect();
         $this->assertSame('Shop 2', DB::table('projects')->where('id', $project)->value('name'));
@@ -919,7 +924,7 @@ final class VaultTest extends TestCase
     public function test_every_change_is_logged_without_values_and_old_versions_can_be_compared(): void
     {
         $id = $this->entry();
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Renamed', 'alias' => 'safe-alias', 'type' => 'api_key', 'tags' => 'billing',
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Renamed', 'alias' => 'safe-alias', 'type' => 'api_key', 'tags' => 'billing',
             'secret_fields' => ['token' => 'synthetic-rotated']])->assertRedirect();
         $changes = DB::table('entry_changes')->where('entry_id', $id)->orderBy('version')->get();
         $this->assertSame(['create', 'update'], $changes->pluck('event')->all());
@@ -947,7 +952,7 @@ final class VaultTest extends TestCase
 
     public function test_type_key_is_canonical_and_usage_ignores_case_and_destroyed_entries(): void
     {
-        $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'API_KEY', 'secret' => '{"token":"synthetic-import"}'];
+        $row = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'API_KEY', 'secret' => '{"token":"synthetic-import"}'];
         $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertStatus(303)->assertSessionHasErrors();
         $this->post('/entries', $row)->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(0, DB::table('entries')->count());
@@ -971,7 +976,7 @@ final class VaultTest extends TestCase
     public function test_history_names_only_declared_fields_and_counts_the_rest(): void
     {
         $catalog = app(Catalog::class);
-        $base = ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key'];
+        $base = ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key'];
         $id = $catalog->create([...$base, 'secret' => json_encode(['token' => 't1', 'customer_acme_prod_pw' => 'x', 'internal_host' => 'y'])]);
         $catalog->update($id, [...$base, 'secret' => json_encode(['token' => 't2', 'customer_acme_prod_pw' => 'changed', 'another_undeclared' => 'z'])]);
         $stored = json_encode(DB::table('entry_changes')->where('entry_id', $id)->get());
@@ -1008,7 +1013,7 @@ final class VaultTest extends TestCase
 
     public function test_grant_requires_current_payload_to_hold_the_action_fields(): void
     {
-        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
+        $id = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
         // The type later gains the required field, but this entry's current version does not hold it.
         $this->post('/workspaces/'.$this->workspace.'/types/secure_note', ['name' => 'Note', 'field_key' => ['note', ''], 'field_label' => ['Note', 'Token'],
             'field_kind' => ['multiline', 'secret'], 'field_required' => ['1', '1']])->assertRedirect();
@@ -1017,7 +1022,7 @@ final class VaultTest extends TestCase
         $grant = ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1];
         $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => !str_contains(implode(' ', $errors->all()), 'synthetic'));
         $this->assertSame(0, DB::table('grants')->count());
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret_fields' => ['token' => 'synthetic-token']])->assertRedirect();
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret_fields' => ['token' => 'synthetic-token']])->assertRedirect();
         $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertRedirect();
         $this->assertSame(1, DB::table('grants')->count());
     }
@@ -1027,7 +1032,7 @@ final class VaultTest extends TestCase
         $id = $this->entry();
         $this->post('/workspaces/'.$this->workspace.'/types/api_key', $this->typeForm(['field_key' => ['token', ''], 'field_label' => ['API key', 'Endpoint'],
             'field_kind' => ['secret', 'text'], 'field_required' => ['1', '1']]))->assertRedirect();
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
             'secret_fields' => ['token' => 'synthetic-rotated', 'endpoint' => 'https://api.example.test']])->assertRedirect();
         $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();
         $this->assertSame(['token' => $this->sentinel, 'endpoint' => 'https://api.example.test'], app(Catalog::class)->reveal($id));
@@ -1100,7 +1105,7 @@ final class VaultTest extends TestCase
         $id = $this->entry();
         $catalog = app(Catalog::class);
         foreach ([2, 3, 4] as $n) {
-            $catalog->update($id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic-'.$n])]);
+            $catalog->update($id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic-'.$n])]);
         }
         $entry = app(\App\Vault\Access::class)->entry($id);
         $history = $catalog->history($entry, 3, $older);
@@ -1115,7 +1120,7 @@ final class VaultTest extends TestCase
     public function test_array_shaped_inputs_are_validation_errors_not_server_errors(): void
     {
         $id = $this->entry();
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
+        $this->post('/entries/'.$id, ['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
             'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertStatus(303)->assertSessionHasErrors('clear_fields');
         $types = '/workspaces/'.$this->workspace.'/types';
         $this->post($types, $this->typeForm(['name' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
@@ -1138,9 +1143,9 @@ final class VaultTest extends TestCase
 
     public function test_an_entry_without_alias_gets_one_from_its_name(): void
     {
-        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Žalias Admin — Shop (prod)', 'alias' => '', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
+        $id = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Žalias Admin — Shop (prod)', 'alias' => '', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
         $this->assertSame('zalias-admin-shop-prod', DB::table('entries')->where('id', $id)->value('alias'));
-        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Own alias', 'alias' => 'my-own', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
+        $id = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Own alias', 'alias' => 'my-own', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
         $this->assertSame('my-own', DB::table('entries')->where('id', $id)->value('alias'));
         $this->assertSame('entry', Catalog::aliasFor('—'));
     }

@@ -33,8 +33,16 @@ final class Access
 
     public function environment(string $id, array $roles = ['owner', 'editor']): object
     {
-        $row = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('environments.id', $id)->select('environments.*', 'projects.workspace_id')->first();
+        $row = DB::table('environments')->where('id', $id)->first();
+        abort_unless($row, 404);
+        $this->workspace($row->workspace_id, $roles);
+
+        return $row;
+    }
+
+    public function project(string $id, array $roles = ['owner', 'editor']): object
+    {
+        $row = DB::table('projects')->where('id', $id)->first();
         abort_unless($row, 404);
         $this->workspace($row->workspace_id, $roles);
 
@@ -45,8 +53,7 @@ final class Access
     {
         $row = DB::table('entries')->where('id', $id)->first();
         abort_unless($row, 404);
-        $scope = $this->environment($row->environment_id, $roles);
-        $row->workspace_id = $scope->workspace_id;
+        $row->workspace_id = $this->project($row->project_id, $roles)->workspace_id;
 
         return $row;
     }

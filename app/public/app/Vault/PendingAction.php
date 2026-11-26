@@ -54,13 +54,12 @@ final class PendingAction
             'renameProject' => self::label('Rename project to', $name),
             'updateEnvironment' => self::label('Update environment', $name),
             'deleteProject' => self::label('Remove project', DB::table('projects')->where('workspace_id', $space)->where('id', $r->route('project'))->value('name')),
-            'deleteEnvironment' => self::label('Remove environment', DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $space)->where('environments.id', $r->route('environment'))->value('environments.name')),
+            'deleteEnvironment' => self::label('Remove environment', DB::table('environments')->where('workspace_id', $space)->where('id', $r->route('environment'))->value('name')),
             'archive', 'unarchive', 'restoreVersion', 'destroy', 'reveal' => self::entryLabel($method, $id, $fields['version'] ?? ''),
             'revoke' => self::revokeLabel($space, $r->route('kind'), $id),
             'machine' => self::label('Add agent', $name),
             'saveType' => self::label('Save entry type', $name),
             'deleteType' => self::label('Remove entry type', DB::table('entry_types')->where('workspace_id', $space)->where('key', $r->route('key'))->value('name')),
-            'template' => self::label('Save environment template'),
             'grant', 'decision' => self::accessLabel($method, $space, $id, $fields),
             default => null,
         };
@@ -81,7 +80,7 @@ final class PendingAction
     private static function accessLabel(string $method, string $space, ?string $id, array $fields): array
     {
         $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
-            ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $space);
+            ->join('projects', 'projects.id', '=', 'entries.project_id')->where('projects.workspace_id', $space);
         $machines = DB::table('machines')->where('workspace_id', $space);
         if ($method === 'grant') {
             if (Str::isUuid($fields['entry_id'] ?? '') && Str::isUuid($fields['machine_id'] ?? '')) {

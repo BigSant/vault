@@ -8,9 +8,10 @@
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
 <h1>{{ $entry ? 'Edit entry' : 'Add an entry' }}</h1>
 <p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form, and every save creates a new version.@endif</p>
-@if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
+@if(!$entry && ($projects->isEmpty() || $environments->isEmpty() || $types->isEmpty()))
 <div class="empty capped">
-    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
+    @if($projects->isEmpty())<p>No projects in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#add-project">Add a project in Setup</a> first.</p>@endif
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/environments#add-environment">Add an environment in Setup</a> first.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
@@ -29,13 +30,15 @@
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
+                $currentProject = $projects->firstWhere('id', $entry->project_id);
                 $currentType = $types->firstWhere('key', $entry->type);
             @endphp
+            <input type="hidden" name="project_id" value="{{ $entry->project_id }}">
             <input type="hidden" name="environment_id" value="{{ $entry->environment_id }}">
             <input type="hidden" name="type" id="entry-type" value="{{ $entry->type }}">
             <div class="field">
                 <span>Project / environment</span>
-                <span class="field-val">@if($currentEnv){{ $currentEnv->project }} @include('sign', ['name' => $currentEnv->name, 'production' => $currentEnv->production])@else{{ $entry->environment_id }}@endif</span>
+                <span class="field-val">{{ $currentProject?->name }} / @if($currentEnv)@include('sign', ['name' => $currentEnv->name, 'production' => $currentEnv->production])@endif</span>
             </div>
             <div class="field">
                 <span>Type</span>
@@ -47,12 +50,16 @@
                  script there is no button, and the sentence printed here says so (data-script-text). --}}
             <details class="type-detour" data-reload-types-row><summary>Missing a field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></div></details>
         @else
-            @php $selectedEnv = old('environment_id'); @endphp
-            <label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>
+            {{-- Two choices: the project, and the environment from the workspace's one list. Both are selects that
+                 app.js turns into a searchable list (data-search); without script they stay plain selects. --}}
+            @php $selectedProject = old('project_id', request('project')); $selectedEnv = old('environment_id', request('environment')); @endphp
+            <label><span>Project <small aria-hidden="true">required</small></span><select name="project_id" required data-search="Search projects">
+                <option value="">Choose a project</option>
+                @foreach($projects as $p)<option value="{{ $p->id }}" @selected($selectedProject === $p->id)>{{ $p->name }}</option>@endforeach
+            </select></label>
+            <label><span>Environment <small aria-hidden="true">required</small></span><select name="environment_id" required data-search="Search environments">
                 <option value="">Choose an environment</option>
-                @foreach($environments as $e)
-                    <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
-                @endforeach
+                @foreach($environments as $e)<option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>@endforeach
             </select></label>
             <label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>
                 <option value="">Choose a type</option>

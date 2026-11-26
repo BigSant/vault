@@ -18,9 +18,7 @@
     $hasFilters = $filterCount > 0 || request()->filled('q');
     $activeProject = request()->filled('project') ? $projects->firstWhere('id', request('project')) : null;
     $activeEnv = request()->filled('environment') ? $environments->firstWhere('id', request('environment')) : null;
-    $activeEnvLabel = $activeEnv
-        ? trim(($projects->firstWhere('id', $activeEnv->project_id)?->name ?? '').' / '.$activeEnv->name, ' /')
-        : null;
+    $activeEnvLabel = $activeEnv?->name;
     $activeType = request()->filled('type') ? ($typeNames[request('type')] ?? request('type')) : null;
     // The rotation-due number is counted inside the search and the project, environment and type filters, which its
     // link keeps: while any of them is on, the label says so.
@@ -62,7 +60,7 @@
         <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
         <div class="toolbar">
             <label>Project<select name="project"><option value="">All projects</option>@foreach($projects as $p)<option value="{{ $p->id }}" @selected(request('project') === $p->id)>{{ $p->name }}</option>@endforeach</select></label>
-            <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->project }} / {{ $e->name }}</option>@endforeach</select></label>
+            <label>Environment<select name="environment"><option value="">All environments</option>@foreach($environments as $e)<option value="{{ $e->id }}" @selected(request('environment') === $e->id)>{{ $e->name }}</option>@endforeach</select></label>
             <label>Type<select name="type"><option value="">All types</option>@foreach($typeNames as $type => $label)<option value="{{ $type }}" @selected(request('type') === $type)>{{ $label }}</option>@endforeach</select></label>
             <label>State<select name="state"><option value="active" @selected(!$dueOnly && !$archived)>Active</option><option value="due" @selected($dueOnly)>Rotation due</option><option value="archived" @selected($archived)>Archived</option></select></label>
             <button>Apply</button>

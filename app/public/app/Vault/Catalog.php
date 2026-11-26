@@ -25,7 +25,7 @@ final class Catalog
             $input['alias'] = self::aliasFor($input['name']);
         }
         $data = Validator::make($input, [
-            'environment_id' => 'required|uuid', 'name' => 'required|string|max:160', 'alias' => 'required|string|max:100|regex:/^[a-zA-Z0-9_. -]+$/',
+            'project_id' => 'required|uuid', 'environment_id' => 'required|uuid', 'name' => 'required|string|max:160', 'alias' => 'required|string|max:100|regex:/^[a-zA-Z0-9_. -]+$/',
             // Type keys are lowercase only: a case-insensitive collation must never match a differently-cased key.
             'type' => ['required', 'string', 'regex:'.EntryTypes::KEY], 'tags' => 'nullable|string|max:200',
             'secret' => 'required|string|max:65536', 'rotate_at' => 'nullable|date_format:Y-m-d',
@@ -43,6 +43,16 @@ final class Catalog
         unset($data['secret']);
 
         return $data;
+    }
+
+    /** The project and the environment must both be of the workspace. Unknown or foreign ones read as one message. */
+    private function sameWorkspace(string $workspace, array $data): void
+    {
+        $project = DB::table('projects')->where('id', $data['project_id'])->value('workspace_id');
+        $environment = DB::table('environments')->where('id', $data['environment_id'])->value('workspace_id');
+        if ($project !== $workspace || $environment !== $workspace) {
+            throw ValidationException::withMessages($project !== $workspace ? ['project_id' => 'Choose a project of this workspace.'] : ['environment_id' => 'Choose an environment of this workspace.']);
+        }
     }
 
     /** An alias from a name: lowercase ASCII words joined by "-" ("Šlapias Admin" → "slapias-admin"); "entry" when nothing is left. */
@@ -71,9 +81,13 @@ final class Catalog
     public function create(array $input): string
     {
         $data = $this->validate($input);
-        $scope = $this->access->environment($data['environment_id']);
+        $scope = $this->access->project($data['project_id']);
+        $this->sameWorkspace($scope->workspace_id, $data);
 
         return DB::transaction(function () use ($data, $scope) {
+            // The project and the environment are locked like their removal locks them: neither can go before the insert commits.
+            abort_unless(DB::table('projects')->where('id', $data['project_id'])->lockForUpdate()->exists()
+                && DB::table('environments')->where('id', $data['environment_id'])->lockForUpdate()->exists(), 409);
             // Checked under the lock type deletion also takes, so the type cannot vanish before the insert commits.
             $this->types->lock($scope->workspace_id);
             $type = $this->checkType($scope->workspace_id, $data);
@@ -119,8 +133,8 @@ final class Catalog
             }
             $data = $this->validate($input);
             // No moving, type changes or archive resurrection through a stale edit form.
-            if ($data['environment_id'] !== $current->environment_id || $data['type'] !== $current->type || $current->state !== 'active') {
-                throw ValidationException::withMessages(['entry' => 'Only active entries can be edited, with their existing environment and type.']);
+            if ($data['project_id'] !== $current->project_id || $data['environment_id'] !== $current->environment_id || $data['type'] !== $current->type || $current->state !== 'active') {
+                throw ValidationException::withMessages(['entry' => 'Only active entries can be edited, with their existing project, environment and type.']);
             }
             $carried = [];
             if ($restoredFrom !== null) {
@@ -303,7 +317,7 @@ final class Catalog
     {
         $entry = $this->access->entry($id, ['owner', 'editor']);
         $payload = $this->reveal($id, $version);
-        $this->update($id, ['environment_id' => $entry->environment_id, 'name' => $entry->name, 'alias' => $entry->alias,
+        $this->update($id, ['project_id' => $entry->project_id, 'environment_id' => $entry->environment_id, 'name' => $entry->name, 'alias' => $entry->alias,
             'type' => $entry->type, 'tags' => $entry->tags, 'rotate_at' => $entry->rotate_at ? substr((string) $entry->rotate_at, 0, 10) : null,
             'secret' => json_encode($payload, JSON_THROW_ON_ERROR)], $version);
     }
@@ -346,7 +360,7 @@ final class Catalog
         foreach ($rows as $i => $row) {
             try {
                 $data = $this->validate($row);
-                abort_unless($this->access->environment($data['environment_id'])->workspace_id === $workspace, 404);
+                $this->sameWorkspace($workspace, $data);
                 $this->checkType($workspace, $data);
             } catch (ValidationException $e) {
                 // The messages name fields and rules, never values; the entry is named by its place in the array.

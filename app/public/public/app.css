@@ -1268,3 +1268,14 @@ details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-d
 .board.requests td.action .link-what{display:block;white-space:normal;color:var(--ink);order:3;flex-basis:100%;margin:2px 0}
 /* A checkbox with a hint in a form (Add an agent): both span the form, the hint under the box. */
 .field.check-field{grid-template-columns:minmax(0,1fr);gap:2px}.field.check-field .hint{margin-left:27px}
+
+/* Searchable choice (select[data-search], app.js): the field, and its list of matches under it. */
+.search-select{position:relative;display:block;min-width:0}
+.search-select input{width:100%}
+.search-select [role=listbox]{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 2px);max-height:16em;overflow:auto;margin:0;padding:4px 0;list-style:none;background:var(--panel);border:1px solid var(--edge);border-radius:3px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.search-select [role=listbox][hidden]{display:none}
+.search-select li{padding:8px 12px;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+.search-select li.active{background:var(--rule);color:var(--amber)}
+.search-select li[aria-selected=true]{font-weight:600}
+.search-select li.none{color:var(--dim);cursor:default}
+@media (max-width:900px){.search-select li{min-height:40px}}

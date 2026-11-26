@@ -24,6 +24,66 @@ const aliasSlug = value => String(value).normalize('NFKD').replace(/[\u0300-\u03
     follow();
   }
 }
+// Searchable choices (select[data-search], the entry form's Project and Environment): a text field that filters the
+// options as you type, with the matches in a list under it (combobox + listbox). Arrow keys move, Enter or a click
+// chooses, Escape closes and restores the choice. The select stays in the form, hidden, and carries the value; without
+// script it is the plain select. Matching ignores case and accents ("sa" finds "Šaltinis").
+const fold = text => String(text).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+document.querySelectorAll('select[data-search]').forEach((select, n) => {
+  const options = [...select.options].filter(o => o.value !== '');
+  const prompt = select.options[0]?.value === '' ? select.options[0].text : 'Choose one';
+  const box = document.createElement('span'); box.className = 'search-select';
+  const input = document.createElement('input');
+  const list = document.createElement('ul');
+  list.id = 'search-list-' + n; list.setAttribute('role', 'listbox'); list.hidden = true;
+  Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, placeholder: select.dataset.search, required: select.required });
+  input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-controls', list.id);
+  box.append(input, list);
+  // First in the label: the label names the field a person types in, not the hidden select.
+  select.before(box); select.hidden = true; select.required = false; select.tabIndex = -1;
+  const chosen = () => select.selectedOptions[0]?.value ? select.selectedOptions[0] : null;
+  const valid = () => input.setCustomValidity(input.required && !select.value ? prompt + '.' : '');
+  let active = -1, shown = [];
+  const mark = () => {
+    [...list.children].forEach((li, i) => { li.classList.toggle('active', i === active); li.setAttribute('aria-selected', String(shown[i] === chosen())); });
+    if (active >= 0 && list.children[active]) { input.setAttribute('aria-activedescendant', list.children[active].id); list.children[active].scrollIntoView({ block: 'nearest' }); }
+    else input.removeAttribute('aria-activedescendant');
+  };
+  const render = (all = false) => {
+    const q = fold(input.value.trim());
+    shown = all || !q ? options : options.filter(o => fold(o.text).includes(q));
+    list.replaceChildren(...shown.map((o, i) => { const li = document.createElement('li'); li.id = list.id + '-' + i; li.setAttribute('role', 'option'); li.textContent = o.text; return li; }));
+    if (!shown.length) { const li = document.createElement('li'); li.className = 'none'; li.textContent = 'No match'; li.setAttribute('aria-disabled', 'true'); list.append(li); }
+    active = shown.indexOf(chosen()); if (active < 0 && q) active = shown.length ? 0 : -1;
+    mark();
+  };
+  const open = (all) => { render(all); list.hidden = false; input.setAttribute('aria-expanded', 'true'); };
+  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); };
+  const choose = option => {
+    select.value = option ? option.value : ''; input.value = option ? option.text : '';
+    select.dispatchEvent(new Event('change', { bubbles: true })); valid(); close();
+  };
+  input.value = chosen()?.text ?? ''; valid();
+  input.addEventListener('focus', () => open(true));
+  input.addEventListener('click', () => { if (list.hidden) open(true); });
+  input.addEventListener('input', () => { if (select.value && input.value !== chosen()?.text) { select.value = ''; valid(); } open(false); });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault(); if (list.hidden) open(true);
+      if (shown.length) { active = (active + (event.key === 'ArrowDown' ? 1 : -1) + shown.length) % shown.length; mark(); }
+    } else if (event.key === 'Enter' && !list.hidden) {
+      event.preventDefault(); if (active >= 0 && shown[active]) choose(shown[active]);
+    } else if (event.key === 'Escape' && !list.hidden) {
+      event.preventDefault(); input.value = chosen()?.text ?? ''; close();
+    } else if (event.key === 'Tab' && !list.hidden) {
+      // Leaving with one match typed takes it; otherwise the choice stays as it was.
+      if (shown.length === 1 && input.value.trim()) choose(shown[0]); else { input.value = chosen()?.text ?? ''; close(); }
+    }
+  });
+  // mousedown, not click: the choice is made before the field loses the focus.
+  list.addEventListener('mousedown', event => { const li = event.target.closest('li[role=option]'); if (li) { event.preventDefault(); choose(shown[[...list.children].indexOf(li)]); } });
+  input.addEventListener('blur', () => { if (!list.hidden) { input.value = chosen()?.text ?? ''; close(); } });
+});
 // The buttons that send a form. form.elements, not a query inside the form: a submit button may stand outside its
 // form (form="…": Save project in a form foot).
 const submitters = form => [...form.elements].filter(el => el.matches('button:not([type=button])'));

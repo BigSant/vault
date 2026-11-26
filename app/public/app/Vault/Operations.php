@@ -33,7 +33,7 @@ final class Operations
     {
         return DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')
             ->join('entries', 'entries.id', '=', 'grants.entry_id')->join('environments', 'environments.id', '=', 'entries.environment_id')
-            ->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->join('projects', 'projects.id', '=', 'entries.project_id')
             ->whereColumn('projects.workspace_id', 'machines.workspace_id')->whereNull('grants.revoked_at')->whereNull('machines.revoked_at')
             ->where('grants.expires_at', '>', now())->where('machines.expires_at', '>', now())->where('entries.state', 'active');
     }

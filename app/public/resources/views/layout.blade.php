@@ -10,7 +10,7 @@
     // The page's section inside a workspace, e.g. "grants" for /workspaces/{id}/grants.
     $section = preg_match('#^workspaces/[^/]+/([a-z]+)$#D', $path, $m) ? $m[1] : null;
     $sectionRoles = ['requests' => ['owner'], 'agents' => ['owner'], 'grants' => ['owner'], 'members' => ['owner'], 'audit' => ['owner'],
-        'structure' => ['owner', 'editor'], 'types' => ['owner', 'editor'], 'import' => ['owner', 'editor'],
+        'structure' => ['owner', 'editor'], 'environments' => ['owner', 'editor'], 'types' => ['owner', 'editor'], 'import' => ['owner', 'editor'],
         'links' => ['owner', 'editor'], 'onetimesecret' => ['owner']];
     $switchTo = fn ($s) => in_array($s->role, $sectionRoles[$section] ?? [], true) ? '/workspaces/'.$s->id.'/'.$section : '/?workspace='.$s->id;
     // The confirm page and error pages stand in for another page: no nav item is the current one.
@@ -27,7 +27,7 @@
         $items[] = ['Members', $base.'/members', $section === 'members', 0, 'page'];
     }
     if (in_array($navRole, ['owner', 'editor'], true)) {
-        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'types', 'onetimesecret'], true), 0, 'location'];
+        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'environments', 'types', 'onetimesecret'], true), 0, 'location'];
     }
     if ($navRole === 'owner') {
         $items[] = ['Activity', $base.'/audit', $section === 'audit', 0, 'page'];

@@ -8,61 +8,33 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/** Projects, environments and the per-workspace template used for new projects. */
+/**
+ * Projects, and the workspace's environments: one shared list, like entry types. An entry names a project and an
+ * environment of its workspace; no project has environments of its own.
+ */
 final class Structure
 {
-    public const DEFAULT_TEMPLATE = [['name' => 'local', 'production' => false], ['name' => 'test', 'production' => false],
+    /** The list a new workspace starts with. */
+    public const DEFAULT_ENVIRONMENTS = [['name' => 'local', 'production' => false], ['name' => 'test', 'production' => false],
         ['name' => 'stage', 'production' => false], ['name' => 'prod', 'production' => true]];
 
     private const PROJECT_NAME_TAKEN = 'A project with this name already exists.';
-    private const ENVIRONMENT_NAME_TAKEN = 'An environment with this name already exists in this project.';
+    private const ENVIRONMENT_NAME_TAKEN = 'An environment with this name already exists.';
 
     public function __construct(private Access $access) {}
 
-    public function template(object $workspace): array
+    /** Gives a workspace the default environments (a new workspace; the migration for one that had none). */
+    public static function seed(string $workspace): void
     {
-        return $workspace->environment_template ? json_decode($workspace->environment_template, true, flags: JSON_THROW_ON_ERROR) : self::DEFAULT_TEMPLATE;
+        foreach (self::DEFAULT_ENVIRONMENTS as $env) {
+            DB::table('environments')->insert(['id' => (string) Str::uuid(), 'workspace_id' => $workspace, 'name' => $env['name'], 'production' => $env['production']]);
+        }
     }
 
-    public function saveTemplate(string $workspace, array $names, array $production): void
+    /** The workspace's environments: production first, then by name. */
+    public static function environments(string $workspace)
     {
-        $template = [];
-        foreach ($names as $i => $name) {
-            $name = $this->name($name, 'template', allowEmpty: true);
-            if ($name === '') {
-                continue;
-            }
-            $template[] = ['name' => $name, 'production' => ($production[$i] ?? '0') === '1'];
-        }
-        if (count($template) > 30) {
-            throw ValidationException::withMessages(['template' => 'A template can have up to 30 environments.']);
-        }
-        if ($this->hasDuplicateNames(array_column($template, 'name'))) {
-            throw ValidationException::withMessages(['template' => 'Environment names in the template must be unique.']);
-        }
-        DB::transaction(function () use ($workspace, $template) {
-            DB::table('workspaces')->where('id', $workspace)->update(['environment_template' => json_encode($template, JSON_THROW_ON_ERROR)]);
-            $this->access->audit($workspace, 'environment.template', $workspace);
-        });
-    }
-
-    private function hasDuplicateNames(array $names): bool
-    {
-        if (DB::connection()->getDriverName() === 'mysql') {
-            // Match the unique index on environments(project_id, name).
-            $row = DB::selectOne("SELECT COUNT(DISTINCT name) AS total FROM JSON_TABLE(?, '$[*]'
-                COLUMNS (name VARCHAR(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$')) AS names",
-                [json_encode($names, JSON_THROW_ON_ERROR)]);
-
-            return (int) $row->total !== count($names);
-        }
-
-        // SQLite has no built-in accent-insensitive collation.
-        $folded = array_map(static fn (string $name) => mb_convert_case(
-            preg_replace('/\p{Mn}/u', '', \Normalizer::normalize($name, \Normalizer::FORM_D)), MB_CASE_FOLD
-        ), $names);
-
-        return count(array_unique($folded)) !== count($names);
+        return DB::table('environments')->where('workspace_id', $workspace)->orderByDesc('production')->orderBy('name')->get();
     }
 
     public function createProject(object $workspace, string $name): string
@@ -73,11 +45,6 @@ final class Structure
             $this->writeName(fn () => DB::table('projects')->insert([
                 'id' => $id, 'workspace_id' => $workspace->id, 'name' => $name,
             ]), self::PROJECT_NAME_TAKEN);
-            foreach ($this->template($workspace) as $env) {
-                $this->writeName(fn () => DB::table('environments')->insert([
-                    'id' => (string) Str::uuid(), 'project_id' => $id, 'name' => $env['name'], 'production' => $env['production'],
-                ]), 'Edit the environment template to remove duplicate names.', 'template');
-            }
             $this->access->audit($workspace->id, 'project.create', $id);
         });
 
@@ -97,25 +64,22 @@ final class Structure
     public function deleteProject(string $workspace, string $project): void
     {
         DB::transaction(function () use ($workspace, $project) {
+            // The project row is locked first: a new entry checks its project under the same lock.
             $this->project($workspace, $project);
-            // Lock the environments before checking their entries to serialize concurrent inserts.
-            DB::table('environments')->where('project_id', $project)->lockForUpdate()->chunkById(500, function ($environments) {
-                $this->clearDestroyedEntries($environments->pluck('id')->all(), 'project',
-                    'Archive and destroy all entries in this project before removing it.');
-            });
+            $this->clearDestroyedEntries('project_id', $project, 'project', 'Archive and destroy all entries in this project before removing it.');
             DB::table('projects')->where('id', $project)->delete();
             $this->access->audit($workspace, 'project.delete', $project);
         });
     }
 
-    public function addEnvironment(string $workspace, string $project, string $name, bool $production): void
+    public function addEnvironment(string $workspace, string $name, bool $production): void
     {
         $name = $this->name($name, 'name');
-        DB::transaction(function () use ($workspace, $project, $name, $production) {
-            $this->project($workspace, $project);
+        DB::transaction(function () use ($workspace, $name, $production) {
+            $this->uniqueEnvironment($workspace, $name);
             $id = (string) Str::uuid();
             $this->writeName(fn () => DB::table('environments')->insert([
-                'id' => $id, 'project_id' => $project, 'name' => $name, 'production' => $production,
+                'id' => $id, 'workspace_id' => $workspace, 'name' => $name, 'production' => $production,
             ]), self::ENVIRONMENT_NAME_TAKEN);
             $this->access->audit($workspace, 'environment.create', $id);
         });
@@ -126,6 +90,7 @@ final class Structure
         $name = $this->name($name, 'name');
         DB::transaction(function () use ($workspace, $environment, $name, $production) {
             $this->environment($workspace, $environment);
+            $this->uniqueEnvironment($workspace, $name, $environment);
             $this->writeName(fn () => DB::table('environments')->where('id', $environment)->update([
                 'name' => $name, 'production' => $production,
             ]), self::ENVIRONMENT_NAME_TAKEN);
@@ -137,16 +102,16 @@ final class Structure
     {
         DB::transaction(function () use ($workspace, $environment) {
             $this->environment($workspace, $environment);
-            $this->clearDestroyedEntries([$environment], 'environment',
+            $this->clearDestroyedEntries('environment_id', $environment, 'environment',
                 'Archive and destroy all entries in this environment before removing it.');
             DB::table('environments')->where('id', $environment)->delete();
             $this->access->audit($workspace, 'environment.delete', $environment);
         });
     }
 
-    private function clearDestroyedEntries(array $environments, string $field, string $message): void
+    private function clearDestroyedEntries(string $column, string $id, string $field, string $message): void
     {
-        DB::table('entries')->whereIn('environment_id', $environments)->select('id', 'state')
+        DB::table('entries')->where($column, $id)->select('id', 'state')
             ->lockForUpdate()->chunkById(500, function ($entries) use ($field, $message) {
                 if ($entries->contains(fn ($entry) => $entry->state !== 'destroyed')) {
                     throw ValidationException::withMessages([$field => $message]);
@@ -169,11 +134,24 @@ final class Structure
 
     private function environment(string $workspace, string $environment): object
     {
-        $row = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('environments.id', $environment)->where('projects.workspace_id', $workspace)->select('environments.*')->lockForUpdate()->first();
+        $row = DB::table('environments')->where('id', $environment)->where('workspace_id', $workspace)->lockForUpdate()->first();
         abort_unless($row, 404);
 
         return $row;
+    }
+
+    /**
+     * Environment names are unique in a workspace whatever their case or accents (MySQL's collation compares them so;
+     * the check here gives the same answer on any database, under the workspace's environment rows' lock).
+     */
+    private function uniqueEnvironment(string $workspace, string $name, ?string $except = null): void
+    {
+        $fold = static fn (string $text) => mb_convert_case(preg_replace('/\p{Mn}/u', '', \Normalizer::normalize($text, \Normalizer::FORM_D)), MB_CASE_FOLD);
+        $taken = DB::table('environments')->where('workspace_id', $workspace)->when($except, fn ($q) => $q->where('id', '!=', $except))
+            ->lockForUpdate()->pluck('name')->contains(fn ($other) => $fold($other) === $fold($name));
+        if ($taken) {
+            throw ValidationException::withMessages(['name' => self::ENVIRONMENT_NAME_TAKEN]);
+        }
     }
 
     private function writeName(Closure $write, string $message, string $field = 'name'): void

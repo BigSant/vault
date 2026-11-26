@@ -296,7 +296,7 @@ final class ShellTest extends TestCase
         // Import is a long form with a block of its own; Entry types has one shared block above its folds.
         $project = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
-        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
+        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'stage']);
         $valid = $this->get($this->base.'/import')->assertOk()->getContent();
         $block = substr($valid, (int) strpos($valid, '<div class="confirm-inline"'), 900);
         $this->assertMatchesRegularExpression('/Password confirmed until <span class="nobreak">('.gmdate('H:i', $until).'|'.gmdate('H:i', $until + 2).') UTC<\/span>\./', $block);
@@ -525,8 +525,8 @@ final class ShellTest extends TestCase
         $environment = (string) Str::uuid();
         $entry = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
-        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
-        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('environments')->insert(['id' => $environment, 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'project_id' => $project, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
         // The last workspace opened is another one; the blocked action still decides the header.
         $this->get('/?workspace='.$other)->assertOk()->assertSee('aria-label="Workspace: Another space"', false);
         $this->post($this->base.'/projects', ['name' => 'shop'])->assertForbidden()->assertSee('action="/confirm"', false)
@@ -683,7 +683,7 @@ final class ShellTest extends TestCase
         }
         $this->assertStringContainsString('<option value="">Choose an environment</option>', $view('entry-form'));
         $this->assertStringContainsString('every entry is checked before any secret', $view('import'));
-        $this->assertStringContainsString('<tr><td data-label="Environment"><input name="env_name[{{ $i }}]"', $view('structure'));
+        $this->assertStringContainsString('<details class="fold env-fold capped" id="env-{{ $env->id }}"', $view('environments'));
         $this->assertStringContainsString("@if(\$e->state === 'archived')<small><span class=\"chip muted\">archived</span></small>@elseif(\$due)<small><span class=\"chip warn\">rotation due</span>", $view('catalog'));
         // Validation names fields by their visible labels.
         $this->assertSame('Require owner approval for every run', trans('validation.attributes.approval'));
@@ -781,8 +781,8 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('Viewers see entry details.', $view('members'));
         $this->assertStringNotContainsString('metadata', $view('members'));
         $this->assertSame(2, substr_count($view('types'), '>+ Add a field</button>'));
-        $this->assertStringContainsString('aria-label="Add an environment to the template"><span>+ Add<span class="wide-only"> an environment</span></span></button>', $view('structure'));
-        $this->assertStringContainsString('placeholder="e.g. qa" aria-label="Additional environment name"', $view('structure'));
+        $this->assertStringContainsString('<a class="btn" href="#add-environment">+ Add an environment</a>', $view('environments'));
+        $this->assertStringContainsString('placeholder="e.g. staging"', $view('environments'));
         $this->assertSame(2, substr_count($view('account'), '<span class="with-button"><input id="new-password'));
         // Straight apostrophes in every text of the UI.
         foreach (glob(resource_path('views/*.blade.php')) as $file) {
@@ -824,8 +824,11 @@ final class ShellTest extends TestCase
         $this->assertStringNotContainsString('if (inUse(region)) { skipped = true; return; }', $script);
         $this->get($this->base.'/structure')->assertOk()->assertDontSee('<h2>Projects', false)->assertDontSee('Environments by project')->assertDontSee('<h2>Environments</h2>', false)
             // No h2 repeats the active tab: the project cards follow the tabs, and the two forms keep their h2.
-            ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries by environment.', 'id="confirm-setup"', '<div class="deck project-list">', '<h2 id="add-project">Add a project</h2>', 'id="confirm-add-project"  data-primary="confirm-setup"', '<h2 id="template">Environment template</h2>', 'id="confirm-template"  data-primary="confirm-setup"'], false)
-            ->assertSee('placeholder="e.g. billing"', false)->assertSee('<span class="phone-only">Production</span>', false);
+            ->assertSeeInOrder(['</nav>', '<p class="note">A project groups entries; an entry also names its environment', '<h2 id="add-project">Add a project</h2>'], false)
+            ->assertDontSee('Environment template')->assertSee('placeholder="e.g. billing"', false);
+        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'workspace_id' => $this->workspace, 'name' => 'qa']);
+        $this->get($this->base.'/environments')->assertOk()->assertDontSee('<h2>Environments</h2>', false)
+            ->assertSeeInOrder(['</nav>', '<p class="note">Every project uses these environments.', 'id="confirm-environments"', '<h2 id="add-environment">Add an environment</h2>', 'id="confirm-add-environment"  data-primary="confirm-environments"'], false);
         $this->assertStringContainsString("[data-refresh]", (string) file_get_contents(public_path('app.js')));
         $this->assertStringNotContainsString('location.replace', (string) file_get_contents(public_path('app.js')));
     }
@@ -879,7 +882,8 @@ final class ShellTest extends TestCase
         $this->view('outcome', ['outcome' => 'revoked'])->assertSee('>cancelled</span>', false);
         $this->assertStringContainsString("{{ \$n }} {{ \$what }} {{ \$n === 1 ? 'field is' : 'fields are' }} no longer in the type", (string) file_get_contents(resource_path('views/entry.blade.php')));
         $this->assertStringNotContainsString('Read-only summary', (string) file_get_contents(resource_path('views/entry.blade.php')));
-        $this->get($this->base.'/structure')->assertOk()->assertSee('<td data-label="Environment">', false)->assertSee('aria-label="Additional environment name"', false);
+        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'workspace_id' => $this->workspace, 'name' => 'qa']);
+        $this->get($this->base.'/environments')->assertOk()->assertSee('aria-label="Production for environment qa"', false);
         $this->assertStringContainsString('<button class="go" data-held-name="Add grant: " data-held-field="action">Add grant</button>', (string) file_get_contents(resource_path('views/grants.blade.php')));
         $this->assertStringContainsString('<span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden>', (string) file_get_contents(resource_path('views/operations.blade.php')));
         // The one-time token page keeps the head row of Identities, so the tabs do not move.
@@ -985,8 +989,8 @@ final class ShellTest extends TestCase
         $environment = (string) Str::uuid();
         $entry = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
-        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
-        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 60, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('environments')->insert(['id' => $environment, 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'project_id' => $project, 'environment_id' => $environment, 'name' => 'Admin', 'alias' => 'admin', 'type' => 'login', 'version' => 60, 'created_at' => now(), 'updated_at' => now()]);
         // The entry page has no footer line; page 1 lists versions 60 down to 11 and links to the older ones.
         // Nothing is revealed: no "Hide values" button. (With values on screen it is the first control of the foot.)
         $this->get('/entries/'.$entry)->assertOk()->assertDontSee('class="foot"', false)->assertDontSee('data-hide-values', false)
@@ -1017,7 +1021,7 @@ final class ShellTest extends TestCase
         $this->signIn('owner');
         $project = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
-        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
+        DB::table('environments')->insert(['id' => (string) Str::uuid(), 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'stage']);
         $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
         // The detour is a closed disclosure: "Missing a type or field?" stays in view, the rest is behind it.
         // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
@@ -1027,7 +1031,8 @@ final class ShellTest extends TestCase
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             // Every required field of Details carries the same marker.
             ->assertSee('<label><span>Name <small aria-hidden="true">required</small></span><input name="name"', false)
-            ->assertSee('<label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>', false)
+            ->assertSee('<label><span>Project <small aria-hidden="true">required</small></span><select name="project_id" required data-search="Search projects">', false)
+            ->assertSee('<label><span>Environment <small aria-hidden="true">required</small></span><select name="environment_id" required data-search="Search environments">', false)
             ->assertSee('<label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>', false)
             // The alias hint is the field's description, not part of its name. Adding, the alias follows the name and is not required.
             ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
@@ -1040,9 +1045,9 @@ final class ShellTest extends TestCase
             ->assertDontSee('filter-errors', false);
         // A filter that cannot be used is named above the filters and left out; never an error page.
         $this->get($this->base.'/audit?from=2026-02-30')->assertOk()->assertSeeInOrder(['<div class="callout bad filter-errors" role="status">', 'A filter was not applied.', '<li>From (UTC) ', '<details class="filters"'], false);
-        // Setup: each environment's edit fields name their environment and project.
-        $this->get($this->base.'/structure')->assertOk()->assertSee('aria-label="Name of environment stage in project shop"', false)
-            ->assertSee('aria-label="Production for environment stage in project shop"', false);
+        // Setup: each environment's edit fields name their environment.
+        $this->get($this->base.'/environments')->assertOk()->assertSee('aria-label="Name of environment stage"', false)
+            ->assertSee('aria-label="Production for environment stage"', false);
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("match(/^(\\d{4})([-\\/.]?)(\\d{2})\\2(\\d{2})$/)", $script);
         $this->assertStringContainsString("input[placeholder=\"YYYY-MM-DD\"]", $script);
@@ -1058,8 +1063,8 @@ final class ShellTest extends TestCase
         $environment = (string) Str::uuid();
         $entry = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
-        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'stage']);
-        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('environments')->insert(['id' => $environment, 'workspace_id' => DB::table('projects')->where('id', $project)->value('workspace_id'), 'name' => 'stage']);
+        DB::table('entries')->insert(['id' => $entry, 'project_id' => $project, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
         // The update form has the Setup detour too; its type is fixed, so the button reloads the fields.
         $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$entry)->assertOk()
             ->assertSeeInOrder(['<details class="type-detour" data-reload-types-row><summary>Missing a field?</summary>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', 'data-script-text="After editing the entry type, return here and choose Reload fields."', ' hidden>Reload fields</button>', 'data-reload-status></span></div></details>', '<fieldset id="type-fields">'], false)

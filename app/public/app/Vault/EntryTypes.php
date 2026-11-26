@@ -144,7 +144,7 @@ final class EntryTypes
     /** Entries of the workspace that still exist. */
     private function entries(string $workspace): Builder
     {
-        return DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+        return DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'entries.project_id')
             ->where('projects.workspace_id', $workspace)->where('entries.state', '!=', 'destroyed');
     }
 
