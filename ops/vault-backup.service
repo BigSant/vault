@@ -1,0 +1,14 @@
+# Encrypted full backup (docs/operations.md). Environment and checkout come from ~/.config/vault/units.env.
+# A backup refuses to start while operations are active (a handoff lease lasts up to 30 min): it is retried every
+# 20 minutes, at most 6 times in 4 hours. Schedule the timer outside the executor's run window.
+[Unit]
+Description=Vault encrypted backup
+StartLimitIntervalSec=4h
+StartLimitBurst=6
+[Service]
+Type=oneshot
+EnvironmentFile=%E/vault/units.env
+ExecStart=/bin/sh -c 'cd "$${VAULT_CHECKOUT:?}" && exec bin/vault backup'
+Restart=on-failure
+RestartSec=20min
+UMask=0077
