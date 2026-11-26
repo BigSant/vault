@@ -459,7 +459,7 @@ final class LinksTest extends TestCase
         $this->assertSame('pending', DB::table('operations')->where('id', $op)->value('state'));
         // A send has claimed the link: Cancel says so and changes nothing.
         DB::table('links')->where('id', $id)->update(['state' => 'sending']);
-        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'being sent'));
+        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('alert', fn ($a) => str_contains($a, 'being sent'));
         $this->assertSame('sending', DB::table('links')->where('id', $id)->value('state'));
         $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
     }
@@ -475,10 +475,11 @@ final class LinksTest extends TestCase
         $this->assertSame('eu', DB::table('link_settings')->value('region'));
         $this->post($this->base.'/onetimesecret', $change + ['orphan' => '1'])->assertRedirect();
         $this->receiptState = 'expired';
-        $this->post($this->base.'/links/check')->assertSessionHas('notice', fn ($n) => str_starts_with($n, 'Checked 0 of 1 open links.'));
+        $this->post($this->base.'/links/check')->assertSessionHas('notice', 'No open links of the current account to check. 1 open link of an earlier account cannot be checked here; it ends with its lifetime.');
         $this->assertSame('active', DB::table('links')->value('state'));
         $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
-        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'earlier Onetime Secret account'));
+        $this->get($this->base.'/links')->assertSeeText('earlier account')->assertDontSee('aria-label="Burn link Text only"', false);
+        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('alert', fn ($a) => str_contains($a, 'earlier Onetime Secret account'));
         $this->assertSame('active', DB::table('links')->value('state'));
     }
 
@@ -494,7 +495,7 @@ final class LinksTest extends TestCase
         $this->post($this->base.'/links', ['text' => 'synthetic 2'])->assertOk();
         $second = DB::table('links')->where('id', '!=', $id)->value('id');
         unset($this->backend['/v1/secret/data/links/'.$second]);
-        $this->post($this->base.'/links/'.$second.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'no longer holds'));
+        $this->post($this->base.'/links/'.$second.'/burn')->assertSessionHas('alert', fn ($a) => str_contains($a, 'no longer holds'));
         $this->assertSame('active', DB::table('links')->where('id', $second)->value('state'));
     }
 
@@ -611,5 +612,16 @@ final class LinksTest extends TestCase
         $first = $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'same-ask-1'])->assertOk();
         DB::table('link_settings')->update(['default_lifetime' => 3600, 'max_lifetime' => 3600]);
         $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'same-ask-1'])->assertJsonPath('id', $first->json('id'));
+    }
+
+    public function test_a_persons_link_is_not_kept_and_archiving_names_open_links(): void
+    {
+        $this->setUpAccount();
+        $entry = $this->entry();
+        $this->post($this->base.'/links', ['entry_id' => $entry])->assertOk();
+        $id = DB::table('links')->value('id');
+        $this->assertArrayNotHasKey('url', end($this->backend['/v1/secret/data/links/'.$id]));
+        $this->post('/entries/'.$entry.'/archive')->assertRedirect()
+            ->assertSessionHas('notice', 'Entry archived. 1 one-time link with its values can still be opened: burn them on Links if needed.');
     }
 }

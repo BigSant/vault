@@ -38,17 +38,19 @@
     <tbody>
     @foreach($links as $l)
         @php
-            $title = $l->note ?? ($l->entry ?? 'Text only');
+            $title = $l->note ?? ($l->entry ?? ($l->entry_id ? 'Removed entry' : 'Text only'));
             $fields = json_decode((string) $l->fields, true) ?: [];
             $open = in_array($l->state, ['reserved', 'pending', 'active', 'previewed'], true);
-            $canBurn = $open && ($isOwner || $l->user_id === auth()->id());
+            // A link of an earlier account cannot be burned from here (only one waiting for approval can still be cancelled).
+            $mine = $l->region.'|'.$l->account === $account || in_array($l->state, ['reserved', 'pending'], true);
+            $canBurn = $open && $mine && ($isOwner || $l->user_id === auth()->id());
             $burnName = in_array($l->state, ['reserved', 'pending'], true) ? 'Cancel link '.$title : 'Burn link '.$title;
         @endphp
         <tr class="{{ $stripes[$l->state] ?? 'is-idle' }}">
             {{-- Line 1: the note, else the entry (a link to it), else "Text only". Line 2: the entry when the note took
                  line 1, the field names the content used, and whether a passphrase guards it. --}}
             <td class="name" data-label="Link">@if($l->entry_id && $l->entry && ! $l->note)<a href="/entries/{{ $l->entry_id }}"><b>{{ $l->entry }}</b></a>@else<b>{{ $title }}</b>@endif
-                <small class="link-what">@if($l->entry_id && $l->note)@if($l->entry)<a href="/entries/{{ $l->entry_id }}">{{ $l->entry }}</a>@else<span class="muted">removed entry</span>@endif&nbsp;<span class="sep" aria-hidden="true">·</span> @endif{{ $l->entry_id ? ($fields ? 'fields '.implode(', ', $fields) : 'no fields') : 'text only' }}@if($l->passphrase) <span class="chip muted">passphrase</span>@endif</small></td>
+                <small class="link-what">@if($l->entry_id && $l->note)@if($l->entry)<a href="/entries/{{ $l->entry_id }}">{{ $l->entry }}</a>@else<span class="muted">removed entry</span>@endif&nbsp;<span class="sep" aria-hidden="true">·</span> @endif{{ $l->entry_id ? ($fields ? 'fields '.implode(', ', $fields) : 'no fields') : 'text only' }}@if($l->passphrase) <span class="chip muted">passphrase</span>@endif @if($open && ! $mine)<span class="chip muted">earlier account</span>@endif</small></td>
             <td class="who" data-label="Made by">@if($l->machine_id){{ $l->agent ?? 'removed agent' }} <span class="chip muted">agent</span>@else{{ $l->person ?? 'removed member' }}@endif</td>
             <td class="when" data-label="Made (UTC)"><span class="nobreak"><small class="k">Made </small>{{ substr($l->created_at, 0, 16) }} <small class="k">UTC</small></span></td>
             {{-- Open: when the lifetime ends. Ended: when, as far as Vault knows (the lifetime's end for an expired link, else the check that found it ended). --}}

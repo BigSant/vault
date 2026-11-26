@@ -275,7 +275,8 @@ final class Links
             throw $e instanceof OneTimeSecretError ? $e : new OneTimeSecretError(0);
         }
         try {
-            $this->secrets->put('links/'.$link->id, ['receipt' => $sent['receipt'], 'url' => $sent['url'], 'passphrase' => $passphrase]);
+            // A person sees the link once, on the page that made it; only an agent's link is kept, to answer its status.
+            $this->secrets->put('links/'.$link->id, ['receipt' => $sent['receipt'], 'passphrase' => $passphrase] + ($link->machine_id ? ['url' => $sent['url']] : []));
         } catch (\Throwable) {
             // A link Vault could not follow or take back must not stay out.
             try {
@@ -320,7 +321,10 @@ final class Links
             return [0, 0];
         }
         $this->settle($workspace);
+        $settings = $this->ready($workspace);
+        // Only links of the current account can be asked about; links of an earlier one wait for their lifetime.
         $open = DB::table('links')->where('workspace_id', $workspace)->whereIn('state', ['active', 'previewed'])
+            ->where('region', $settings->region)->where('account', $settings->email)
             ->orderByRaw('checked_at IS NULL DESC')->orderBy('checked_at')->limit($limit)->get();
         $checked = 0;
         // At most 20 seconds per round; a refusal, a rate limit, no answer or a server error ends it at once.
@@ -540,6 +544,21 @@ final class Links
         return DB::table('links')->where('machine_id', $machine->id)->whereIn('state', ['sending', 'active', 'previewed'])->count();
     }
 
+    /** Links holding an entry's values that can still be opened (for the notice after archiving or destroying it). */
+    public static function openForEntry(string $entry): int
+    {
+        return DB::table('links')->where('entry_id', $entry)->whereIn('state', ['sending', 'active', 'previewed'])->count();
+    }
+
+    /** Links of earlier accounts that are still open: Vault can neither check nor burn them. */
+    public function elsewhere(string $workspace): int
+    {
+        $settings = $this->ready($workspace);
+        $query = DB::table('links')->where('workspace_id', $workspace)->whereIn('state', ['active', 'previewed']);
+
+        return $settings ? (clone $query)->where(fn ($q) => $q->where('region', '!=', $settings->region)->orWhere('account', '!=', $settings->email))->count() : $query->count();
+    }
+
     /** Links of an agent that can still be opened (for the notice after Stop or Revoke). */
     public static function openOf(string $machine): int
     {
@@ -550,10 +569,15 @@ final class Links
     public function maintenance(): int
     {
         $count = 0;
-        foreach (DB::table('links')->whereIn('state', ['active', 'previewed'])->where('expires_at', '<=', now())->get() as $link) {
+        // At most a minute of asking per run; the rest waits for the next one.
+        $until = microtime(true) + 60;
+        foreach (DB::table('links')->whereIn('state', ['active', 'previewed'])->where('expires_at', '<=', now())->orderBy('expires_at')->limit(200)->get() as $link) {
             if ($state = $this->finalState($link)) {
                 $this->end($link, $state);
                 $count++;
+            }
+            if (microtime(true) >= $until) {
+                break;
             }
         }
         foreach (DB::table('links')->whereIn('state', ['pending', 'sending', 'reserved'])->pluck('workspace_id')->unique() as $workspace) {
@@ -581,7 +605,7 @@ final class Links
 
         return ['allowed' => true, 'lifetimes' => array_keys(self::lifetimes($settings)), 'default_lifetime' => (int) $settings->default_lifetime,
             'entries' => $entries->map(fn ($e) => ['id' => $e->id, 'alias' => $e->alias, 'fields' => array_column($types[$e->type]->fields ?? [], 'key'),
-                'approval' => (bool) $e->approval])->values()->all()];
+                'approval' => true])->values()->all()];
     }
 
     /** Onetime Secret said no (it did not make a secret), as opposed to not answering. */
@@ -635,6 +659,10 @@ final class Links
         abort_unless(is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,80}$/D', $requestId), 422);
         $entryId = $input['entry_id'] ?? null;
         abort_unless($entryId === null || (is_string($entryId) && Str::isUuid($entryId)), 422);
+        // Attempts count too, refused ones included: an agent cannot spend the account's rate limit.
+        $key = 'link-attempts:'.$machine->id;
+        abort_if(\Illuminate\Support\Facades\RateLimiter::tooManyAttempts($key, self::AGENT_HOURLY * 2), 429);
+        \Illuminate\Support\Facades\RateLimiter::hit($key, 3600);
         $d = $this->input($input);
         // A retry is answered before anything else is checked, so it finds its link even after the settings changed.
         $digest = self::digest($entryId, $d);

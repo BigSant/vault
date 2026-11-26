@@ -186,7 +186,11 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   are as last checked. Burn records what Onetime Secret confirms ("burned", or "read" when the recipient was first);
   without the receipt, or for a link made in an earlier account, it says so and changes nothing; a row that ended
   while the page was open says "This link had already ended (…)" instead of an error. "read" is a muted chip, except
-  for an agent's link that held an entry's values: there it is amber, because that is the news. An owner burns any link,
+  for an agent's link that held an entry's values: there it is amber, because that is the news. A link made in an
+  earlier account carries an "earlier account" chip and no Burn (Vault can no longer reach it); "Check now" counts
+  those apart. A Burn that could not be done says why in a red callout above the list (`session('alert')`), never in
+  the form error summary. Archiving or destroying an entry, revoking an agent or a `onetimesecret.link` grant, and
+  Stop say in their notice how many links holding values can still be opened. An owner burns any link,
   an editor the ones they made. Open links come first, then the newest. As a card: the link with its state at the
   right, who and when, then the end date with Burn at the right.
 - **Add a link.** Content (a textarea; required without an entry), Lifetime (the workspace's choices up to its
@@ -263,7 +267,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   values into a one-time link; the agent must also be allowed one-time links on Identities ("This agent may not
   create one-time links. Allow them on Identities first."). With "Require owner approval" every such link is a
   request on Requests, like any action. Its row there says what the link would hold, under the action: "fields
-  username, password · 3 days · passphrase" (also in the held summary and the decision's accessible name).
+  username, password · 3 days · passphrase" at normal weight on a line of its own (also in the held summary and the
+  decision's accessible name). Action codes may break after their dots (`<wbr>`), never inside a word that fits.
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)

@@ -41,10 +41,10 @@ final class Sharing
         $links = DB::table('links')->where('links.workspace_id', $workspace)
             ->leftJoin('entries', 'entries.id', '=', 'links.entry_id')->leftJoin('machines', 'machines.id', '=', 'links.machine_id')->leftJoin('users', 'users.id', '=', 'links.user_id')
             ->select('links.*', 'entries.name as entry', 'machines.name as agent', 'users.name as person')
-            ->orderByRaw("CASE WHEN links.state IN ('pending', 'active', 'previewed') THEN 0 ELSE 1 END")->orderByDesc('links.created_at')->orderByDesc('links.id')
+            ->orderByRaw("CASE WHEN links.state IN ('reserved', 'pending', 'sending', 'active', 'previewed') THEN 0 ELSE 1 END")->orderByDesc('links.created_at')->orderByDesc('links.id')
             ->paginate(50);
 
-        return response()->view('links', ['space' => $space, 'settings' => $settings, 'entry' => $entry, 'type' => $type, 'links' => $links, 'draft' => $draft,
+        return response()->view('links', ['space' => $space, 'settings' => $settings, 'account' => $settings ? $settings->region.'|'.$settings->email : null, 'entry' => $entry, 'type' => $type, 'links' => $links, 'draft' => $draft,
             'lifetimes' => $settings ? Links::lifetimes($settings) : [], 'canSetUp' => $space->role === 'owner'], $status)->header('Cache-Control', 'no-store');
     }
 
@@ -75,11 +75,12 @@ final class Sharing
     {
         $this->access->workspace($workspace, ['owner', 'editor']);
         [$checked, $missed] = $this->links->refresh($workspace);
+        $elsewhere = $this->links->elsewhere($workspace);
         $notice = match (true) {
-            $checked + $missed === 0 => 'No open links to check.',
+            $checked + $missed === 0 => 'No open links of the current account to check.',
             $missed === 0 => 'Checked '.$checked.' open '.Str::plural('link', $checked).' with Onetime Secret.',
             default => 'Checked '.$checked.' of '.($checked + $missed).' open links. Onetime Secret did not answer for the rest; their states are as last checked. Try again later.',
-        };
+        }.($elsewhere ? ' '.$elsewhere.' open '.Str::plural('link', $elsewhere).' of an earlier account cannot be checked here; '.($elsewhere === 1 ? 'it ends' : 'they end').' with '.($elsewhere === 1 ? 'its' : 'their').' lifetime.' : '');
 
         return redirect('/workspaces/'.$workspace.'/links')->with('notice', $notice);
     }
@@ -95,6 +96,9 @@ final class Sharing
         $already = in_array($link->state, Links::ENDED, true);
         try {
             $state = $already ? $link->state : $this->links->burn($link, 'user:'.$r->user()->id);
+        } catch (ValidationException $e) {
+            // Not a form: what went wrong is said like the other outcomes of Burn, above the list.
+            return redirect('/workspaces/'.$workspace.'/links')->with('alert', collect($e->errors())->flatten()->first());
         } catch (HttpException $e) {
             abort_unless($e->getStatusCode() === 409, $e->getStatusCode());
             [$already, $state] = [true, DB::table('links')->where('id', $id)->value('state')];

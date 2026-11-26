@@ -1265,4 +1265,6 @@ details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-d
 .nav:has(>.btn:nth-child(6)){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 /* A one-time link request says what the link would hold, under its action; it wraps like the action does. */
-.board.requests td.action small.link-what{display:block;white-space:normal;color:var(--dim);order:3;flex-basis:100%}
+.board.requests td.action .link-what{display:block;white-space:normal;color:var(--ink);order:3;flex-basis:100%;margin:2px 0}
+/* A checkbox with a hint in a form (Add an agent): both span the form, the hint under the box. */
+.field.check-field{grid-template-columns:minmax(0,1fr);gap:2px}.field.check-field .hint{margin-left:27px}

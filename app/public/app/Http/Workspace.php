@@ -297,7 +297,7 @@ final class Workspace
         $entry = $this->access->entry($id);
         $this->catalog->archive($id);
 
-        return redirect('/?workspace='.$entry->workspace_id);
+        return redirect('/?workspace='.$entry->workspace_id)->with('notice', self::openLinksNotice($id, 'Entry archived.'));
     }
 
     public function restoreVersion(Request $r, string $id)
@@ -322,9 +322,18 @@ final class Workspace
         $this->access->recent($r);
         $d = $r->validate(['confirmation' => 'required|in:DELETE']);
         $entry = $this->access->entry($id);
+        $open = self::openLinksNotice($id, 'Entry destroyed.');
         $this->catalog->destroy($id);
 
-        return redirect('/?workspace='.$entry->workspace_id);
+        return redirect('/?workspace='.$entry->workspace_id)->with('notice', $open);
+    }
+
+    /** One-time links that hold this entry's values are not taken back by archiving or destroying it: say so. */
+    private static function openLinksNotice(string $entry, string $done): ?string
+    {
+        $open = Links::openForEntry($entry);
+
+        return $open ? $done.' '.$open.' one-time '.Str::plural('link', $open).' with its values can still be opened: burn them on Links if needed.' : null;
     }
 
     private function workspaceEnvironments(string $workspace)

@@ -50,7 +50,7 @@
         @endphp
         <tr class="{{ $gState === 'active' ? (\App\Vault\Access::endsSoon($g->effective_revoked_at, $g->effective_expires_at) ? 'is-wait' : 'is-ok') : 'is-idle' }}">
             <td class="who" data-label="Agent"><b>{{ $machine->name }}</b></td>
-            <td class="action" data-label="Action"><code>{{ $g->action }}</code></td>
+            <td class="action" data-label="Action"><code>{!! str_replace('.', '.<wbr>', e($g->action)) !!}</code></td>
             <td class="name entry full" data-label="Entry"><a href="/entries/{{ $g->entry_id }}">{{ $target->name }}</a><span class="k" aria-hidden="true">&nbsp;·</span> <small>{{ $target->project }}&nbsp;/ @include('sign', ['name' => $target->environment, 'production' => $target->production])</small></td>
             <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($g->approval ? 'asks every time' : 'runs without asking') : ($g->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $g->effective_revoked_at, 'ends' => $g->effective_expires_at, 'reason' => $g->expiry_reason, 'own' => $g->expires_at])</td>
