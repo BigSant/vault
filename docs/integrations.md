@@ -59,9 +59,12 @@ endpoints (HTTP); an agent without the permission does not see the tools.
 
 `text` is the content, up to 10,000 characters. With `entry_id` it may name that entry's fields as `{{field}}`;
 Vault puts the values in when it sends the content, so the agent never handles them (without `text`: every field,
-one "Label: value" per line). Using an entry needs a grant of the action `onetimesecret.link` on it; with "Require
-owner approval" the answer is `"state": "pending"` until the owner allows it on Requests, and the agent checks
-`vault_link_status`. States: `pending`, `sending`, `active` (not opened), `previewed`, `revealed`, `burned`,
+one "Label: value" per line). Using an entry needs a grant of the action `onetimesecret.link` on it, and such a
+grant always requires owner approval (the Grants form refuses it otherwise): the answer is `"state": "pending"`
+until the owner allows it on Requests, where the row names the fields, the lifetime and whether a passphrase guards
+it; the agent checks `vault_link_status`. An agent has at most 20 links open and 60 new ones an hour (429 beyond).
+When Onetime Secret refuses a text-only link (a lifetime beyond the plan: 422; the account: 503; its rate limit:
+429) nothing is kept and the same `request_id` can be used again; when it does not answer, the link is `failed`. States: `pending`, `sending`, `active` (not opened), `previewed`, `revealed`, `burned`,
 `expired`, `cancelled`, `failed`. The `link` field is null once the link can no longer be opened, and while the
 agent is not allowed one-time links. A retry with the same `request_id` must ask for exactly the same thing (an
 HMAC of entry, text, lifetime, passphrase and note is kept): it then gets the same link; anything else is 409. A

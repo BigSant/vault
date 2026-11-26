@@ -3,6 +3,7 @@
 @section('content')
 <div class="head"><h1>Agents</h1><a class="btn" href="#add-agent">+ Add an agent</a></div>
 @include('tabs', ['area' => 'agents', 'current' => 'agents', 'space' => $space])
+@include('notice')
 
 @if($machines->isEmpty())
     <div class="empty">No agents yet. <a href="#add-agent">Add an agent</a>.</div>
@@ -28,6 +29,7 @@
     @endforeach
     </tbody>
 </table></div>
+@if($linksReady)<p class="note">One-time links: an allowed agent can send any text it writes as a one-time link from this workspace's Onetime Secret account. An entry's values also need a grant of <code>onetimesecret.link</code>, which asks for approval every time.</p>@endif
 @endif
 
 <h2 id="add-agent">Add an agent</h2>
@@ -35,7 +37,7 @@
         <p class="note">Creates a bearer token, shown once.</p>
         <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="e.g. deploy-bot" required maxlength="100"></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 7) }}" required></label>
-        @if($linksReady)<label class="check"><input type="checkbox" name="links" value="1" @checked(old('links') === '1')> May create one-time links</label>@endif
+        @if($linksReady)<div class="field"><label class="check"><input type="checkbox" name="links" value="1" aria-describedby="agent-links-hint" @checked(old('links') === '1')> May create one-time links</label><small class="hint" id="agent-links-hint">It can then send any text it writes as a one-time link from this workspace's Onetime Secret account. An entry's values also need a grant of onetimesecret.link.</small></div>@endif
         @if($machines->isEmpty())
             @include('confirm-inline', ['verb' => 'add this agent'])
         @else

@@ -14,7 +14,11 @@ On existing installations, the OpenBao KV v2 limit `max_versions=1000` takes eff
 `secret/metadata/links/*` (read, delete) and `secret/data/settings/*`. On an existing installation, rerun
 `bin/vault install` (local/test) or `bin/vault initialize` (stage/prod) once, so the policy is rewritten, then run
 the migrations. The PHP container calls `https://REGION.onetimesecret.com` directly and needs outbound HTTPS to that
-one host. `vault:maintenance` ends links whose lifetime is over and destroys what OpenBao held for them.
+one host. `bin/vault links` (artisan `vault:links`; install `ops/vault-links.timer`, every 10 minutes) ends links
+whose lifetime is over (asking the receipt first, so a link read before its end is recorded as read), checks the open
+ones and records `link.read` / `link.previewed` in the activity log as they happen; `vault:maintenance` also retries
+destroying what OpenBao still holds for ended links. Removing the account (Setup › Onetime Secret) deletes the token
+with all its versions; a new token replaces the old one the same way.
 
 ## Backup and full restore
 

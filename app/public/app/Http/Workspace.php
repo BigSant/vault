@@ -561,6 +561,10 @@ final class Workspace
         if ($d['action'] === Links::ACTION && ! DB::table('machines')->where('id', $d['machine_id'])->value('links')) {
             throw ValidationException::withMessages(['action' => 'This agent may not create one-time links. Allow them on Identities first.']);
         }
+        // A link with an entry's values can be opened by the agent itself: an owner approves every one.
+        if ($d['action'] === Links::ACTION && ! isset($d['approval'])) {
+            throw ValidationException::withMessages(['approval' => 'onetimesecret.link puts the entry\'s values in a link the agent receives, so it always asks for approval. Tick Require owner approval for every run.']);
+        }
         // The action reads these fields from the secret, so the entry's type must require them.
         $type = $this->types->find($workspace, $entry->type);
         $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
@@ -602,7 +606,10 @@ final class Workspace
         });
 
         // The broker rechecks authorization before network requests and every second while waiting.
-        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'));
+        $open = $kind === 'machines' ? Links::openOf($id) : 0;
+
+        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'))
+            ->with('notice', $open ? 'Agent '.$machine->name.' revoked. '.$open.' of its one-time links can still be opened: burn them on Links if needed.' : null);
     }
 
     public function decision(Request $r, string $workspace, string $id)

@@ -95,7 +95,8 @@
 </div>
 @endif
 {!! substr($page, $headEnd) !!}
-@auth @if($footer)<p class="foot">Secret values stay in the vault. Agents only get action results.</p>@endif @endauth
+{{-- While an agent may put an entry's values in a one-time link, the second sentence would not be true. --}}
+@auth @if($footer)@php $linkGrants = $navSpace && \Illuminate\Support\Facades\DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('machines.workspace_id', $navSpace->id)->where('grants.action', \App\Vault\Links::ACTION)->whereNull('grants.revoked_at')->where('grants.expires_at', '>', now())->exists(); @endphp<p class="foot">Secret values stay in the vault. {{ $linkGrants ? 'Agents get action results, and one-time links with values only after your approval.' : 'Agents only get action results.' }}</p>@endif @endauth
 </main>
 @endif
 <p id="live" class="sr-only" aria-live="polite"></p>

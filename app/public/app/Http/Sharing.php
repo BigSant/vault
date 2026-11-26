@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /** One-time links in the web UI: the Links page (owner, editor), Setup › Onetime Secret and an agent's permission (owner). */
 final class Sharing
@@ -90,13 +91,20 @@ final class Sharing
         abort_unless($link, 404);
         // An editor burns the links they made; an owner any link of the workspace, also an agent's.
         abort_unless($space->role === 'owner' || $link->user_id === $r->user()->id, 404);
-        $state = $this->links->burn($link, 'user:'.$r->user()->id);
+        // A row that ended while the page was open (read, expired) says so instead of an error page.
+        $already = in_array($link->state, Links::ENDED, true);
+        try {
+            $state = $already ? $link->state : $this->links->burn($link, 'user:'.$r->user()->id);
+        } catch (HttpException $e) {
+            abort_unless($e->getStatusCode() === 409, $e->getStatusCode());
+            [$already, $state] = [true, DB::table('links')->where('id', $id)->value('state')];
+        }
 
-        return redirect('/workspaces/'.$workspace.'/links')->with('notice', match ($state) {
-            'burned' => 'Link burned. It can no longer be opened.',
-            'cancelled' => 'Request cancelled. The link was never sent.',
-            'revealed' => 'This link had already been opened and read; nothing was burned.',
-            default => 'This link had already ended ('.$state.'); nothing was burned.',
+        return redirect('/workspaces/'.$workspace.'/links')->with('notice', match (true) {
+            $state === 'revealed' => 'This link had already been opened and read; nothing was burned.',
+            $already || ! in_array($state, ['burned', 'cancelled'], true) => 'This link had already ended ('.$state.'); nothing was burned.',
+            $state === 'burned' => 'Link burned. It can no longer be opened.',
+            default => 'Request cancelled. The link was never sent.',
         });
     }
 
@@ -115,6 +123,15 @@ final class Sharing
         $this->links->saveSettings($workspace, $r->only(['region', 'email', 'token', 'default_lifetime', 'max_lifetime']));
 
         return redirect('/workspaces/'.$workspace.'/onetimesecret')->with('notice', 'Saved. Check the account to make sure Onetime Secret accepts it.');
+    }
+
+    /** No password confirmation, like Burn: removing only takes the ability away (and deletes the token). */
+    public function removeSettings(string $workspace)
+    {
+        $this->access->workspace($workspace, ['owner']);
+        $this->links->removeSettings($workspace);
+
+        return redirect('/workspaces/'.$workspace.'/onetimesecret')->with('notice', 'Account removed. Links already out end with their lifetime; burn them in the Onetime Secret dashboard if needed.');
     }
 
     public function checkSettings(string $workspace)
@@ -138,12 +155,17 @@ final class Sharing
         $machine = DB::table('machines')->where('id', $id)->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->first();
         abort_unless($machine, 404);
         DB::table('machines')->where('id', $id)->update(['links' => $d['links'] === '1', 'updated_at' => now()]);
+        $open = 0;
         if ($d['links'] === '0') {
-            // What it asked for and was not sent yet is not sent any more.
-            $this->links->stopFor($machine);
+            // What it asked for and was not sent yet is not sent any more; what is out is named in the notice.
+            $open = $this->links->stopFor($machine, 'user:'.$r->user()->id);
         }
         $this->access->audit($workspace, $d['links'] === '1' ? 'machine.links_allow' : 'machine.links_stop', $id);
 
-        return redirect('/workspaces/'.$workspace.'/agents#agent-'.$id);
+        return redirect('/workspaces/'.$workspace.'/agents#agent-'.$id)->with('notice', match (true) {
+            $d['links'] === '1' => 'One-time links allowed for '.$machine->name.'.',
+            $open > 0 => 'One-time links stopped for '.$machine->name.'. '.$open.' of its links can still be opened: burn them on Links if needed.',
+            default => 'One-time links stopped for '.$machine->name.'.',
+        });
     }
 }

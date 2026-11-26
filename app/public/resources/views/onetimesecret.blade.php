@@ -23,6 +23,9 @@
 <form class="action plain" method="post" action="/workspaces/{{ $space->id }}/onetimesecret/check">@csrf
     <div class="form-foot"><p class="note">Signs in to Onetime Secret with the saved email and token. Nothing is created.</p><button>Check account</button></div>
 </form>
+<form class="action plain" method="post" action="/workspaces/{{ $space->id }}/onetimesecret/remove" data-confirm="Remove the Onetime Secret account? No one can make one-time links until an account is set up again.">@csrf
+    <div class="form-foot"><p class="note">Deletes the token from OpenBao. Links already out end with their lifetime.</p><button class="stop">Remove account</button></div>
+</form>
 @else
 <p class="note">Not set up yet. Create an account at Onetime Secret in the region you want, then copy its API token from the account settings.</p>
 @endif

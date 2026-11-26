@@ -1,0 +1,8 @@
+[Unit]
+Description=Vault one-time links: end what is over, check the open ones
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/vault
+Environment=VAULT_ENV=local
+ExecStart=%h/Projects/vault/bin/vault links
+UMask=0077

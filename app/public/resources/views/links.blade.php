@@ -59,7 +59,9 @@
                 default => ['Ended', $l->updated_at],
             }; @endphp
             <td class="when" data-label="End date (UTC)">@if($endWord)<span class="nobreak">{{ $endWord }} {{ substr($endAt, 0, 16) }} <small class="k">UTC</small></span>@else<span class="muted">{{ \App\Vault\OneTimeSecret::LIFETIMES[$l->lifetime] ?? $l->lifetime.' s' }} {{ $l->state === 'sending' ? 'once sent' : 'once allowed' }}</span>@endif</td>
-            <td class="state" data-label="State"><span class="chip {{ $stateChips[$l->state] ?? 'muted' }}">{{ $stateNames[$l->state] ?? $l->state }}</span></td>
+            {{-- "read" is the news when an agent's link held an entry's values: its own colour, not the muted end states. --}}
+            @php $chip = $l->state === 'revealed' && $l->machine_id && $l->entry_id ? 'warn' : ($stateChips[$l->state] ?? 'muted'); @endphp
+            <td class="state" data-label="State"><span class="chip {{ $chip }}">{{ $stateNames[$l->state] ?? $l->state }}</span></td>
             <td data-label="">@if($canBurn)<form class="controls" method="post" action="/workspaces/{{ $space->id }}/links/{{ $l->id }}/burn" data-confirm="{{ $l->state === 'pending' ? 'Cancel this request? The link is never sent.' : 'Burn this link? It can no longer be opened.' }}">@csrf<button class="stop" aria-label="{{ $burnName }}">{{ $l->state === 'pending' ? 'Cancel' : 'Burn' }}</button></form>@endif</td>
         </tr>
     @endforeach

@@ -58,6 +58,7 @@ Route::middleware('vault.auth')->group(function () {
     Route::post('/workspaces/{workspace}/links/{id}/burn', [Sharing::class, 'burn'])->whereUuid(['workspace', 'id']);
     Route::get('/workspaces/{workspace}/onetimesecret', [Sharing::class, 'settings'])->whereUuid('workspace');
     Route::post('/workspaces/{workspace}/onetimesecret', [Sharing::class, 'saveSettings'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/onetimesecret/remove', [Sharing::class, 'removeSettings'])->whereUuid('workspace');
     Route::post('/workspaces/{workspace}/onetimesecret/check', [Sharing::class, 'checkSettings'])->whereUuid('workspace')->middleware('throttle:sensitive');
     Route::post('/workspaces/{workspace}/machines/{id}/links', [Sharing::class, 'machine'])->whereUuid(['workspace', 'id']);
     Route::post('/workspaces/{workspace}/projects', [Workspace::class, 'project']);

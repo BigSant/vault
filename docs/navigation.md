@@ -184,7 +184,9 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   approval reads "1 day once allowed", one being sent "1 day once sent"), State, and Burn (Cancel while waiting for
   approval). "Check now" says how many it checked, and when Onetime Secret did not answer for some, that their states
   are as last checked. Burn records what Onetime Secret confirms ("burned", or "read" when the recipient was first);
-  without the receipt, or for a link made in an earlier account, it says so and changes nothing. An owner burns any link,
+  without the receipt, or for a link made in an earlier account, it says so and changes nothing; a row that ended
+  while the page was open says "This link had already ended (…)" instead of an error. "read" is a muted chip, except
+  for an agent's link that held an entry's values: there it is amber, because that is the news. An owner burns any link,
   an editor the ones they made. Open links come first, then the newest. As a card: the link with its state at the
   right, who and when, then the end date with Burn at the right.
 - **Add a link.** Content (a textarea; required without an entry), Lifetime (the workspace's choices up to its
@@ -236,7 +238,11 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
   filtered by that agent), whether it may create one-time links (column "One-time links": "allowed" / "not allowed"
   with Allow / Stop, only once Onetime Secret is set up; held like Revoke, "Allow one-time links: <agent>"), Revoke;
-  the "Add an agent" form (with "May create one-time links" once set up). Creating an agent shows the one-time token page.
+  the "Add an agent" form (with "May create one-time links" once set up, its hint saying what it allows). Under the
+  board one note says what the permission allows. Stop and Revoke say, in the page's notice, how many of the agent's
+  links can still be opened. While any agent holds an active `onetimesecret.link` grant, the footer line reads
+  "Secret values stay in the vault. Agents get action results, and one-time links with values only after your
+  approval." Creating an agent shows the one-time token page.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
   copied, every link out of that page (header, tabs, both next steps) and Sign out asks "Token copied?" in the
   two-step pattern (an armed link reads "Leave this page" and is named "Leave this page: <link text>"); a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
@@ -295,7 +301,8 @@ Tabs under the h1 "Setup": **Projects · Entry types**, and for an owner **Oneti
   "Check account" (signs in, creates nothing), then "Change the account"; before: one sentence on what to prepare and
   "Set up the account". The form: Region, Account email, API token (required the first time, then "Leave blank to
   keep"; stored in OpenBao `settings/<workspace>`, never shown again), Default lifetime, Longest lifetime, the form's
-  own password block, "Save account".
+  own password block, "Save account". While set up, "Remove account" (a `stop` button with the two-step question, no
+  password: it only takes the ability away and deletes the token) stands under "Check account".
 
 ### Activity (owner)
 
