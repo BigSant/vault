@@ -34,7 +34,7 @@ final class OneTimeSecret
             ->acceptJson()->asJson()->timeout(10)->connectTimeout(3)->withoutRedirecting();
     }
 
-    /** @return array{secret: string, receipt: string, url: string} */
+    /** @return array{secret: string, receipt: string, url: string, ttl: int} ttl: the lifetime the service applied, which a plan may shorten. */
     public function conceal(object $settings, #[\SensitiveParameter] string $token, #[\SensitiveParameter] string $text, int $lifetime, #[\SensitiveParameter] ?string $passphrase): array
     {
         $secret = ['secret' => $text, 'ttl' => $lifetime];
@@ -48,7 +48,10 @@ final class OneTimeSecret
             throw new OneTimeSecretError(502);
         }
 
-        return ['secret' => $id, 'receipt' => $receipt, 'url' => self::origin($settings->region).'/secret/'.$id];
+        $applied = $record['secret']['secret_ttl'] ?? $record['receipt']['secret_ttl'] ?? null;
+        $ttl = is_numeric($applied) && (int) $applied > 0 ? min((int) $applied, $lifetime) : $lifetime;
+
+        return ['secret' => $id, 'receipt' => $receipt, 'url' => self::origin($settings->region).'/secret/'.$id, 'ttl' => $ttl];
     }
 
     /** The link's state from its receipt: active, previewed, revealed, burned or expired. */
@@ -66,13 +69,20 @@ final class OneTimeSecret
         return self::STATES[$record['state'] ?? ''] ?? throw new OneTimeSecretError(502);
     }
 
-    public function burn(object $settings, #[\SensitiveParameter] string $token, string $receipt, #[\SensitiveParameter] ?string $passphrase): void
+    /**
+     * Burns the secret and returns the state the service reports afterwards: "burned", or what it already was
+     * ("revealed" when the recipient read it first). Throws OneTimeSecretError when the answer says neither.
+     */
+    public function burn(object $settings, #[\SensitiveParameter] string $token, string $receipt, #[\SensitiveParameter] ?string $passphrase): string
     {
         $body = ['continue' => true];
         if ($passphrase !== null && $passphrase !== '') {
             $body['passphrase'] = $passphrase;
         }
-        $this->send(fn () => $this->client($settings, $token)->post('receipt/'.rawurlencode($receipt).'/burn', $body));
+        $record = $this->send(fn () => $this->client($settings, $token)->post('receipt/'.rawurlencode($receipt).'/burn', $body))['record'] ?? [];
+        $state = self::STATES[$record['state'] ?? $record['receipt']['state'] ?? ''] ?? null;
+
+        return in_array($state, ['burned', 'revealed', 'expired'], true) ? $state : throw new OneTimeSecretError(502);
     }
 
     /** Signs in with the account: true when the email and token are accepted. */

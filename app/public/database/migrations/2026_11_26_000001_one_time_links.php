@@ -39,8 +39,15 @@ return new class extends Migration
             $t->unsignedInteger('lifetime');
             $t->boolean('passphrase')->default(false);
             $t->string('state', 20);
+            // The account the link was made in: checks and burns go there, also after the workspace changed account.
+            $t->string('region', 8)->nullable();
+            $t->string('account', 200)->nullable();
+            // HMAC of what an agent asked for: a retry with the same request_id must ask for the same thing.
+            $t->string('digest', 64)->nullable();
             $t->timestamp('expires_at')->nullable();
             $t->timestamp('checked_at')->nullable();
+            // When what OpenBao held for the link was destroyed; maintenance retries until it is set.
+            $t->timestamp('purged_at')->nullable();
             $t->timestamps();
             $t->unique(['machine_id', 'request_id']);
         });

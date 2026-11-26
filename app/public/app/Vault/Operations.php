@@ -149,7 +149,7 @@ final class Operations
                 } elseif ($claimed) {
                     $this->broker('POST', '/operations', ['id' => $id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
                 }
-            } elseif ($op->action === Links::ACTION) {
+            } elseif ($op->action === Links::ACTION && $op->state === 'running') {
                 // Sending a link takes seconds and happens inside the claim. Still running long after: that claim
                 // crashed. Fail closed; the content is never sent twice.
                 if (strtotime($op->updated_at) <= time() - 60) {

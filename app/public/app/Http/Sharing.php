@@ -73,9 +73,14 @@ final class Sharing
     public function check(string $workspace)
     {
         $this->access->workspace($workspace, ['owner', 'editor']);
-        $count = $this->links->refresh($workspace);
+        [$checked, $missed] = $this->links->refresh($workspace);
+        $notice = match (true) {
+            $checked + $missed === 0 => 'No open links to check.',
+            $missed === 0 => 'Checked '.$checked.' open '.Str::plural('link', $checked).' with Onetime Secret.',
+            default => 'Checked '.$checked.' of '.($checked + $missed).' open links. Onetime Secret did not answer for the rest; their states are as last checked. Try again later.',
+        };
 
-        return redirect('/workspaces/'.$workspace.'/links')->with('notice', $count ? 'Checked '.$count.' open '.Str::plural('link', $count).' with Onetime Secret.' : 'No open links to check.');
+        return redirect('/workspaces/'.$workspace.'/links')->with('notice', $notice);
     }
 
     public function burn(Request $r, string $workspace, string $id)
@@ -133,6 +138,10 @@ final class Sharing
         $machine = DB::table('machines')->where('id', $id)->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->first();
         abort_unless($machine, 404);
         DB::table('machines')->where('id', $id)->update(['links' => $d['links'] === '1', 'updated_at' => now()]);
+        if ($d['links'] === '0') {
+            // What it asked for and was not sent yet is not sent any more.
+            $this->links->stopFor($machine);
+        }
         $this->access->audit($workspace, $d['links'] === '1' ? 'machine.links_allow' : 'machine.links_stop', $id);
 
         return redirect('/workspaces/'.$workspace.'/agents#agent-'.$id);

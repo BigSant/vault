@@ -25,6 +25,9 @@ final class LinksTest extends TestCase
     /** The receipt state the fake returns. */
     private string $receiptState = 'new';
 
+    /** The receipt state the fake reports after a burn. */
+    private string $burnState = 'burned';
+
     private User $owner;
 
     private string $workspace;
@@ -61,7 +64,7 @@ final class LinksTest extends TestCase
                 return match (true) {
                     $path === '/api/v2/secret/conceal' => Http::response(['record' => ['secret' => ['identifier' => 'sec'.count($this->ots).'abcdefgh'], 'receipt' => ['identifier' => 'rcpt'.count($this->ots).'abcdefgh']]]),
                     $path === '/api/v2/receipt/recent' => Http::response(['records' => []]),
-                    str_ends_with($path, '/burn') => Http::response(['record' => ['state' => 'burned']]),
+                    str_ends_with($path, '/burn') => Http::response(['record' => ['state' => $this->burnState]]),
                     str_starts_with($path, '/api/v2/receipt/') => Http::response(['record' => ['state' => $this->receiptState]]),
                     default => Http::response([], 404),
                 };
@@ -271,8 +274,10 @@ final class LinksTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/links/options')->assertJsonPath('allowed', true)->assertJsonPath('lifetimes', [3600, 86400, 259200, 604800]);
         $first = $this->withToken($token)->postJson('/api/v1/links', ['text' => 'temporary password: synthetic-generated', 'lifetime' => 3600, 'request_id' => 'link-request-1'])
             ->assertOk()->assertJsonPath('state', 'active')->assertJsonPath('link', 'https://eu.ots.test/secret/sec1abcdefgh');
-        // A retry with the same request_id returns the same link and sends nothing again.
-        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'temporary password: synthetic-generated', 'request_id' => 'link-request-1'])->assertJsonPath('id', $first->json('id'));
+        // A retry with the same request_id returns the same link and sends nothing again; a different ask is refused.
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'temporary password: synthetic-generated', 'lifetime' => 3600, 'request_id' => 'link-request-1'])->assertJsonPath('id', $first->json('id'));
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'another content', 'lifetime' => 3600, 'request_id' => 'link-request-1'])->assertStatus(409);
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'temporary password: synthetic-generated', 'request_id' => 'link-request-1'])->assertStatus(409);
         $this->assertCount(1, $this->conceals());
         $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'link-request-2', 'unknown' => 1])->assertStatus(422);
         $this->withToken($token)->postJson('/api/v1/links', ['request_id' => 'link-request-3'])->assertStatus(422);
@@ -386,5 +391,92 @@ final class LinksTest extends TestCase
         Artisan::call('vault:maintenance');
         $this->assertSame('expired', DB::table('links')->value('state'));
         $this->assertArrayNotHasKey('/v1/secret/data/links/'.$id, $this->backend);
+    }
+
+    private function pendingLink(): array
+    {
+        $this->setUpAccount();
+        $entry = $this->entry();
+        [$machine, $token] = $this->agent();
+        $this->grant($machine, $entry, true);
+        $pending = $this->withToken($token)->postJson('/api/v1/links', ['entry_id' => $entry, 'text' => 'user {{username}}', 'passphrase' => 'synthetic-phrase', 'request_id' => 'entry-link-1'])
+            ->assertJsonPath('state', 'pending');
+
+        return [$machine, $token, $pending->json('id'), $pending->json('request')];
+    }
+
+    public function test_stopping_links_for_an_agent_cancels_what_it_asked_for(): void
+    {
+        [$machine, $token, $id, $op] = $this->pendingLink();
+        $this->get($this->base.'/requests')->assertSeeText('fields username · 1 day · passphrase');
+        $this->post($this->base.'/machines/'.$machine.'/links', ['links' => '0'])->assertRedirect();
+        $this->assertSame('cancelled', DB::table('links')->where('id', $id)->value('state'));
+        $this->post($this->base.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertStatus(409);
+        $this->assertSame([], $this->conceals());
+        $this->assertArrayNotHasKey('/v1/secret/data/links/'.$id, $this->backend);
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'link-request-9'])->assertForbidden();
+    }
+
+    public function test_a_lost_or_changed_draft_is_never_sent(): void
+    {
+        [, , $id, $op] = $this->pendingLink();
+        // The passphrase is gone from the draft: sending it without one would be weaker than what was approved.
+        $this->backend['/v1/secret/data/links/'.$id][2] = ['text' => 'user {{username}}', 'passphrase' => null];
+        $this->post($this->base.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
+        $this->assertSame([], $this->conceals());
+        $this->assertSame('failed', DB::table('links')->where('id', $id)->value('state'));
+        $this->assertSame('failed', DB::table('operations')->where('id', $op)->value('state'));
+    }
+
+    public function test_a_waiting_request_survives_status_checks_and_cancel_cannot_race_a_send(): void
+    {
+        [, $token, $id, $op] = $this->pendingLink();
+        DB::table('operations')->where('id', $op)->update(['updated_at' => now()->subMinutes(2)]);
+        $this->withToken($token)->getJson('/api/v1/links/'.$id)->assertJsonPath('state', 'pending');
+        $this->assertSame('pending', DB::table('operations')->where('id', $op)->value('state'));
+        // A send has claimed the link: Cancel says so and changes nothing.
+        DB::table('links')->where('id', $id)->update(['state' => 'sending']);
+        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'being sent'));
+        $this->assertSame('sending', DB::table('links')->where('id', $id)->value('state'));
+        $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
+    }
+
+    public function test_links_stay_with_the_account_they_were_made_in(): void
+    {
+        $this->setUpAccount();
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
+        $id = DB::table('links')->value('id');
+        $this->post($this->base.'/onetimesecret', ['region' => 'uk', 'email' => 'links@example.test', 'default_lifetime' => 86400, 'max_lifetime' => 604800])->assertRedirect();
+        $this->receiptState = 'expired';
+        $this->post($this->base.'/links/check')->assertSessionHas('notice', fn ($n) => str_starts_with($n, 'Checked 0 of 1 open links.'));
+        $this->assertSame('active', DB::table('links')->value('state'));
+        $this->assertArrayHasKey('/v1/secret/data/links/'.$id, $this->backend);
+        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'earlier Onetime Secret account'));
+        $this->assertSame('active', DB::table('links')->value('state'));
+    }
+
+    public function test_burn_records_what_the_service_confirms(): void
+    {
+        $this->setUpAccount();
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
+        $id = DB::table('links')->value('id');
+        $this->burnState = 'revealed';
+        $this->post($this->base.'/links/'.$id.'/burn')->assertSessionHas('notice', 'This link had already been opened and read; nothing was burned.');
+        $this->assertSame('revealed', DB::table('links')->value('state'));
+        // Without its receipt Vault does not claim a burn.
+        $this->post($this->base.'/links', ['text' => 'synthetic 2'])->assertOk();
+        $second = DB::table('links')->where('id', '!=', $id)->value('id');
+        unset($this->backend['/v1/secret/data/links/'.$second]);
+        $this->post($this->base.'/links/'.$second.'/burn')->assertSessionHas('form_errors', fn ($e) => str_contains($e['link'][0], 'no longer holds'));
+        $this->assertSame('active', DB::table('links')->where('id', $second)->value('state'));
+    }
+
+    public function test_check_now_says_when_the_service_refused(): void
+    {
+        $this->setUpAccount();
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
+        DB::table('link_settings')->update(['email' => 'links@example.test']);
+        $this->backend['/v1/secret/data/settings/'.$this->workspace][2] = ['token' => 'wrong-token'];
+        $this->post($this->base.'/links/check')->assertSessionHas('notice', fn ($n) => str_starts_with($n, 'Checked 0 of 1 open links.'));
     }
 }

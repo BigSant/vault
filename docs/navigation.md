@@ -181,7 +181,10 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   entry as a link, else "Text only"; under it the entry when the note took the first line, the field names the
   content used, and a `passphrase` chip), Made by (a person, or an agent with the `agent` chip), Made (UTC), End
   date (UTC) ("Expires …" while it can be opened, "Expired …", "Ended …" once read or burned; a link waiting for
-  approval reads "1 day once allowed"), State, and Burn (Cancel while waiting for approval). An owner burns any link,
+  approval reads "1 day once allowed", one being sent "1 day once sent"), State, and Burn (Cancel while waiting for
+  approval). "Check now" says how many it checked, and when Onetime Secret did not answer for some, that their states
+  are as last checked. Burn records what Onetime Secret confirms ("burned", or "read" when the recipient was first);
+  without the receipt, or for a link made in an earlier account, it says so and changes nothing. An owner burns any link,
   an editor the ones they made. Open links come first, then the newest. As a card: the link with its state at the
   right, who and when, then the end date with Burn at the right.
 - **Add a link.** Content (a textarea; required without an entry), Lifetime (the workspace's choices up to its
@@ -253,7 +256,8 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 - The grant action `onetimesecret.link` (listed once Onetime Secret is set up) lets an agent put that entry's
   values into a one-time link; the agent must also be allowed one-time links on Identities ("This agent may not
   create one-time links. Allow them on Identities first."). With "Require owner approval" every such link is a
-  request on Requests, like any action.
+  request on Requests, like any action. Its row there says what the link would hold, under the action: "fields
+  username, password · 3 days · passphrase" (also in the held summary and the decision's accessible name).
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)

@@ -385,7 +385,10 @@ final class Workspace
             ->join('environments', 'environments.id', '=', 'entries.environment_id')
             ->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('machines.workspace_id', $workspace)->where('projects.workspace_id', $workspace)
-            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project')
+            // A one-time link request also says what the link would hold: field names, lifetime, passphrase (no values).
+            ->leftJoin('links', 'links.operation_id', '=', 'operations.id')
+            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project',
+                'links.fields as link_fields', 'links.lifetime as link_lifetime', 'links.passphrase as link_passphrase')
             ->orderByDesc('operations.created_at')->orderByDesc('operations.id');
     }
 
@@ -713,7 +716,8 @@ final class Workspace
         return $query->where(function ($subjects) use ($id) {
             $subjects->where('subject', $id)
                 ->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
-                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
+                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id))
+                ->orWhereIn('subject', DB::table('links')->select('id')->where('entry_id', $id));
         });
     }
 

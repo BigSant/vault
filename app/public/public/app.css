@@ -1264,3 +1264,5 @@ details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-d
 /* Six nav items (an owner) do not fit one row at 390 px: two even rows of three instead of one wrapped item. */
 .nav:has(>.btn:nth-child(6)){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+/* A one-time link request says what the link would hold, under its action; it wraps like the action does. */
+.board.requests td.action small.link-what{display:block;white-space:normal;color:var(--dim);order:3;flex-basis:100%}

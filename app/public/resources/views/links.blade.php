@@ -6,10 +6,10 @@
      ($draft), never through the session. --}}
 @php
     $draft = $draft ?? [];
-    $stateNames = ['pending' => 'waiting for approval', 'active' => 'not opened', 'previewed' => 'previewed', 'revealed' => 'read',
+    $stateNames = ['pending' => 'waiting for approval', 'sending' => 'sending', 'active' => 'not opened', 'previewed' => 'previewed', 'revealed' => 'read',
         'burned' => 'burned', 'expired' => 'expired', 'cancelled' => 'cancelled', 'failed' => 'failed'];
-    $stateChips = ['pending' => 'warn', 'active' => 'ok', 'previewed' => 'warn', 'revealed' => 'muted', 'burned' => 'muted', 'expired' => 'muted', 'cancelled' => 'muted', 'failed' => 'bad'];
-    $stripes = ['pending' => 'is-wait', 'active' => 'is-ok', 'previewed' => 'is-wait', 'failed' => 'is-bad'];
+    $stateChips = ['pending' => 'warn', 'sending' => 'warn', 'active' => 'ok', 'previewed' => 'warn', 'revealed' => 'muted', 'burned' => 'muted', 'expired' => 'muted', 'cancelled' => 'muted', 'failed' => 'bad'];
+    $stripes = ['pending' => 'is-wait', 'sending' => 'is-wait', 'active' => 'is-ok', 'previewed' => 'is-wait', 'failed' => 'is-bad'];
     $isOwner = $space->role === 'owner';
     $fieldKeys = $type ? array_column($type->fields, 'key') : [];
     $text = $draft['text'] ?? ($entry ? \App\Vault\Links::template($type) : '');
@@ -53,12 +53,12 @@
             <td class="when" data-label="Made (UTC)"><span class="nobreak"><small class="k">Made </small>{{ substr($l->created_at, 0, 16) }} <small class="k">UTC</small></span></td>
             {{-- Open: when the lifetime ends. Ended: when, as far as Vault knows (the lifetime's end for an expired link, else the check that found it ended). --}}
             @php [$endWord, $endAt] = match (true) {
-                $l->state === 'pending' => [null, null],
+                in_array($l->state, ['pending', 'sending'], true) => [null, null],
                 $open => ['Expires', $l->expires_at],
                 $l->state === 'expired' && $l->expires_at => ['Expired', min($l->expires_at, $l->updated_at)],
                 default => ['Ended', $l->updated_at],
             }; @endphp
-            <td class="when" data-label="End date (UTC)">@if($endWord)<span class="nobreak">{{ $endWord }} {{ substr($endAt, 0, 16) }} <small class="k">UTC</small></span>@else<span class="muted">{{ \App\Vault\OneTimeSecret::LIFETIMES[$l->lifetime] ?? $l->lifetime.' s' }} once allowed</span>@endif</td>
+            <td class="when" data-label="End date (UTC)">@if($endWord)<span class="nobreak">{{ $endWord }} {{ substr($endAt, 0, 16) }} <small class="k">UTC</small></span>@else<span class="muted">{{ \App\Vault\OneTimeSecret::LIFETIMES[$l->lifetime] ?? $l->lifetime.' s' }} {{ $l->state === 'sending' ? 'once sent' : 'once allowed' }}</span>@endif</td>
             <td class="state" data-label="State"><span class="chip {{ $stateChips[$l->state] ?? 'muted' }}">{{ $stateNames[$l->state] ?? $l->state }}</span></td>
             <td data-label="">@if($canBurn)<form class="controls" method="post" action="/workspaces/{{ $space->id }}/links/{{ $l->id }}/burn" data-confirm="{{ $l->state === 'pending' ? 'Cancel this request? The link is never sent.' : 'Burn this link? It can no longer be opened.' }}">@csrf<button class="stop" aria-label="{{ $burnName }}">{{ $l->state === 'pending' ? 'Cancel' : 'Burn' }}</button></form>@endif</td>
         </tr>

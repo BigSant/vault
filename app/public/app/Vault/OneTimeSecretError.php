@@ -14,6 +14,7 @@ final class OneTimeSecretError extends \RuntimeException
     public function reason(): string
     {
         return match (true) {
+            $this->status === -1 => 'Vault cannot check this link: it was made in an earlier Onetime Secret account, or its receipt is gone.',
             $this->status === 0 => 'Onetime Secret could not be reached. Try again later.',
             in_array($this->status, [401, 403], true) => 'Onetime Secret did not accept the account email and API token. An owner can check them in Setup.',
             $this->status === 429 => 'Onetime Secret is limiting requests. Try again in a minute.',

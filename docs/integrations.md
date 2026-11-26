@@ -61,8 +61,15 @@ endpoints (HTTP); an agent without the permission does not see the tools.
 Vault puts the values in when it sends the content, so the agent never handles them (without `text`: every field,
 one "Label: value" per line). Using an entry needs a grant of the action `onetimesecret.link` on it; with "Require
 owner approval" the answer is `"state": "pending"` until the owner allows it on Requests, and the agent checks
-`vault_link_status`. States: `pending`, `active` (not opened), `previewed`, `revealed`, `burned`, `expired`,
-`cancelled`, `failed`. The `link` field is null once the link can no longer be opened.
+`vault_link_status`. States: `pending`, `sending`, `active` (not opened), `previewed`, `revealed`, `burned`,
+`expired`, `cancelled`, `failed`. The `link` field is null once the link can no longer be opened, and while the
+agent is not allowed one-time links. A retry with the same `request_id` must ask for exactly the same thing (an
+HMAC of entry, text, lifetime, passphrase and note is kept): it then gets the same link; anything else is 409. A
+`failed` link needs a new `request_id`. `expires_at` is the lifetime Onetime Secret applied, which a plan may
+shorten. An owner's Stop (Identities) cancels the agent's links that were not sent yet; a request is sent only if
+the agent is still allowed, in the account and within the longest lifetime the workspace has at that moment, and
+only with the draft (text and passphrase) that was asked for. Each link keeps the region and account it was made in:
+after the account changes, Vault no longer checks or burns older links (they end with their lifetime).
 
 **Boundary.** Whoever holds a link can open it once. An agent that may use an entry's values in a link can therefore
 read them by opening the link itself (which also uses it up, and Links then shows it as read). Allow one-time links
