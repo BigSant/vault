@@ -118,7 +118,7 @@ The private `data/connectors/connectors.json` (the corresponding environment's d
 
 API/CLI use the entry's `token` field as the Bearer and return success only on a 200. The HTTP body and headers are ignored, CLI stdout/stderr are discarded. This is a fixed recipe, not arbitrary command execution. Browser uses the login `username`/`password`; for an MFA flow add `mfa_selector` and `mfa_submit_selector`. `success_text` is compared exactly, and its text is not returned. The local context is closed; the target server session can live until the TTL it sets.
 
-`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources (unless `static_subresources` / `variable_query`, below, cover them). Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
+`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources (unless `static_paths` / `variable_query`, below, cover them). Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
 
 DB connector: `kind=database`, `role=vault-...`, a fixed `host` and `port`. The entry type `dynamic_database` and the secret `role` must match; only SELECT 1 is executed. The DB password need not and cannot be given to the agent. Test provisioning is described in the runbook.
 
@@ -127,21 +127,40 @@ DB connector: `kind=database`, `role=vault-...`, a fixed `host` and `port`. The 
 Two opt-in rules make a real login page (PrestaShop's front and back office load dozens of theme files) possible
 without opening the browser to the site:
 
-- `"static_subresources": true` — a **GET** that is **not a navigation** and whose type is stylesheet, script, image,
-  font, media, text track, manifest or other is allowed from the registered origins (`url` plus `origins`) without
-  listing it. The same request to any other origin (analytics, a font CDN) is dropped before it leaves, without
-  failing the login. Never covered: documents and navigations, frames, XHR/fetch, EventSource, WebSocket,
-  downloads, popups, and every method but GET; those still need an exact `allowed_requests` entry or fail the
-  operation. A static subresource that redirects is dropped, never followed. Scripts may run, but whatever they send
-  (XHR, POST, navigation) is checked like any other request.
-- `"variable_query": ["rand"]` on one `allowed_requests` rule — the named query parameters may differ, each at most
-  once and only `[A-Za-z0-9_-]{1,64}`; the method, scheme, host, port, path and every other parameter must still be
-  exactly the rule's. It exists for a nonce or a CSRF/session token in a URL the site makes, e.g. PrestaShop's
-  `index.php?rand=<ms>` login XHR and `index.php?controller=AdminDashboard&token=<token>` after it.
+- `"static_paths": ["/themes/", "/js/", "/img/", "/modules/"]` — a **GET** that is **not a navigation**, whose
+  type is stylesheet, script, image, font, media, text track or manifest (never "other": beacons, prefetch), to a
+  registered origin (`url` plus `origins`), whose path starts with one of these prefixes (each starts and ends with
+  `/`) and ends with an allowed
+  file extension, is allowed without listing it. Optional `"static_extensions"` narrows the built-in list (`.css`,
+  `.js`, `.mjs`, images, fonts, `.vtt`, `.webmanifest`); a path with `%`, `//` or another extension never matches.
+  The query must be empty, or only the `"static_query"` parameters in their shapes (e.g. `{"v": "version"}`,
+  each at most once). Such a file is fetched **without cookies or credentials** (its own request context, a new one
+  per file) and its `Set-Cookie`, `Location` and `Content-Disposition` are dropped; one that redirects is dropped,
+  never followed. Any other static-typed GET (outside the paths, another origin, an analytics pixel, a back-office
+  URL dressed as an image) is dropped before it leaves, without failing the login. Never covered: documents and
+  navigations, frames, XHR/fetch, EventSource, WebSocket, downloads, popups, and every method but GET; those still
+  need an exact `allowed_requests` entry or fail the operation. Scripts may run, but whatever they send (XHR, POST,
+  navigation) is checked like any other request. The older `"static_subresources": true` is refused (the operation
+  fails) so that an old connector is noticed.
+- `"variable_query": {"rand": "digits:13"}` on one `allowed_requests` rule — the named query parameters may differ,
+  each at most once and only in its shape; the method, scheme, host, port, path and every other parameter must still
+  be exactly the rule's (raw, undecoded). Shapes are a fixed vocabulary, never a pattern: `digits` / `digits:N`
+  (1–N digits, N ≤ 20), `hex:N` (exactly N lowercase hex digits, 8 ≤ N ≤ 64) and `version` (`8`, `8.1.2`, at most
+  four parts). A percent-encoded or `+` key or value never matches. It exists for a nonce or a token the site makes,
+  e.g. PrestaShop's `index.php?rand=<ms>` login XHR (`digits:13`) and
+  `index.php?controller=AdminDashboard&token=<md5>` after it (`hex:32`).
 
-Why this is narrow enough: a page can only make requests the broker lets through; static GETs go only to origins the
-operator registered (the site that receives the password anyway); anything that can carry data back to a script or
-change state stays exact. Negative cases are in `tests/test_browser_policy.py` and the integration fixture.
+Every request URL (navigation, XHR, static, a redirect target) is also checked for the entry's values (all fields
+but the username; plain, percent-, hex- or base64-encoded, reversed): one that carries a value is denied and the
+operation fails. This is a best-effort check, not a guarantee.
+
+What this leaves open, plainly: a static file goes only to a registered origin, under an operator path, without the
+session and with a query of a few digits; it cannot change state with the logged-in session or read data back. A
+page script can still choose the *file name* under a static path, so a hostile page could encode a short value into
+a path in a way the URL check does not recognise and send it to a registered origin. Register only origins that are
+the site itself (they receive the password at login anyway), keep `static_paths` narrow, and treat a page that runs
+someone else's script (an XSS in the back office) as able to use the browser while the login runs. Negative cases are
+in `tests/test_browser_policy.py` and the integration fixture.
 
 ## Executor handoff (`storage_state`)
 
@@ -153,7 +172,7 @@ a run never sees anything.
 "shop.customer-session": {
   "kind": "storage_state", "url": "https://shop.example/en/login", "origins": [],
   "username_selector": "#field-email", "password_selector": "#field-password", "submit_selector": "#submit-login",
-  "static_subresources": true,
+  "static_paths": ["/themes/", "/js/", "/img/", "/modules/"], "static_query": {"v": "version"},
   "allowed_requests": [{"method": "POST", "url": "https://shop.example/en/login?back=my-account"},
                        {"method": "GET", "url": "https://shop.example/en/my-account"}],
   "success_selector": "#account-state", "success_text": "connected",
@@ -162,10 +181,11 @@ a run never sees anything.
 "shop.admin-session": {
   "kind": "storage_state", "url": "https://shop.example/admin123/index.php?controller=AdminLogin",
   "username_selector": "#email", "password_selector": "#passwd", "submit_selector": "#submit_login",
-  "static_subresources": true,
-  "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": ["rand"]},
-                       {"method": "GET", "url": "https://shop.example/admin123/index.php?controller=AdminDashboard", "variable_query": ["token"]}],
+  "static_paths": ["/admin123/themes/", "/js/", "/img/"], "static_query": {"v": "version"},
+  "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": {"rand": "digits:13"}},
+                       {"method": "GET", "url": "https://shop.example/admin123/index.php?controller=AdminDashboard", "variable_query": {"token": "hex:32"}}],
   "success_selector": "#header_employee_box", "success_text": "...",
+  "storage_keys": [],
   "entry_types": ["prestashop_admin"], "ttl_seconds": 900
 }
 ```
@@ -173,15 +193,33 @@ a run never sees anything.
 The selectors and success check above are an illustration: take them from the shop's real theme and check them with a
 synthetic account first. The entry uses the `username` and `password` fields; its type must be one of `entry_types`
 (otherwise the grant is refused and a run is 422). `ttl_seconds` is 1–1800 (default 900); `mfa_selector` is not
-allowed (runs are unattended). The file holds `{"cookies": [...], "origins": [...]}` limited to the registered
-origins; the broker refuses to write a state that contains an entry value other than the username (plain, JSON,
-URL-, hex- or base64-encoded), which catches a page that copies the password into a cookie or localStorage.
+allowed (runs are unattended; a connector with it cannot be granted).
+
+**What the file holds** (`{"cookies": [...], "origins": [...]}`), narrowed at the source:
+
+- cookies: only **HttpOnly** ones (a page script cannot write those; PrestaShop's session cookies are HttpOnly) plus
+  any the connector names in `"cookie_names"`, and only those that apply to a registered host. Each is exported
+  **host-only** for that exact host: a cookie the site set for a parent domain (`.shop.example`) is narrowed, so the
+  executor's browser never sends it to a sibling subdomain;
+- localStorage: **none** by default; a connector names the keys it needs in `"storage_keys"` (registered origins
+  only);
+- sessionStorage, IndexedDB and everything of other origins: never.
+
+On top of that the broker refuses (operation `failed`, no file) a state in which a cookie's or item's name or value,
+repeatedly percent-, `+`-, JSON-, base64- and hex-decoded and reversed, contains an entry value other than the
+username, also split in two across cookies and items. This check is **best effort**: it recognises the encodings
+above, not every encoding a page could invent. The boundary, plainly: the session is issued by the target site. If
+that site (or a script running in it during the login) is compromised, no output filter can guarantee what it encoded
+into the session; narrowing the source (HttpOnly cookies, no storage) is what keeps an ordinary page script out.
 
 **Executor identity.** In Access › Agents tick *Executor* when making the identity (it cannot be changed later, and
 an executor does not create one-time links). Only an executor may be granted a `storage_state` action; for any other
 identity the action does not exist (404). Grants may be standing and without approval, since runs happen at night.
-Limits: one live handoff per entry (whoever asks), 60 per executor per hour, and the usual five open operations
-(429 beyond).
+Limits: one live handoff per entry (whoever asks, also at the same moment), 60 per executor per hour, the usual five
+open operations per identity, and at the broker four logins at a time (a lease whose file is ready does not count)
+and 16 live leases (429 beyond). When the broker refuses a start (busy, down, its directory not clean) the operation
+fails at once and the answer is 429 or 503 with no operation left running; retry with a new `request_id`. Only a
+timeout after the start was sent leaves the operation `running` for status to settle.
 
 **The executor's sequence** (CLI shown; HTTP and MCP are the same calls):
 
@@ -189,7 +227,7 @@ Limits: one live handoff per entry (whoever asks), 60 per executor per hour, and
 1. POST /api/v1/execute         {"entry_id": "<uuid>", "action": "shop.customer-session", "request_id": "<8-80 chars>"}
    → {"id": "<operation-uuid>", "state": "running", "ok": false, "expires_at": "...", "ready": false, "lease_expires_at": null}
 2. GET  /api/v1/operations/<operation-uuid>       every 1-2 s until "ready": true, or a final state (failed, expired, revoked)
-   → {"id": "...", "state": "running", "ok": false, "expires_at": "...", "ready": true, "lease_expires_at": "2026-...Z"}
+   → {"id": "...", "state": "running", "ok": false, "expires_at": "...", "ready": true, "lease_expires_at": "2026-11-27T03:15:00Z"}
 3. read  <handoff directory>/<operation-uuid>.json  (e.g. /run/vault-handoff/prod/…) and start the suite with it
    as Playwright storageState; read it once, keep it only in memory
 4. POST /api/v1/operations/<operation-uuid>/release  {}     (MCP vault_release, CLI release)
@@ -197,12 +235,20 @@ Limits: one live handoff per entry (whoever asks), 60 per executor per hour, and
 ```
 
 The answer never contains the path or a value: the executor derives the path from the fixed directory and its own
-operation ID. The file is complete when `ready` is true (it is written and fsynced before the application records
-it); never read it earlier. Release as soon as the suite has loaded the state; otherwise the TTL removes it (state
-`expired`). Revoking the grant or the identity, or changing the entry, removes it within about a second (`revoked`);
-a broker restart removes every file (`failed`). Use a new `request_id` per run; repeating one returns the same
-operation and never writes a second file. The process needs only read access through the `vault-handoff` group
+operation ID; the directory is 2710, so it cannot list it and must open the file by name. `lease_expires_at` is RFC
+3339 UTC. Until `ready` is true the file is either absent or 0600 (unreadable for the group): it becomes 0640 only
+after it is complete, fsynced and recorded by the application; never read it earlier. Release as soon as the suite
+has loaded the state; otherwise the TTL removes it (state `expired`, at `lease_expires_at`). Revoking the grant or
+the identity, or changing the entry, removes it within about 1–6 s (`revoked`; the broker checks every live lease each
+second, with a 5 s timeout on the application's answer). A short application outage (a PHP restart, a stalled
+database) also ends every lease as `revoked`: the broker fails closed when it cannot confirm a lease; start a new
+run. A broker restart removes every file (`failed`). Use a new `request_id` per run; repeating one returns the same
+operation and never writes a second file. The process needs only search access through the `vault-handoff` group
 (docs/operations.md) and its own client config file.
+
+**A state already read cannot be revoked.** Vault removes the file; whatever the executor loaded from it stays a
+valid session at the site until the site ends it (logout, its own expiry). To end such a session early, log it out
+at the site or change the account's password there.
 
 ## Starting a connector
 

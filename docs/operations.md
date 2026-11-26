@@ -23,35 +23,50 @@ with all its versions; a new token replaces the old one the same way.
 ## Handoff directory (executor, `storage_state`)
 
 The broker writes executor handoff files to `/handoff`, a host directory mounted into the broker only (no other
-container, never the agent sandbox). The executor, a host process of another user, reads it through the
-`vault-handoff` group. Local/test use `data/handoff` and `app/.generated/test/data/handoff`, made by `prepare`
-(mode 0750, or 2750 with the `vault-handoff` group when the current user is in it). On a server use `/run` (cleared
-at boot) from tmpfiles.d. Steps marked **root** need root; the rest run as the Vault operator account (the one whose
-UID the containers use).
+container, never the agent sandbox). The executor, a host process of another user, opens its own file by name through
+the `vault-handoff` group. The directory is **2710**: the group may enter it but not list it, so a reader must know
+the operation ID, which only the identity that started the operation gets. The group is still **one shared OS trust
+boundary**: every member can open any file whose operation ID it learns, so give it only to the executor's account,
+never to people or accounts an LLM agent can drive; separate executors that must not see each other's sessions need
+separate hosts (or environments with their own directory and group). Local/test use `data/handoff` and
+`app/.generated/test/data/handoff`, made by `prepare`: mode **0700** (only the Vault account; e.g. a test runner of
+the same user), or 2710 with the `vault-handoff` group when the current user is in it. Never group access without
+that group: with a shared primary group (`users`) every local user could read the files. On a server use `/run`
+(cleared at boot) from tmpfiles.d. Steps marked **root** need root; the rest run as the Vault operator account (the
+one whose UID the containers use).
 
 1. **root** `groupadd --system vault-handoff` and `usermod -aG vault-handoff <executor account>`. Do not add the Vault
    account's own human users or any account an LLM agent can drive.
 2. **root** copy `ops/vault-handoff.tmpfiles.conf` to `/etc/tmpfiles.d/vault-handoff.conf`, replace `VAULTUSER`
    (and `prod` for another environment), run `systemd-tmpfiles --create`. Result: `/run/vault-handoff/prod`
-   `drwxr-s--- VAULTUSER vault-handoff`. tmpfiles runs before Docker at boot, so the bind mount finds it; a
-   directory Docker had to create itself (root-owned) is refused by the broker.
+   `drwx--s--- VAULTUSER vault-handoff` with the marker `.vault-handoff` (0600). tmpfiles runs before Docker at boot,
+   so the bind mount finds it; a directory Docker had to create itself (root-owned, no marker) is refused.
 3. In the private `app/env/prod.env` set `VAULT_HANDOFF_DIRECTORY=/run/vault-handoff/prod` and
    `VAULT_HANDOFF_GID=<getent group vault-handoff | cut -d: -f3>`, then `VAULT_ENV=prod bin/vault prepare` (it checks
-   the directory) and recreate the broker (`make -C app up ENV=prod`).
+   the directory and makes the marker) and recreate the broker (`make -C app up ENV=prod`).
 
-The broker refuses to write when the path is a symlink, not owned by it, accessible to others, writable by the group,
-or of another group than `VAULT_HANDOFF_GID`; it never replaces an existing file. Each file is
-`<operation-uuid>.json`, mode 0640. It is removed at release, at the TTL, within a second of a revocation, when the
-broker stops, and at broker start (every file in the directory). Backups never include this directory. A broker that
-is down cannot remove files until it starts again; the tmpfiles age (1 h) is only a daily backstop. The session in a
-file is a credential: anyone in the group, root and anyone with the Docker socket can use it until the site ends it,
-and a state already read cannot be revoked by Vault.
+The broker writes only into a directory that is not a symlink, is owned by it, holds the marker `.vault-handoff` (a
+regular file it owns), gives others nothing and the group at most search (2710 or stricter), and has the group
+`VAULT_HANDOFF_GID`; it never replaces an existing file. Each file is `<operation-uuid>.json`: created 0600, made
+0640 only after the application recorded it. It is removed at release, at the TTL, within about 1–6 s of a
+revocation (or when the application does not answer), when the broker stops, and at broker start. Removal needs only
+the directory (no symlink in its place), so a file is removed even if the directory's mode or group was changed
+during a lease; a removal that fails is retried every second and recorded (`handoff.removed`) only once it
+succeeded. At start the broker removes every `<uuid>.json` in the marked directory and nothing else; a wrongly
+configured path (no marker) loses no file. Until that startup cleanup has succeeded the broker refuses every handoff
+(503, the operation fails at once) and says so once on its stderr, without a path (`docker logs vault-<env>-broker`);
+it retries every 10 s. Backups never include this directory. A broker that is down cannot remove files until it
+starts again; the tmpfiles age (1 h) is only a daily backstop. The session in a file is a credential: anyone in the
+group who learns the operation ID, root and anyone with the Docker socket can use it until the site ends it, and a
+state already read cannot be revoked by Vault.
 
 ## Unattended timers
 
-`ops/` holds user systemd units: `vault-maintenance` (daily), `vault-links` (10 min) and `vault-backup` (daily 03:30,
-retried every 20 min up to 6 times while operations, e.g. a handoff lease, are active). They read
-`~/.config/vault/units.env`:
+`ops/` holds user systemd units: `vault-maintenance` (daily), `vault-links` (10 min) and `vault-backup` (daily 03:30).
+A backup that cannot start now (operations are active, e.g. a handoff lease, or another backup runs) exits 75 and the
+unit tries again 20 minutes later: 12 attempts in all, about 3 h 40 min; any other failure ends the unit at once. The
+retry is a loop in the unit, not `Restart=`, so it loads on systemd 249 (Ubuntu 22.04). Every unit fails when
+`VAULT_ENV` is missing instead of acting on `local`. They read `~/.config/vault/units.env`:
 
 ```dotenv
 VAULT_ENV=prod
@@ -62,7 +77,8 @@ Copy the units to `~/.config/systemd/user/`, then `systemctl --user daemon-reloa
 vault-maintenance.timer vault-links.timer vault-backup.timer`. For timers to run without a login session, **root**
 `loginctl enable-linger <vault account>`. Schedule backups outside the executor's night window (a backup refuses while
 operations run and stops PHP and the broker for a moment). Backups accumulate in `backups/`; prune old ones by your
-retention policy, keeping verified ones.
+retention policy, keeping verified ones. `vault:maintenance` (in `vault-maintenance`) also asks the broker to remove
+the file of every handoff that is over and records its removal once the broker confirms it.
 
 ## Unsealing after a reboot
 
