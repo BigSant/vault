@@ -1,8 +1,10 @@
+# Environment and checkout come from ~/.config/vault/units.env (docs/operations.md), e.g.
+#   VAULT_ENV=prod
+#   VAULT_CHECKOUT=/srv/vault
 [Unit]
 Description=Vault operator maintenance and managed credential rotation
 [Service]
 Type=oneshot
-WorkingDirectory=%h/Projects/vault
-Environment=VAULT_ENV=local
-ExecStart=%h/Projects/vault/bin/vault maintenance
+EnvironmentFile=%E/vault/units.env
+ExecStart=/bin/sh -c 'cd "$${VAULT_CHECKOUT:?}" && exec bin/vault maintenance'
 UMask=0077
