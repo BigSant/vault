@@ -51,7 +51,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
 
 - **Workspace switcher** (`<details>` menu): the user's workspaces with their role, the current one marked, and
   "+ Add a workspace" → `GET /workspaces/new`. Switching keeps you on the same section when the role allows it,
-  otherwise it opens Entries.
+  otherwise it opens Entries. In the open list a name is whole: it wraps, with the role chip beside it, so two
+  workspaces with the same role whose names differ only at the end stay apart (checked at 390 px). The closed menu
+  in the bar keeps its one line and its ellipsis.
 - **Primary nav**, filtered by role in the current workspace:
 
   | Item | Pages it is active on | Roles |
@@ -98,7 +100,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   and agent use follow as one small summary line ("3 in production · 2 used by agents, 7 days"). The labels are the
   same words at every width. Reviewers disagreed
   both ways; do not reopen it. On desktop the four are equal columns across the strip. While the rotation-due
-  filter is on, its stat is underlined and says "Clear ×".
+  filter is on, its stat is underlined and says "Clear ×". With nothing due and the filter off the stat is a plain
+  number ("0 rotation due", "0 rotation due in this view"), not a link: it would only open an empty list.
   **Rotation-due count (decided):** the stat's link keeps the search and the project, environment and type filters,
   so its number is counted inside them (`Workspace::index`): it is what the link will show. While any of them is
   on, the label reads "rotation due in this view". The other three stats stay workspace totals. The label is
@@ -109,6 +112,9 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   **Filter bar (decided):** with the bar open, the search field and the four filters are one row with Apply last,
   at the board's right edge, at every desktop width: a select is at most 12em wide and gives way before anything
   wraps (a long project name is cut by the select and whole in its list); the search field keeps at least 15rem.
+  "All environments" is never cut at rest: the Environment select keeps 13em and Project keeps the 146 px of "All
+  projects"; Type and State give way first. The bar is one row down to 901 px, and from 1000 px up every select
+  shows its resting option whole.
 - `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table; a viewer gets the note "Viewers see entry details and version history, not values." under it and no Secret
   values section), secret values (reveal; while values are on screen a plain "Hide values" button
@@ -123,10 +129,12 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   ("Request activity for this entry →", "All activity for this entry →").
   **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
   cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
-- `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft:
-  the line under Type says what to do in words on the page, never in a `title`, and names the button: "Missing a
-  type or field? Edit entry types in a new tab. After editing the entry type, return here and choose Reload types."
-  ("Missing a field? … choose Reload fields." on the update form). Without script there is no button, and the
+- `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft.
+  Under Type sits a closed disclosure (`details.type-detour`) whose summary is the question, always in view:
+  "Missing a type or field?" ("Missing a field?" on the update form). The ordinary path stays short, on phones
+  too; opened, it says what to do in words on the page, never in a `title`, and names the button: "Edit entry
+  types in a new tab. After editing the entry type, return here and choose Reload types." ("… choose Reload
+  fields." on the update form), then the button, then the status line. Without script there is no button, and the
   sentence printed by the server says what is true then: "After editing the entry type, load this page again. What
   you typed here is not kept." (app.js swaps in the other wording, `data-script-text`).
   The link opens Setup beside the form, and "Reload types" (script; "Reload fields" on the
@@ -140,8 +148,10 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   lost. Copy it elsewhere first, or choose Discard and reload."), and two buttons follow it: "Discard and reload"
   and "Cancel" (the focus goes to Cancel; Escape cancels; the reload button is off while the question is open).
   Cancel changes nothing; after a discard the status says which fields were discarded and that the rest was kept.
-  "Agent alias" carries the marker `<small>required</small>`, the counterpart of the `optional` marker of the type
-  fields.
+  **Required markers (decided).** Every required field a person can edit in Details carries the same marker,
+  `<small>required</small>` under its label: Name, Agent alias, Project / environment and Type (the last two only
+  on the add form; on the update form they are fixed text). Tags and the rotation reminder carry none. In Secret
+  values the marker is the other way round: every field is required unless it says `optional`.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
   reference (field table, example; the example's long lines wrap and an environment ID may break, so no value is clipped) stand side by side; below that they stack and "Format ↓" in the intro jumps
   to the reference. The form column is the wider one (1.5 : 1), so an environment ID and its "Copy ID" share one
@@ -219,7 +229,8 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open (every fold, Account's "Change sign-in password"
   too); on phone an environment row is one line (sign, count, Edit; a long sign wraps inside itself), and a
   project's head is one line while it fits: a long project name takes the line and the count drops under it, with
-  Edit at the right of that second line (`.fold-tail`). One shared password block (`confirm-setup`) above the cards serves every form of the page.
+  Edit at the right of that second line (`.fold-tail`). On desktop the count and Edit are one group at the right
+  that never wraps (`.fold-tail`), and a long project name wraps in the room at its left. One shared password block (`confirm-setup`) above the cards serves every form of the page.
 - `/workspaces/{w}/types` — the entry types as folds under the tabs, listed by name whatever the case (so are
   the Type options everywhere), then the h2 section "Add an entry type".
   One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
@@ -253,7 +264,9 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   `App\Vault\ConfirmationRequired` (403), which renders this form instead of a generic error. After confirming you
   go back to `return`: a same-origin path only, never `/confirm`, `/login`, `/logout` or `/mfa`. Because
   `Referrer-Policy: no-referrer` hides the Referer, the return path falls back to the last page shown (kept in the
-  session as `last_page`). A wrong password re-renders the form with 401. On phones the solid button comes first
+  session as `last_page`). A wrong password re-renders the form with 401. On desktop a short action shares the
+  row with the note; an action too long for that puts the note above and the two buttons under it at the right, as
+  one row: Cancel stays beside the solid button, whose label wraps, never alone on a line above it. On phones the solid button comes first
   and Cancel stands under it, both at the right edge (`data-phone-first`: CSS order, and app.js moves the button
   before Cancel in the document at that width, so the focus order is the order seen).
 - `/workspaces/new` — create a workspace.
@@ -332,7 +345,8 @@ Every page follows these, so the same kind of thing looks and behaves the same e
 5. **Filter bars** (Entries, Grants, Activity) share one pattern: a `details.filters[data-wide-open]` holding a
    `.toolbar` with labelled selects and one **Apply** button. On desktop it is always open and no toggle (its
    summary is not shown) and ends where the board under it ends: on Entries the search field takes the room, on
-   Grants and Activity Apply stands at the right edge. On phone it is a closed drawer. When a filter is set, a `.filter-status` line says
+   Grants and Activity Apply stands at the right edge (the Grants Entry select, which names an entry with its
+   project and environment, may be up to 28em wide in that room). On phone it is a closed drawer. When a filter is set, a `.filter-status` line says
    "Showing N of M" with the only **Clear filters** link beside it (`.filter-count`), then one `.chip.filter`
    per active filter.
 6. **Boards on phone** become compact cards of two or three lines. Values that need their column head carry an
@@ -348,13 +362,17 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    **Long data never widens a board (decided).** As tables, Requests, Grants and an entry's Agent access have a
    fixed layout (like Entries): every column has its width from the table, so the last column (Decision, Finished,
    Revoke, State) always ends inside the board and no column moves between the whole list and a filtered one.
-   Grants: Agent 104 px, Action 150, Approval 166, End date 192, State 84, the Revoke column 227 (room for its armed
-   two-step), and the entry takes the rest; the first cell keeps the board's left padding, so its text starts
-   where every other board's does. Agent access: 15 / 21 / 27 / 25 % and State the rest. An agent name, an action
+   Grants: Agent 139 px, Action 144, Approval 162, End date 200, State 82, the Revoke column 225 (room for its armed
+   two-step), and the entry takes the rest (148); 12 px between two columns; the first cell keeps the board's left
+   padding, so its text starts where every other board's does. End date has 188 px for its text: "Revoked
+   2026-11-21 23:27" (184 px) ends 16 px before the State chip. Agent access: 15 / 21 / 27 / 25 % and State the rest. An agent name, an action
    code, an entry name and an environment sign wrap in their cell or card, inside a word when they must; agent
    names carry no `.nobreak`. A date with its label ("Revoked 2026-11-20 10:15") is one `.nobreak` piece, in the
-   `end-date` partial too. The widths fit the usual data on one line (a nine-letter agent name, a sixteen-letter
-   action code). On a grant card the action wraps beside the state chip like the name does (both leave it 84 px).
+   `end-date` partial too. The widths fit the usual data on one line ("ci-runner", a sixteen-letter action code,
+   a sixteen-letter entry name). **Names break at their hyphens.** The Agent column holds a part of thirteen
+   letters on Requests and fifteen or more on Grants and an entry page, so "deployment-orchestrator-eu-west-1-canary"
+   wraps after its hyphens; a break inside a word is left for a part longer than that and for a name without a
+   hyphen ("DeploymentOrchestratorWithoutAnyBreakPoint"), where nothing else is possible. On a grant card the action wraps beside the state chip like the name does (both leave it 84 px).
    **Separators stay with what comes before them.** A "·" or "/" between two parts of a card line is glued to the
    part before it (a no-break space, or the pseudo-element of the earlier item), so a wrapped line never starts
    with one: "Shop admin panel ·" then the project, "shop /" then the sign, the deadline "·" then the time left.
@@ -368,9 +386,13 @@ Every page follows these, so the same kind of thing looks and behaves the same e
   environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right (Grants only). The
   chip is out of the flow, so a long name or action wraps under it and never moves it.
   **Requests columns:** as tables, "Requests waiting for you" and "Recent requests" share the widths of their
-  leading columns (Agent 97 px, Action 148, Entry 166, State 203, Requested 200), so each column starts at the same
-  place in both, with any data; the last column (Decision or Finished) takes the rest. The site MFA field is 9em
-  wide to make that room. In app.css every property of these boards is set once: shared rules first, then one
+  leading columns (Agent 123 px, Action 144, Entry 149, State 200, Requested 196; 12 px between two columns), so
+  each column starts at the same place in both, with any data; the last column (Decision or Finished) takes the
+  rest (288). State is exactly its widest content, the lamp and "waiting for approval" (187 px), so Agent's room
+  comes from the gaps and from Entry, which still holds "Shop admin panel" on one line. On an entry page the
+  boards have no Entry column (`.no-entry`): its width goes to Agent (160) and Action (256), so a long agent name
+  and a long action code ("storefront.administrator-console-signin") break at their hyphens, and State, Requested
+  and the last column start where they do on Requests. The site MFA field is 9em wide to make that room. In app.css every property of these boards is set once: shared rules first, then one
   block for the card (below 1181 px) and one for the table; nothing is set in one and overridden in the other.
   **Requests on phones:** "Checked HH:MM UTC" is a small line right under "Check now" and belongs to it; the
   password line ("Password confirmed until …") follows under a dashed rule, apart from it and before the cards.
@@ -446,6 +468,11 @@ validates the date. An import that fails names the item by its place in the arra
 - **Entries list.** "archived" and "rotation due" chips both sit under the entry name.
 - **Import** speaks of entries only: "every entry is checked", "Entry 2: …".
 - **Confirm prompts** (`data-confirm`) use no quotation marks: "Remove environment qa?".
+- **Empty states** end their sentences: the bold line has its period ("No projects yet.", "No entry types yet.")
+  and so does a sentence that ends in a link ("Add the first project.", "Add a workspace."). A link with an arrow
+  ("Manage grants →") takes none.
+- **Import, phones.** A Format card whose description holds a link is as tall as its neighbours: the link is part
+  of the sentence and gets no tap padding of its own.
 - **Validation messages** name a field by its visible label ("Require owner approval for every run", "6-digit
   code", "Type DELETE to destroy"). A select's empty option names what to choose and fits 390 px:
   "Choose an environment" under the label "Project / environment".

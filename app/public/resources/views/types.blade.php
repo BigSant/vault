@@ -41,7 +41,7 @@
 @include('confirm-inline', ['verb' => 'change entry types', 'ask' => 'Enter your current password, then save, add or remove below.', 'shared' => 'confirm-types'])
 @endunless
 @if($types->isEmpty())
-    <div class="empty capped"><b>No entry types yet</b>An entry needs an entry type. <a href="#add-type">Add the first entry type</a></div>
+    <div class="empty capped"><b>No entry types yet.</b>An entry needs an entry type. <a href="#add-type">Add the first entry type</a>.</div>
 @else
 @foreach($types as $type)
     @php

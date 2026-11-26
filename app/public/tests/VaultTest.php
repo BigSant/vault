@@ -400,7 +400,9 @@ final class VaultTest extends TestCase
             ->assertSee('is-scoped', false)->assertSee('<b>1</b><span>rotation due in this view →</span>', false);
         $this->get('/?q=Other&state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 1)
             ->assertSee('<b>1</b><span>rotation due in this view</span>', false)->assertSeeText('Showing 1 of 2 entries');
-        $this->get('/?type=missing')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 0);
+        // Nothing due in the view: a plain number, not a link to an empty list.
+        $this->get('/?type=missing')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 0)
+            ->assertSee('<div class="stat"><b>0</b><span>rotation due in this view</span></div>', false)->assertDontSee('stat-link', false);
         // The state filter alone is the stat's own filter: the number and the label stay.
         $this->get('/?state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 2)->assertSee('<b>2</b><span>rotation due</span>', false);
 

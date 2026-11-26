@@ -634,7 +634,7 @@ final class ShellTest extends TestCase
             ->assertSee('<title>Requests · Main space · Vault</title>', false)
             ->assertSeeInOrder(['data-refresh-now>Check now<span class="sr-only"> for requests</span></a> <button type="button" class="quiet" data-refresh-pause aria-pressed="false" hidden>Pause automatic checks</button> <span class="note refresh-status" data-refresh-status'], false)
             ->assertSee('<h2 id="waiting" data-refresh="waiting-title">', false);
-        $this->assertStringContainsString('<table class="board compact-board requests" aria-labelledby="{{ $id }}"', $view('operations'));
+        $this->assertStringContainsString('<table class="board compact-board requests{{ empty($hideEntry) ? \'\' : \' no-entry\' }}" aria-labelledby="{{ $id }}"', $view('operations'));
         foreach (["const pauseKey = 'vault.requests.paused';", 'if (!manual && paused) return;', "'Paused \\u00B7 last checked ' + last + ' UTC'", "'Resume automatic checks' : 'Pause automatic checks'",
             "button.setAttribute('aria-pressed', String(paused));", "try { paused = sessionStorage.getItem(pauseKey) === '1'; } catch {}",
             "'Request ' + held[0] + ' will update when you leave this row'"] as $line) {
@@ -699,8 +699,16 @@ final class ShellTest extends TestCase
         }
         // Requests: the two boards share the widths of their leading columns.
         $this->assertStringContainsString('<th scope="col" class="c-who">Agent</th><th scope="col" class="c-action">Action</th>@empty($hideEntry)<th scope="col" class="c-entry">Entry</th>@endempty<th scope="col" class="c-state">State</th><th scope="col" class="c-when">Requested (UTC)</th>', $view('operations'));
-        foreach (['c-who{width:97px}', 'c-action{width:148px}', 'c-entry{width:166px}', 'c-state{width:203px}', 'c-when{width:200px}'] as $rule) {
+        foreach (['c-who{width:123px}', 'c-action{width:144px}', 'c-entry{width:149px}', 'c-state{width:200px}', 'c-when{width:196px}'] as $rule) {
             $this->assertStringContainsString('.board.requests th.'.$rule, $css);
+        }
+        // Without the Entry column (an entry page) Agent and Action share its width: 160 + 256 = 123 + 144 + 149,
+        // so State starts where it does on Requests.
+        $this->assertStringContainsString('.board.requests.no-entry th.c-who{width:160px}', $css);
+        $this->assertStringContainsString('.board.requests.no-entry th.c-action{width:256px}', $css);
+        // Grants: the widths with a column of their own leave the entry 148 px of the 1100.
+        foreach ([1 => 139, 2 => 144, 4 => 162, 5 => 200, 6 => 82, 7 => 225] as $n => $width) {
+            $this->assertStringContainsString('.board.grants th:nth-child('.$n.'){width:'.$width.'px}', $css);
         }
         // Long data never moves a column or pushes the last one out of the board: Requests, Grants and an entry's
         // Agent access are fixed-layout tables, and agent names and action codes wrap (no .nobreak on them).
@@ -728,6 +736,14 @@ final class ShellTest extends TestCase
         $this->assertStringContainsString('.top>details.menu.account{min-width:0;max-width:16em}', $css);
         // Entries: the open filter bar is one row, its selects capped at 12em.
         $this->assertStringContainsString('form.catalog-filters>details.filters[open] .toolbar select{width:100%;min-width:0;max-width:12em}', $css);
+        // "All environments" is never cut: that select keeps its width and the others give way.
+        $this->assertStringContainsString('form.catalog-filters>details.filters[open] .toolbar select[name=environment]{width:13em;max-width:none}', $css);
+        // Setup, wide screens: a project's count and Edit are one group that does not wrap.
+        $this->assertStringContainsString('.fold-tail{display:flex;flex:none;align-items:center;gap:16px;white-space:nowrap}', $css);
+        // The confirm page, wide screens: Cancel stays beside the solid button, whose label wraps.
+        $this->assertStringContainsString('.form-foot:has(.action-name) .controls{flex-wrap:nowrap;margin-left:auto}', $css);
+        // The open workspace list shows a name whole.
+        $this->assertStringContainsString('.menu-list .menu-name{white-space:normal;overflow:visible;overflow-wrap:anywhere}', $css);
         // Entries: four equal stat columns on desktop.
         $this->assertStringContainsString('@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))', $css);
         // A viewer has no Secret values section.
@@ -989,11 +1005,16 @@ final class ShellTest extends TestCase
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'shop']);
         DB::table('environments')->insert(['id' => (string) Str::uuid(), 'project_id' => $project, 'name' => 'stage']);
         $page = $this->get('/entries/new?workspace='.$this->workspace)->assertOk();
+        // The detour is a closed disclosure: "Missing a type or field?" stays in view, the rest is behind it.
         // Setup opens in a new tab and says so; "Reload types" (shown by script) swaps the Type options and #type-fields only.
         // The sentence names the button, which only script shows: the page prints the wording for no script, and app.js swaps it.
         $page->assertSee('/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span>', false)
-            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', 'Missing a type or field? ', 'Edit entry types in a new tab</a>', '<button type="button" data-reload-types hidden>Reload types</button>', 'data-reload-status></span></p>'], false)
+            ->assertSeeInOrder(['<details class="type-detour" data-reload-types-row><summary>Missing a type or field?</summary><div class="type-detour-body"><span class="note"><a class="more-link"', 'Edit entry types in a new tab</a>', '<button type="button" data-reload-types hidden>Reload types</button>', 'data-reload-status></span></div></details>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
+            // Every required field of Details carries the same marker.
+            ->assertSee('<label><span>Name <small>required</small></span><input name="name"', false)
+            ->assertSee('<label><span>Project / environment <small>required</small></span><select name="environment_id" required>', false)
+            ->assertSee('<label><span>Type <small>required</small></span><select name="type" id="entry-type" required>', false)
             // The alias hint is the field's description, not part of its name.
             ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias"', false)
             ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">', false)
@@ -1027,7 +1048,7 @@ final class ShellTest extends TestCase
         DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Deploy key', 'alias' => 'deploy-key', 'type' => 'ssh', 'version' => 1, 'created_at' => now(), 'updated_at' => now()]);
         // The update form has the Setup detour too; its type is fixed, so the button reloads the fields.
         $this->get('/entries/new?workspace='.$this->workspace.'&entry='.$entry)->assertOk()
-            ->assertSeeInOrder(['<p class="type-detour" data-reload-types-row>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', 'data-script-text="After editing the entry type, return here and choose Reload fields."', ' hidden>Reload fields</button>', 'data-reload-status></span></p>', '<fieldset id="type-fields">'], false)
+            ->assertSeeInOrder(['<details class="type-detour" data-reload-types-row><summary>Missing a field?</summary>', '/types#type-ssh" target="_blank" rel="noopener">Edit entry types in a new tab</a>', 'data-script-text="After editing the entry type, return here and choose Reload fields."', ' hidden>Reload fields</button>', 'data-reload-status></span></div></details>', '<fieldset id="type-fields">'], false)
             // Each "Clear the current … value" box has an id of its type and field, so a reload can give it back its state.
             ->assertSee('<input type="checkbox" id="clear-ssh-passphrase" name="clear_fields[]" value="passphrase" data-optional', false)
             ->assertDontSee('id="clear-ssh-private_key"', false);

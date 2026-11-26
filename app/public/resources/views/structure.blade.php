@@ -47,7 +47,7 @@
         <details class="fold project-edit"@if($oldRename || $oldProjectDelete) open @endif>
             <summary>
                 <span class="fold-name"><span class="name">{{ $project->name }}</span></span>
-                {{-- .fold-tail: on phones the count and Edit stay together when a long name takes the first line. --}}
+                {{-- .fold-tail: the count and Edit stay together, at the right on wide screens and under a long name on phones. --}}
                 <span class="fold-tail"><span class="fold-meta">{{ $entries($projectEntries) }}</span>
                 <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> project {{ $project->name }}</span></span></span>
             </summary>
@@ -111,7 +111,7 @@
         </details>
     </div>
 @empty
-    <div class="empty"><b>No projects yet</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a></div>
+    <div class="empty"><b>No projects yet.</b>An entry lives in an environment of a project. <a href="#add-project">Add the first project</a>.</div>
 @endforelse
 </div>
 

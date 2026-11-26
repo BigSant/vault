@@ -17,7 +17,7 @@
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
     <fieldset>
         <legend>Details</legend>
-        <label><span>Name</span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
+        <label><span>Name <small>required</small></span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
         {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
         <div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div>
         @if($entry)
@@ -35,20 +35,20 @@
                 <span>Type</span>
                 <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
             </div>
-            {{-- As on Add an entry: the detour to Setup opens a new tab, and "Reload fields" (shown by app.js) swaps
-                 only the type field rows. What was typed stays, and so does every "Clear the current … value" box;
+            {{-- As on Add an entry: the detour to Setup is a closed disclosure ("Missing a field?"); its link opens a
+                 new tab, and "Reload fields" (shown by app.js) swaps only the type field rows. What was typed stays, and so does every "Clear the current … value" box;
                  a typed value whose field is gone is asked about first. The sentence names the button; without
                  script there is no button, and the sentence printed here says so (data-script-text). --}}
-            <p class="type-detour" data-reload-types-row><span class="note">Missing a field? <a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></p>
+            <details class="type-detour" data-reload-types-row><summary>Missing a field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></div></details>
         @else
             @php $selectedEnv = old('environment_id'); @endphp
-            <label><span>Project / environment</span><select name="environment_id" required>
+            <label><span>Project / environment <small>required</small></span><select name="environment_id" required>
                 <option value="">Choose an environment</option>
                 @foreach($environments as $e)
                     <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
                 @endforeach
             </select></label>
-            <label><span>Type</span><select name="type" id="entry-type" required>
+            <label><span>Type <small>required</small></span><select name="type" id="entry-type" required>
                 <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>
@@ -56,10 +56,11 @@
                  fetches this page again and swaps only the Type options and the type field rows; what was typed stays.
                  A typed value that would have no field after the reload is never dropped silently: the old fields
                  stay, the status names the fields (labels only) and offers "Discard and reload" / "Cancel".
-                 One line under the Type field, starting where the inputs start; the result of a reload is the line
-                 after it (data-reload-status, empty until then). The sentence names the button ("…choose Reload
+                 A closed disclosure under the Type field, starting where the inputs start: the question stays in
+                 view, the instructions and the button are behind it, so the ordinary path is short. The result of a
+                 reload is the line after the button (data-reload-status, empty until then). The sentence names the button ("…choose Reload
                  types."); without script there is no button and the printed sentence says what is true then. --}}
-            <p class="type-detour" data-reload-types-row><span class="note">Missing a type or field? <a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></p>
+            <details class="type-detour" data-reload-types-row><summary>Missing a type or field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></div></details>
         @endif
     </fieldset>
 

@@ -40,7 +40,12 @@
 @unless($archived)
 <div class="stats entry-stats">
     <div class="stat"><b>{{ $activeCount }}</b><span>active {{ Str::plural('entry', $activeCount) }}</span></div>
+    {{-- Nothing due and the filter off: a plain number. A link there would only open an empty list. --}}
+    @if($dueCount === 0 && ! $dueOnly)
+    <div class="stat"><b>0</b><span>{{ $dueLabel }}</span></div>
+    @else
     <a class="stat stat-link{{ $dueCount > 0 ? ' has-due' : '' }}{{ $dueOnly ? ' is-on' : '' }}{{ $dueScoped ? ' is-scoped' : '' }}" href="{{ '/?'.http_build_query(array_merge(request()->except(['page', 'state', 'due']), ['workspace' => $space->id], $dueOnly ? [] : ['state' => 'due'])) }}"{!! $dueOnly ? ' aria-current="true"' : '' !!}><b>{{ $dueCount }}</b><span>{{ $dueOnly ? $dueLabel : $dueLabel.' →' }}</span>@if($dueOnly) <span class="stat-clear">Clear<span class="sr-only"> filter</span> ×</span>@endif</a>
+    @endif
     <div class="stat"><b>{{ $prodCount }}</b><span>in production</span></div>
     <div class="stat"><b>{{ $usedRecent }}</b><span>used by agents, 7 days</span></div>
 </div>

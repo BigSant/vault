@@ -74,6 +74,10 @@ details.menu.account>summary:hover,details.menu.account[open]>summary{border-col
 max-height:70vh;overflow-y:auto;padding:4px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;box-shadow:0 10px 28px var(--term-bg)}
 details.menu.account .menu-list{left:auto;right:0;min-width:11em}
 .menu-head{margin:0;padding:6px 10px 4px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+/* In the open list a name is whole: it wraps, with the role beside it (two names that differ only at the end stay
+   apart). The closed menu in the bar keeps its one line and its ellipsis. */
+.menu-list .menu-name{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.menu-list a>.chip{flex:none}
 .menu-list a{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:36px;padding:6px 10px;border-radius:3px;
 border-left:3px solid transparent;color:var(--ink);font-size:13px}
 .menu-list a:hover{background:var(--panel-2);color:var(--amber);text-decoration:none}
@@ -327,6 +331,14 @@ form.catalog-filters>details.filters[open] .toolbar{flex-wrap:nowrap}
 form.catalog-filters>details.filters[open] .toolbar label{flex:0 1 auto;min-width:6.5em}
 form.catalog-filters>details.filters[open] .toolbar select{width:100%;min-width:0;max-width:12em}
 form.catalog-filters>details.filters[open] .toolbar button{flex:none}
+/* "All environments" is never cut at rest: that select keeps 13em (182 px; the option needs 177) and the others
+   give way. "All projects" keeps its 146 px too (12.2em of the label's 12 px), so the row is still one row at
+   901 px, and from 1000 px up every select shows its resting option whole. */
+form.catalog-filters>details.filters[open] .toolbar label:has(>select[name=environment]){flex:none}
+form.catalog-filters>details.filters[open] .toolbar select[name=environment]{width:13em;max-width:none}
+form.catalog-filters>details.filters[open] .toolbar label:has(>select[name=project]){min-width:12.2em}
+/* Grants: the Entry filter names an entry with its project and environment; it may use the room the bar has. */
+main>details.filters[data-wide-open] .toolbar select[name=entry]{max-width:28em}
 }
 /* Entries: the Search button is for the closed drawer; an open filter bar has Apply, which sends the search too. */
 .catalog-filters:has(details.filters[open]) .catalog-search{display:none}
@@ -514,19 +526,25 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 /* Table. "Requests waiting for you" and "Recent requests" are two boards with the same leading columns, in a fixed
    layout: Agent, Action, Entry, State and Requested have one width each, so a column starts at the same place in
    both and no data moves it, and the last column (Decision or Finished) takes what is left, always inside the
-   board. The widths are what the usual cell needs: a nine-letter agent name, a sixteen-letter action and entry
-   name, "waiting for approval" with its lamp, "Expires" with its date. Longer names and codes wrap in their cell. */
+   board. The widths are what the usual cell needs: a sixteen-letter action and entry name, "waiting for approval"
+   with its lamp, "Expires" with its date. The Agent column holds thirteen letters (102 px of text, as on Grants):
+   "ci-runner" is one line, and a long name breaks after its hyphens ("deployment-", "orchestrator-"), inside a
+   word only when one part is longer than that or the name has no hyphen. Longer codes wrap in their cell. */
 .board.requests{table-layout:fixed}
-.board.requests th.c-who{width:97px}
-.board.requests th.c-action{width:148px}
-.board.requests th.c-entry{width:166px}
-.board.requests th.c-state{width:203px}
-.board.requests th.c-when{width:200px}
+.board.requests th.c-who{width:123px}
+.board.requests th.c-action{width:144px}
+.board.requests th.c-entry{width:149px}
+.board.requests th.c-state{width:200px}
+.board.requests th.c-when{width:196px}
+/* Without the Entry column (an entry page) its width goes to Agent and Action, so a long agent name and a long
+   action code break at their hyphens; State, Requested and the last column start where they do on Requests. */
+.board.requests.no-entry th.c-who{width:160px}
+.board.requests.no-entry th.c-action{width:256px}
 .board.requests td{overflow-wrap:anywhere}
-/* Six columns fit --wide: tighter cells; the last one keeps the board's normal right padding (12 px), so "Continue
-   sign-in" does not sit on the edge. */
-.board.requests :is(th,td):not(:first-child){padding-left:8px}
-.board.requests :is(th,td):not(:first-child):not(:last-child){padding-right:8px}
+/* Six columns fit --wide: 12 px between two columns (6 + 6); the last one keeps the board's normal right padding
+   (12 px), so "Continue sign-in" does not sit on the edge. */
+.board.requests :is(th,td):not(:first-child){padding-left:6px}
+.board.requests :is(th,td):not(:last-child){padding-right:6px}
 .board.requests td.when .line{white-space:nowrap}
 /* The time left is a line of its own under the deadline. */
 .board.requests .left{display:block;margin-top:3px}
@@ -556,6 +574,14 @@ label.indent{margin-left:min(14em,30%)}
 .form-foot:has(.action-name) .controls{flex:0 1 auto;min-width:0;max-width:100%}
 .form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4}
 button.action-name .name{font-weight:400}
+/* Wide screens: a short label shares the row with the note. A long one does not fit beside it: the two buttons
+   then take the row under the note, at the right, and stay one row themselves (Cancel beside the button, whose
+   label wraps), so Cancel is never left alone on a line above it. */
+@media (min-width:901px){
+.form-foot:has(.action-name){flex-wrap:wrap;gap:10px 14px}
+.form-foot:has(.action-name) .controls{flex-wrap:nowrap;margin-left:auto}
+.form-foot:has(.action-name) .controls>.btn{flex:none}
+}
 /* Phones: the solid button first, Cancel under it, both at the right edge. */
 @media (max-width:900px){
 .form-foot:has(.action-name) .controls{flex-direction:column;align-items:flex-end;flex-wrap:nowrap}
@@ -667,8 +693,13 @@ details.fold:is(.env,.password-fold)>summary:has(.fold-act) .fold-name{flex:1 1 
 details.fold.project-edit>summary{gap:6px 10px}
 details.fold.project-edit>summary:has(.fold-act) .fold-name{flex:0 1 auto;min-width:0}
 details.fold.project-edit>summary>.fold-tail{display:flex;flex:1 0 auto;align-items:center;justify-content:space-between;gap:10px}}
-/* Wide screens: the count and the toggle are items of the summary itself. */
-@media (min-width:901px){.fold-tail{display:contents}}
+/* Wide screens: the count and Edit are one group at the right that never wraps; a long project name wraps in the
+   room at the left of it. */
+@media (min-width:901px){
+details.fold.project-edit>summary{flex-wrap:nowrap}
+details.fold.project-edit>summary>.fold-name{flex:1 1 0;min-width:0}
+.fold-tail{display:flex;flex:none;align-items:center;gap:16px;white-space:nowrap}
+}
 /* Password confirmation inside the page (confirm-inline). Valid: one quiet line, "Confirmed until HH:MM UTC.".
    Expired (.is-needed, set by the server or app.js): the legend, the reason and the field under a dashed rule.
    .shared stands outside the forms it serves: above the form foot of the Secret values card, and as a panel of
@@ -861,18 +892,25 @@ background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);lett
    and in normal case (the label is uppercase; this is the action). */
 .stat .stat-clear{display:block;margin-top:5px;color:var(--amber);white-space:nowrap;text-transform:none;letter-spacing:0;font-size:13px}
 .stat-link:hover .stat-clear{text-decoration:underline}
-/* Add an entry: the detour to Setup is one line under the Type field, starting where the inputs start (the label
-   column is 14em of the label's 13px, plus the gap): the note, then "Reload types". What a reload did is the line
-   after it. On phones it starts at the left edge and wraps. */
-.type-detour{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:0 0 8px calc(13px*14 + 10px)}
+/* Add an entry: the detour to Setup is a quiet disclosure under the Type field, starting where the inputs start
+   (the label column is 14em of the label's 13px, plus the gap). Closed it is the one question, "Missing a type or
+   field?"; open it holds the note with the link, then "Reload types", then what a reload did. On phones it starts
+   at the left edge. */
+details.type-detour{margin:0 0 8px calc(13px*14 + 10px);background:none;border:none;border-radius:0}
+details.type-detour>summary{display:inline-flex;align-items:center;gap:6px;padding:2px 0;font:400 13px/1.4 var(--mono);color:var(--dim)}
+details.type-detour>summary::before,details.type-detour[open]>summary::before{flex:none;content:"\25B8"}
+details.type-detour[open]>summary::before{content:"\25BE"}
+details.type-detour>summary:hover{color:var(--ink)}
+.type-detour-body{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:4px 0 0}
 .type-detour button{flex:none}
 .type-detour .note{margin:0}
 .type-detour .reload-status{flex:1 1 100%}
 .type-detour .reload-status:empty{display:none}
 /* A reload that would drop something typed asks first: its two buttons take the line after the status. */
 .type-detour .reload-ask{flex:1 1 100%}
-/* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of "Reload types". */
-@media (max-width:900px){.type-detour{margin-left:0;gap:12px}}
+/* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of the question
+   above it and of "Reload types". */
+@media (max-width:900px){details.type-detour{margin-left:0}.type-detour-body{gap:12px;margin-top:12px}}
 .field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 .field>label{display:block;margin:0}
 /* A field's hint: its description (aria-describedby), outside the label, on a line of its own under the field (the
@@ -978,15 +1016,18 @@ form.action details.import-ref{background:var(--panel-2)}
    whole list and a filtered one, and Revoke is always inside the board; the entry takes what is left. The first
    cell keeps the board's left padding, so its text starts where every other board's does. */
 .board.grants{table-layout:fixed}
-.board.grants th:nth-child(1){width:104px}
-.board.grants th:nth-child(2){width:150px}
-.board.grants th:nth-child(4){width:166px}
-.board.grants th:nth-child(5){width:192px}
-.board.grants th:nth-child(6){width:84px}
-.board.grants th:nth-child(7){width:227px}
+/* 12 px between two columns (6 + 6), as on Requests. Agent holds fifteen letters (118 px of text), so a long name
+   breaks after its hyphens ("orchestrator-", "reconciliation-"); End date has 188 px for its text, so "Revoked
+   2026-11-21 23:27" (184 px) ends 16 px before the State chip; the entry keeps a sixteen-letter name on one line. */
+.board.grants th:nth-child(1){width:139px}
+.board.grants th:nth-child(2){width:144px}
+.board.grants th:nth-child(4){width:162px}
+.board.grants th:nth-child(5){width:200px}
+.board.grants th:nth-child(6){width:82px}
+.board.grants th:nth-child(7){width:225px}
 .board.grants td{overflow-wrap:anywhere}
-.board.grants :is(th,td):not(:first-child){padding-left:8px}
-.board.grants :is(th,td):not(:last-child){padding-right:8px}
+.board.grants :is(th,td):not(:first-child){padding-left:6px}
+.board.grants :is(th,td):not(:last-child){padding-right:6px}
 }
 /* Members columns: name, email, role, actions. */
 .board.grants td.entry small,.board.members td:nth-child(3) small{display:block;margin-top:2px;color:var(--dim)}
@@ -1143,9 +1184,10 @@ details.type-fold .list.edit td.remove{margin-left:auto}
 main.login .mark{padding:3px 0}
 .error-summary li a{display:inline-flex;align-items:center;min-height:40px}
 .board.entries td.name>a{display:inline;padding:0;margin:0}
-/* A plain list whose rows are links (Account: Workspaces): the rows are tall enough that two tap boxes never overlap. */
-.list:not(.edit) td:has(>a:only-child){padding-top:11px;padding-bottom:11px}
+/* A plain list whose rows are links (Account: Workspaces): the rows are tall enough that two tap boxes never overlap.
+   Not a description with a link in its sentence (Import's Format cards): that card is as tall as its neighbours. */
+.list:not(.edit) td:not(.desc):has(>a:only-child){padding-top:11px;padding-bottom:11px}
 label.check{min-height:40px;align-items:center}
 details>summary{min-height:40px}
-details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add)>summary{padding-top:11px;padding-bottom:11px}
+details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-detour)>summary{padding-top:11px;padding-bottom:11px}
 }
