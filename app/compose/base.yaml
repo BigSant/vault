@@ -35,10 +35,16 @@ services:
     volumes:
       - ${PROJECT_DATA_DIRECTORY}/security/broker/:/run/vault/:ro
       - ${PROJECT_DATA_DIRECTORY}/connectors/:/config/:ro
+      # Handoff files for the executor (storage_state). Mounted into the broker only; the executor reads the host
+      # directory through its group. Server: VAULT_HANDOFF_DIRECTORY=/run/vault-handoff/<env> (docs/operations.md).
+      - ${VAULT_HANDOFF_DIRECTORY:-${PROJECT_DATA_DIRECTORY}/handoff}:/handoff
     environment:
       BAO_ADDR: http://openbao:8200
       APP_URL: http://webserver
       EGRESS_PROXY: http://egress:8080
+      VAULT_HANDOFF_DIR: /handoff
+      # When set, the directory's group must be this GID (the vault-handoff group), or no handoff is written.
+      VAULT_HANDOFF_GID: ${VAULT_HANDOFF_GID:-}
     networks: [vault_control]
   egress:
     image: ${PROJECT_NAME}-broker:1

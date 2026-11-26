@@ -38,6 +38,49 @@ def bao(args, payload=None, token='', acceptable=(0,), container=None):
     return result.stdout
 
 
+def env_setting(name):
+    """A key from the DDE env files (common, then the environment's), without reading or printing anything else."""
+    value = None
+    for path in (ROOT/'app/env/common.env', ROOT/'app/env'/(ENV+'.env')):
+        if path.is_file():
+            for line in path.read_text().splitlines():
+                if line.startswith(name+'='):
+                    value = line.split('=', 1)[1].strip().strip('"\'')
+    return value or None
+
+
+def handoff_directory():
+    """Prepares or checks the broker's handoff directory. The default (DATA/handoff) is made here; a configured one
+    (VAULT_HANDOFF_DIRECTORY, e.g. /run/vault-handoff/prod from tmpfiles.d) must already exist, made by root."""
+    import grp
+    import stat
+    configured = env_setting('VAULT_HANDOFF_DIRECTORY')
+    path = Path(configured) if configured else DATA/'handoff'
+    if not path.is_absolute():
+        raise RuntimeError('VAULT_HANDOFF_DIRECTORY must be an absolute path')
+    if not configured and not os.path.lexists(path):
+        path.mkdir(mode=0o700)
+    if not configured and path.is_dir() and not path.is_symlink() and path.stat().st_uid == os.getuid():
+        # A default directory made earlier (or by Docker's bind mount for this user) gets the strict mode.
+        os.chmod(path, 0o750)
+        try:
+            group = grp.getgrnam('vault-handoff')
+            if group.gr_gid in os.getgroups():
+                os.chown(path, -1, group.gr_gid)
+                os.chmod(path, 0o2750)
+        except KeyError:
+            pass
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        raise RuntimeError('Handoff directory missing; create it as in docs/operations.md (tmpfiles.d)') from None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o027:
+        raise RuntimeError('Handoff directory must be a real directory owned by this user, mode 2750 or stricter (no symlink)')
+    expected = env_setting('VAULT_HANDOFF_GID')
+    if expected and info.st_gid != int(expected):
+        raise RuntimeError('Handoff directory group differs from VAULT_HANDOFF_GID')
+
+
 def prepare():
     for part in ('bootstrap/cache','storage/framework/cache/data','storage/framework/sessions','storage/framework/views','storage/logs'):
         (ROOT/'app/public'/part).mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -54,6 +97,7 @@ def prepare():
         save(broker_key, (DATA/'security/app/broker.key').read_text())
     if not (DATA/'connectors/connectors.json').exists():
         save(DATA/'connectors/connectors.json', (ROOT/'app/config/connectors.example.json').read_text())
+    handoff_directory()
 
 
 def initialize():
