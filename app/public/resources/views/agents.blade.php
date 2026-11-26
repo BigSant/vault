@@ -17,7 +17,7 @@
     @foreach($machines as $m)
         @php $mState = $m->revoked_at ? 'revoked' : (strtotime($m->expires_at) <= time() ? 'expired' : 'active'); @endphp
         <tr id="agent-{{ $m->id }}" class="{{ $mState === 'active' ? (\App\Vault\Access::endsSoon($m->revoked_at, $m->expires_at) ? 'is-wait' : 'is-ok') : 'is-idle' }}">
-            <td class="name" data-label="Agent"><b>{{ $m->name }}</b></td>
+            <td class="name" data-label="Agent"><b>{{ $m->name }}</b>@if($m->executor) <span class="chip" title="May receive handoff files (storage_state). Never give an executor's token to an LLM agent.">executor</span>@endif</td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $m->revoked_at, 'ends' => $m->expires_at, 'reason' => null, 'own' => null])</td>
             <td class="grants" data-label="Active grants">@if($m->active_grants)<a href="/workspaces/{{ $space->id }}/grants?agent={{ $m->id }}">{{ $m->active_grants }} {{ Str::plural('grant', $m->active_grants) }} →</a>@else<span class="muted">no grants</span>@endif</td>
             {{-- Whether the agent may create one-time links (Links). Its entries' values also need a grant of
@@ -37,6 +37,7 @@
         <p class="note">Creates a bearer token, shown once.</p>
         <label><span>Name</span><input name="name" value="{{ old('name') }}" placeholder="e.g. deploy-bot" required maxlength="100"></label>
         <label><span>Valid for (days)</span><input type="number" name="days" min="1" max="30" value="{{ old('days', 7) }}" required></label>
+        <div class="field check-field"><label class="check"><input type="checkbox" name="executor" value="1" aria-describedby="agent-executor-hint" @checked(old('executor') === '1')> Executor</label><small class="hint" id="agent-executor-hint">A trusted host process (e.g. a test runner), never an LLM agent. Only an executor may hold storage_state grants: Vault logs in and leaves the session in a file only it can read. Cannot be changed later.</small></div>
         @if($linksReady)<div class="field check-field"><label class="check"><input type="checkbox" name="links" value="1" aria-describedby="agent-links-hint" @checked(old('links') === '1')> May create one-time links</label><small class="hint" id="agent-links-hint">It can then send any text it writes as a one-time link from this workspace's Onetime Secret account. An entry's values also need a grant of onetimesecret.link.</small></div>@endif
         @if($machines->isEmpty())
             @include('confirm-inline', ['verb' => 'add this agent'])

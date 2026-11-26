@@ -21,6 +21,7 @@
         'link.create' => 'Added one-time link', 'link.burn' => 'Burned one-time link', 'link.cancel' => 'Cancelled one-time link',
         'link.read' => 'One-time link read', 'link.previewed' => 'One-time link previewed',
         'links.settings' => 'Changed Onetime Secret account', 'links.remove' => 'Removed Onetime Secret account',
+        'handoff.written' => 'Login session handed to executor', 'handoff.removed' => 'Handoff file removed', 'machine.executor' => 'Made agent an executor',
         'machine.links_allow' => 'Allowed one-time links for agent', 'machine.links_stop' => 'Stopped one-time links for agent',
         'session.login' => 'Signed in', 'session.logout' => 'Signed out', 'user.password' => 'Changed password', 'user.recover' => 'Recovered account',
     ];

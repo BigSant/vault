@@ -20,6 +20,21 @@ Artisan::command('vault:links', function () {
     $this->info('Checked '.app(\App\Vault\Links::class)->sweep().' open one-time links.');
 });
 Artisan::command('vault:maintenance', function () {
+    // A handoff past its end: the broker removes the file (it already has, its lease ends first) and the removal is
+    // recorded. A broker that does not answer leaves it for the next run; its restart removes every file anyway.
+    $ops = app(\App\Vault\Operations::class);
+    foreach (DB::table('operations')->where('handoff', 'written')->get() as $op) {
+        try {
+            if (in_array($op->state, ['pending', 'approved', 'running', 'requires_user_action'], true) && strtotime($op->expires_at) <= time()) {
+                $ops->terminal($op, 'expired', DB::table('machines')->where('id', $op->machine_id)->first());
+            } elseif (! in_array($op->state, ['pending', 'approved', 'running', 'requires_user_action'], true)) {
+                // Recorded only after the broker answered: its cancel returns once the file is gone.
+                $ops->broker('POST', '/operations/'.$op->id.'/cancel');
+                $ops->handoffRemoved($op->id, ['succeeded' => 'release', 'expired' => 'ttl', 'revoked' => 'revoke'][$op->state] ?? 'restart');
+            }
+        } catch (\Throwable) {
+        }
+    }
     DB::table('operations')->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '<=', now())->update(['state' => 'expired', 'updated_at' => now()]);
     DB::table('sessions')->where('last_activity', '<', time() - 8 * 3600)->delete();
     DB::table('cache')->where('expiration', '<', time())->delete();

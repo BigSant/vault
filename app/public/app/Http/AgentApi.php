@@ -61,6 +61,11 @@ final class AgentApi
         return $this->ops->cancel($r->attributes->get('machine'), $id);
     }
 
+    public function release(Request $r, string $id)
+    {
+        return $this->ops->release($r->attributes->get('machine'), $id);
+    }
+
     public function mcp(Request $r)
     {
         try {
@@ -92,6 +97,7 @@ final class AgentApi
             'vault_execute' => ['description' => 'Execute a registered action; requires a unique request_id for idempotency.', 'properties' => ['entry_id' => ['type' => 'string'], 'action' => ['type' => 'string'], 'request_id' => ['type' => 'string']], 'required' => ['entry_id', 'action', 'request_id']],
             'vault_status' => ['description' => 'Read your operation status.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
             'vault_cancel' => ['description' => 'Cancel your operation.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
+            'vault_release' => ['description' => 'Executor only: you are done with the handoff file of your operation; Vault removes it and the operation succeeds. The file is ready while vault_status says "ready": true.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
             'vault_link_options' => ['description' => 'Whether you may create one-time links (Onetime Secret), the lifetimes in seconds you may choose, and the entries whose values you may put in a link, with their field keys.', 'properties' => [], 'required' => []],
             'vault_link_create' => ['description' => 'Create a one-time link to send to a person. text is the content; with entry_id it may name that entry\'s fields as {{field}}, and Vault puts the values in, so you never see them (without text: every field, one per line). With an entry the owner may have to approve first: state "pending", then check vault_link_status. Returns the link while it can be opened. request_id: 8-80 characters, the same one for a retry.', 'properties' => ['text' => ['type' => 'string'], 'entry_id' => ['type' => 'string'], 'lifetime' => ['type' => 'integer'], 'passphrase' => ['type' => 'string'], 'note' => ['type' => 'string'], 'request_id' => ['type' => 'string']], 'required' => ['request_id']],
             'vault_link_status' => ['description' => 'Read the state of your one-time link: pending, active (not opened), previewed, revealed, burned, expired, cancelled or failed; the link while it can be opened.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
@@ -100,6 +106,10 @@ final class AgentApi
         // The link tools exist only for an agent the owner allowed one-time links.
         if (! $r->attributes->get('machine')->links) {
             $schemas = array_filter($schemas, fn ($name) => ! str_starts_with($name, 'vault_link_'), ARRAY_FILTER_USE_KEY);
+        }
+        // Releasing a handoff exists only for an executor identity.
+        if (! ($r->attributes->get('machine')->executor ?? false)) {
+            unset($schemas['vault_release']);
         }
         $method = $message['method'];
         if ($method === 'initialize') {
@@ -132,6 +142,7 @@ final class AgentApi
             $data = match ($name) {
                 'vault_search' => $this->ops->catalog($m, $args),'vault_execute' => $this->ops->execute($m, $args['entry_id'], $args['action'], $args['request_id']),
                 'vault_status' => $this->ops->status($m, $args['id']),'vault_cancel' => $this->ops->cancel($m, $args['id']),
+                'vault_release' => $this->ops->release($m, $args['id']),
                 'vault_link_options' => $this->links->options($m), 'vault_link_create' => $this->links->createByMachine($m, $args),
                 'vault_link_status' => $this->links->status($m, $args['id']), 'vault_link_burn' => $this->links->burnByMachine($m, $args['id']),
             };
