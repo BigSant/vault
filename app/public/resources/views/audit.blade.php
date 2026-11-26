@@ -1,15 +1,40 @@
 @extends('layout')
 @section('title', 'Activity')
 @section('content')
-<h1>Activity</h1>
-<p class="note">Who did what and when. Never passwords, codes or the content of external responses.</p>
-@if($events->isEmpty())
-    <div class="empty">No activity yet.</div>
-@else
-<div class="scroll"><table class="list">
-    <thead><tr><th scope="col">When (UTC)</th><th scope="col">Event · subject</th><th scope="col">Actor</th><th scope="col">Outcome</th></tr></thead>
-    <tbody>@foreach($events as $event)<tr><td class="nobreak">{{ $event->created_at }}</td><td><code>{{ $event->event }}</code>@if($event->subject)<small>{{ $event->subject }}</small>@endif</td><td>{{ $event->actor }}</td><td>@include('outcome', ['outcome' => $event->outcome])</td></tr>@endforeach</tbody>
-</table></div>
-<div class="pager"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></div>
+<h1 id="page-title">Activity</h1>
+@php $filterCount = count(array_filter(request()->only(['entry', 'group', 'actor', 'outcome', 'from', 'to']))); @endphp
+{{-- A filter value that cannot be used (a date that does not exist, an unknown choice) is left out, never an error
+     page: the controller passes $filterErrors (filter name => one message) and drops those filters from the query. --}}
+@if(! empty($filterErrors))
+<div class="callout bad filter-errors" role="status">
+    <p><b>{{ count($filterErrors) === 1 ? 'A filter was not applied.' : 'Some filters were not applied.' }}</b></p>
+    <ul>@foreach($filterErrors as $message)<li>{{ $message }}</li>@endforeach</ul>
+</div>
+@endif
+<details class="filters" data-wide-open>
+    <summary>Filters @if($filterCount)<span class="chip muted">{{ $filterCount }}<span class="sr-only"> active</span></span>@endif</summary>
+    <form class="toolbar" method="get">
+        @if($entry)<input type="hidden" name="entry" value="{{ $entry->id }}">@endif
+        <label>Event group <select name="group"><option value="">All groups</option>@foreach(array_keys($groups) as $group)<option value="{{ $group }}" @selected(request('group') === $group)>{{ ucfirst($group) }}</option>@endforeach</select></label>
+        <label>Actor <select name="actor"><option value="">All actors</option>@foreach($actorOptions as $key => $label)<option value="{{ $key }}" @selected(request('actor') === $key)>{{ $label }}{{ str_starts_with($key, 'machine:') ? ' · agent' : '' }}</option>@endforeach</select></label>
+        <label>Outcome<select name="outcome"><option value="">All outcomes</option>@foreach($outcomeLabels as $outcome => $outcomeLabel)<option value="{{ $outcome }}" @selected(request('outcome') === $outcome)>{{ $outcomeLabel }}</option>@endforeach</select></label>
+        <label>From (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="from" value="{{ request('from') }}"></label>
+        <label>To (UTC, YYYY-MM-DD)<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="to" value="{{ request('to') }}"></label>
+        <button>Apply</button>
+    </form>
+</details>
+@if($filterCount)
+<p class="filter-status"><span class="filter-count">Showing {{ $events->total() }} of {{ $total ?? $events->total() }} {{ Str::plural('event', $total ?? $events->total()) }} <a href="/workspaces/{{ $space->id }}/audit">Clear filters</a></span>
+    @if($entry)<span class="chip filter">Entry: {{ $entry->name }}</span>@endif
+    @if(request('group'))<span class="chip filter">Event group: {{ ucfirst(request('group')) }}</span>@endif
+    @if(request('actor'))<span class="chip filter">Actor: {{ $actorOptions[request('actor')] ?? request('actor') }}</span>@endif
+    @foreach(['outcome' => 'Outcome', 'from' => 'From', 'to' => 'To'] as $key => $label)
+        @if(request($key))<span class="chip filter">{{ $label }}: {{ $key === 'outcome' ? ($outcomeLabels[request($key)] ?? request($key)) : request($key) }}</span>@endif
+    @endforeach
+</p>
+@endif
+@include('activity', ['events' => $events, 'filtered' => $filterCount > 0, 'labelledby' => 'page-title'])
+@if($events->hasPages())
+<nav class="pager" aria-label="Activity pages"><span>@if($events->previousPageUrl())<a href="{{ $events->previousPageUrl() }}">← Newer</a>@endif</span><span class="muted">Page {{ $events->currentPage() }} of {{ $events->lastPage() }}</span><span>@if($events->hasMorePages())<a href="{{ $events->nextPageUrl() }}">Older →</a>@endif</span></nav>
 @endif
 @endsection

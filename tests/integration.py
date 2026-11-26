@@ -101,11 +101,17 @@ def run():
         assert all(value not in human.last for value in payload.values()), 'plaintext in initial entry page'
         human.request('/entries/'+ids[typ]+'/reveal', {})
         assert all(value in human.last for value in payload.values()), 'owner reveal failed'
+    listing = '/?' + urllib.parse.urlencode({'workspace': workspace, 'q': 'Private api_key', 'page': 1})
+    human.request(listing)
+    detail = html.unescape(re.search(r'href="(/entries/' + ids['api_key'] + r'\?from=[^"]+)"', human.last)[1])
+    human.request(detail)
+    assert html.unescape(re.search(r'<a class="back" href="([^"]+)"', human.last)[1]) == listing
     print('PASS: encrypted backend write, metadata-only detail, audited owner reveal')
     human.request('/workspaces/'+workspace+'/machines', {'name': 'ai-os integration', 'days': '1'})
     token = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
-    human.request('/workspaces/'+workspace+'/settings')
-    machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', human.last)[1]
+    human.request('/workspaces/'+workspace+'/grants')
+    grant_agents = re.search(r'<select name="machine_id"[^>]*>(.*?)</select>', human.last, re.S)[1]
+    machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', grant_agents)[1]
     for action in config['actions']:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': machine, 'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'days': '1'})
     agent = Client()
@@ -121,7 +127,7 @@ def run():
             op = agent.request('/api/v1/operations/'+op['id'], token=token)
             assert all(s not in agent.last for s in ['synthetic-token', 'synthetic-password', 'synthetic-cookie', 'synthetic-session', 'c3ludGhldGljLXBhc3N3b3Jk'])
             if op['state'] == 'requires_user_action' and not mfa_sent:
-                human.request('/workspaces/'+workspace+'/settings')
+                human.request('/workspaces/'+workspace+'/requests')
                 human.request('/workspaces/'+workspace+'/operations/'+op['id']+'/mfa', {'code': '123456'})
                 mfa_sent = True
             if op['state'] in ['succeeded', 'failed', 'expired', 'revoked']:
@@ -147,6 +153,9 @@ def run():
     agent.request('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=token)
     assert 'vault_execute' in agent.last and 'get_secret' not in agent.last
     human.request('/workspaces/'+workspace+'/audit')
+    assert re.search(r'\d+ events</p>', human.last) and 'Page 1 of ' in human.last
+    human.request('/workspaces/'+workspace+'/audit?outcome=ok')
+    assert 'Outcome: OK' in human.last and re.search(r'Showing \d+ of \d+ events', human.last)
     assert 'synthetic-token' not in human.last and 'synthetic-password' not in human.last
     if os.environ.get('AIOS_VAULT_CHECKOUT'):
         checkout=Path(os.environ['AIOS_VAULT_CHECKOUT'])

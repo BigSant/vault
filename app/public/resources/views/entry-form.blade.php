@@ -1,47 +1,110 @@
 @extends('layout')
-@section('title', $entry ? 'Update entry' : 'Add an entry')
+@section('title', $entry ? 'Edit entry' : 'Add an entry')
 @section('content')
+@php
+    $oldType = !$entry && is_string(old('type')) && $types->contains('key', old('type')) ? old('type') : null;
+    $initialType = $entry?->type ?? $oldType ?? ($types->count() === 1 ? $types->first()->key : null);
+@endphp
 @if($entry)<a class="back" href="/entries/{{ $entry->id }}">← {{ $entry->name }}</a>@else<a class="back" href="/?workspace={{ $workspace }}">← Entries</a>@endif
-<h1>{{ $entry ? 'Update entry' : 'Add an entry' }}</h1>
-<p class="note">Values go straight to the encrypted store. Existing values are never shown in this form.@if($entry) An empty field keeps its current value, and every save creates a new version.@endif</p>
-@if($environments->isEmpty())<div class="callout warn"><p>Create a project first: <a href="/workspaces/{{ $workspace }}/structure">Projects</a>.</p></div>@endif
+<h1>{{ $entry ? 'Edit entry' : 'Add an entry' }}</h1>
+<p class="note">Values go straight to the encrypted store.@if($entry) Existing values are never shown in this form, and every save creates a new version.@endif</p>
+@if(!$entry && ($environments->isEmpty() || $types->isEmpty()))
+<div class="empty capped">
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
+    @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $workspace }}/types">Add an entry type in Setup</a> first.</p>@endif
+</div>
+@else
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
-    <h3>Where and what</h3>
-    <label><span>Name</span><input name="name" value="{{ $entry?->name }}" required maxlength="160"></label>
-    <label><span>Agent alias <small>visible to agents</small></span><input name="alias" value="{{ $entry?->alias }}" required maxlength="100" placeholder="shop-stage-admin"></label>
-    <label><span>Project / environment</span><select name="environment_id">
-        @foreach($environments as $e)
-            @if(!$entry || $entry->environment_id === $e->id)<option value="{{ $e->id }}" @selected($entry?->environment_id === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>@endif
-        @endforeach
-    </select></label>
-    <label><span>Type</span><select name="type" id="entry-type">
-        @foreach($types as $t)<option value="{{ $t->key }}" @selected($entry?->type === $t->key)>{{ $t->name }}</option>@endforeach
-    </select></label>
-    @unless($entry)<p class="note">Missing a type or a field? <a href="/workspaces/{{ $workspace }}/types">Edit entry types</a></p>@endunless
+    <fieldset>
+        <legend>Details</legend>
+        <label><span>Name <small aria-hidden="true">required</small></span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
+        {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
+        <div class="field"><label for="entry-alias"><span>Agent alias <small aria-hidden="true">required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias.</small></div>
+        @if($entry)
+            @php
+                $currentEnv = $environments->firstWhere('id', $entry->environment_id);
+                $currentType = $types->firstWhere('key', $entry->type);
+            @endphp
+            <input type="hidden" name="environment_id" value="{{ $entry->environment_id }}">
+            <input type="hidden" name="type" id="entry-type" value="{{ $entry->type }}">
+            <div class="field">
+                <span>Project / environment</span>
+                <span class="field-val">@if($currentEnv){{ $currentEnv->project }} @include('sign', ['name' => $currentEnv->name, 'production' => $currentEnv->production])@else{{ $entry->environment_id }}@endif</span>
+            </div>
+            <div class="field">
+                <span>Type</span>
+                <span class="field-val">{{ $currentType?->name ?? $entry->type }}</span>
+            </div>
+            {{-- As on Add an entry: the detour to Setup is a closed disclosure ("Missing a field?"); its link opens a
+                 new tab, and "Reload fields" (shown by app.js) swaps only the type field rows. What was typed stays, and so does every "Clear the current … value" box;
+                 a typed value whose field is gone is asked about first. The sentence names the button; without
+                 script there is no button, and the sentence printed here says so (data-script-text). --}}
+            <details class="type-detour" data-reload-types-row><summary>Missing a field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></div></details>
+        @else
+            @php $selectedEnv = old('environment_id'); @endphp
+            <label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>
+                <option value="">Choose an environment</option>
+                @foreach($environments as $e)
+                    <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
+                @endforeach
+            </select></label>
+            <label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>
+                <option value="">Choose a type</option>
+                @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
+            </select></label>
+            {{-- The detour to Setup never costs the draft: the link opens a new tab, and "Reload types" (shown by app.js)
+                 fetches this page again and swaps only the Type options and the type field rows; what was typed stays.
+                 A typed value that would have no field after the reload is never dropped silently: the old fields
+                 stay, the status names the fields (labels only) and offers "Discard and reload" / "Cancel".
+                 A closed disclosure under the Type field, starting where the inputs start: the question stays in
+                 view, the instructions and the button are behind it, so the ordinary path is short. The result of a
+                 reload is the line after the button (data-reload-status, empty until then). The sentence names the button ("…choose Reload
+                 types."); without script there is no button and the printed sentence says what is true then. --}}
+            <details class="type-detour" data-reload-types-row><summary>Missing a type or field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload types.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload types</button> <span class="note reload-status" data-reload-status></span></div></details>
+        @endif
+    </fieldset>
 
-    <h3 class="gap">Secret values</h3>
-    @foreach($types as $t)
-        @foreach($t->fields as $f)
-            @php $id = 'f-'.$t->key.'-'.$f['key']; $optional = $f['required'] ? '' : 'data-optional'; @endphp
-            <label data-types="{{ $t->key }}" for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>
-                @if($f['kind'] === 'multiline')
-                    <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }}></textarea>
-                @elseif($f['kind'] === 'secret')
-                    <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }}><button type="button" data-generate="{{ $id }}">Generate</button></span>
+    <fieldset id="type-fields">
+        <legend>Secret values</legend>
+        @if($entry)<p class="note">Leave a secret value blank to keep its current value.</p>@endif
+        @unless($entry)<p class="note" data-types="" @if($initialType !== null) hidden @endif>Choose a type above to see its fields.</p>@endunless
+        @foreach($types as $t)
+            @php $activeType = $t->key === $initialType; @endphp
+            @foreach($t->fields as $f)
+                @php
+                    $id = 'f-'.$t->key.'-'.$f['key'];
+                    $optional = $f['required'] ? '' : 'data-optional';
+                    $req = $activeType && !$entry && $f['required'];
+                @endphp
+                @if($f['kind'] === 'secret')
+                    <div class="field" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless>
+                        <label for="{{ $id }}"><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span></label>
+                        <span class="with-button"><input id="{{ $id }}" type="password" name="secret_fields[{{ $f['key'] }}]" autocomplete="new-password" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)>@if(!empty($f['generate']))<button type="button" data-generate="{{ $id }}" aria-label="Generate {{ $f['label'] }}">Generate</button>@endif</span>
+                    </div>
                 @else
-                    <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }}>
+                    <label data-types="{{ $t->key }}" for="{{ $id }}" @unless($activeType) hidden @endunless><span>{{ $f['label'] }}@unless($f['required']) <small>optional</small>@endunless</span>
+                        @if($f['kind'] === 'multiline')
+                            <textarea id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" rows="6" spellcheck="false" autocomplete="off" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)></textarea>
+                        @else
+                            <input id="{{ $id }}" name="secret_fields[{{ $f['key'] }}]" autocomplete="off" {{ $optional }} @if($req) required @endif @if($entry) placeholder="Leave blank to keep" @endif @disabled(!$activeType)>
+                        @endif
+                    </label>
                 @endif
-            </label>
-            @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}"><input type="checkbox" name="clear_fields[]" value="{{ $f['key'] }}" data-optional> clear the current “{{ $f['label'] }}” value</label>@endif
+                @if($entry && !$f['required'])<label class="check indent" data-types="{{ $t->key }}" @unless($activeType) hidden @endunless><input type="checkbox" id="clear-{{ $t->key }}-{{ $f['key'] }}" name="clear_fields[]" value="{{ $f['key'] }}" data-optional @disabled(!$activeType)> Clear the current "{{ $f['label'] }}" value</label>@endif
+            @endforeach
         @endforeach
-    @endforeach
+    </fieldset>
 
-    <h3 class="gap">Notes</h3>
-    <label><span>Tags</span><input name="tags" value="{{ $entry?->tags }}" maxlength="200" placeholder="billing, admin"></label>
-    <label><span>Rotation reminder</span><input type="date" name="rotate_at" value="{{ $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '' }}"></label>
+    <fieldset>
+        <legend>Tags and rotation</legend>
+        <label><span>Tags</span><input name="tags" value="{{ old('tags', $entry?->tags) }}" maxlength="200" placeholder="e.g. billing, admin"></label>
+        <label><span>Rotation reminder <small>UTC, YYYY-MM-DD</small></span><input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD" maxlength="10" autocomplete="off" title="A date as YYYY-MM-DD" name="rotate_at" value="{{ old('rotate_at', $entry?->rotate_at ? substr($entry->rotate_at, 0, 10) : '') }}"></label>
+    </fieldset>
+    @include('confirm-inline', ['verb' => 'save'])
     <div class="form-foot">
-        <p class="note">{{ $entry ? 'Saving revokes pending agent operations for this entry.' : 'Agents get nothing until you grant them an action.' }}</p>
-        <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Save entry' }}</button></div>
+        <p class="note">{{ $entry ? 'Saving cancels agent requests that are waiting for this entry.' : 'Agents need a grant to use this entry.' }}</p>
+        <div class="controls"><a class="btn" href="{{ $entry ? '/entries/'.$entry->id : '/?workspace='.$workspace }}">Cancel</a><button class="go">{{ $entry ? 'Save new version' : 'Add entry' }}</button></div>
     </div>
 </form>
+@endif
 @endsection

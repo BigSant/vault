@@ -26,14 +26,14 @@ final class Catalog
             'type' => ['required', 'string', 'regex:'.EntryTypes::KEY], 'tags' => 'nullable|string|max:200',
             'secret' => 'required|string|max:65536', 'rotate_at' => 'nullable|date_format:Y-m-d',
         ])->validate();
-        try {
-            $payload = json_decode($data['secret'], true, flags: JSON_THROW_ON_ERROR);
-        } catch (\Throwable) {
-            abort(422);
+        $payload = json_decode($data['secret'], true);
+        if (! is_array($payload) || array_is_list($payload) || count($payload) > 40) {
+            throw ValidationException::withMessages(['secret' => 'Enter a JSON object with 1 to 40 secret fields.']);
         }
-        abort_unless(is_array($payload) && ! array_is_list($payload) && count($payload) <= 40, 422);
         foreach ($payload as $key => $value) {
-            abort_unless(is_string($key) && preg_match('/^[a-z_][a-z0-9_]{0,39}$/D', $key) && is_string($value) && strlen($value) <= 16000, 422);
+            if (! is_string($key) || ! preg_match('/^[a-z_][a-z0-9_]{0,39}$/D', $key) || ! is_string($value) || strlen($value) > 16000) {
+                throw ValidationException::withMessages(['secret' => 'Check the secret field names and enter text values of up to 16000 bytes.']);
+            }
         }
         $data['payload'] = $payload;
         unset($data['secret']);
@@ -89,18 +89,17 @@ final class Catalog
             $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
             if (! isset($input['secret'])) {
                 $fields = $input['secret_fields'] ?? [];
-                abort_unless(is_array($fields), 422);
-                foreach ($fields as $value) {
-                    abort_unless(is_string($value) || $value === null, 422);
+                if (! is_array($fields) || array_filter($fields, fn ($value) => ! is_string($value) && $value !== null)) {
+                    throw ValidationException::withMessages(['secret_fields' => 'Enter text for each secret field.']);
                 }
                 $payload = array_replace($previous, array_filter($fields, fn ($value) => is_string($value) && $value !== ''));
                 $clear = $input['clear_fields'] ?? [];
-                abort_unless(is_array($clear), 422);
-                foreach ($clear as $field) {
-                    abort_unless(is_string($field), 422);
+                if (! is_array($clear) || array_filter($clear, fn ($field) => ! is_string($field))) {
+                    throw ValidationException::withMessages(['clear_fields' => 'Choose fields to clear.']);
                 }
-                // Required fields of the current type cannot be cleared; anything else (including legacy fields) can.
-                abort_unless(! array_intersect($clear, $required), 422);
+                if (array_intersect($clear, $required)) {
+                    throw ValidationException::withMessages(['clear_fields' => 'Required fields cannot be cleared.']);
+                }
                 foreach ($clear as $field) {
                     unset($payload[$field]);
                 }
@@ -108,7 +107,9 @@ final class Catalog
             }
             $data = $this->validate($input);
             // No moving, type changes or archive resurrection through a stale edit form.
-            abort_unless($data['environment_id'] === $current->environment_id && $data['type'] === $current->type && $current->state === 'active', 422);
+            if ($data['environment_id'] !== $current->environment_id || $data['type'] !== $current->type || $current->state !== 'active') {
+                throw ValidationException::withMessages(['entry' => 'Only active entries can be edited, with their existing environment and type.']);
+            }
             $carried = [];
             if ($restoredFrom !== null) {
                 // The restored version may predate a field the type now requires: keep that field's current value
@@ -186,13 +187,19 @@ final class Catalog
      * Versions from before the change log have no details. Field names are filtered against the type's current
      * fields on every read, so rows written before that rule (or naming a since-removed field) only add to the counts.
      */
-    public function history(object $entry, int $limit = 50, ?bool &$older = null): array
+    public function history(object $entry, int $limit = 50, ?bool &$older = null, int $page = 1): array
     {
-        $latest = (int) $entry->version;
-        $oldest = max(1, $latest - max(1, $limit) + 1);
+        $limit = max(1, $limit);
+        $latest = (int) $entry->version - (max(1, $page) - 1) * $limit;
+        if ($latest < 1) {
+            $older = false;
+
+            return [];
+        }
+        $oldest = max(1, $latest - $limit + 1);
         $older = $oldest > 1;
         $changes = DB::table('entry_changes')->leftJoin('users', 'users.id', '=', 'entry_changes.user_id')->where('entry_id', $entry->id)
-            ->where('entry_changes.version', '>=', $oldest)->select('entry_changes.*', 'users.name as user')->get()->keyBy('version');
+            ->where('entry_changes.version', '>=', $oldest)->where('entry_changes.version', '<=', $latest)->select('entry_changes.*', 'users.name as user')->get()->keyBy('version');
         $type = $this->types->find($entry->workspace_id ?? $this->access->entry($entry->id)->workspace_id, $entry->type);
         $stored = $this->secrets->versions('entries/'.$entry->id);
         $history = [];
@@ -235,7 +242,9 @@ final class Catalog
         $entry = $this->access->entry($id, ['owner', 'editor']);
         abort_unless($entry->state === 'active', 409);
         $this->access->audit($entry->workspace_id, 'entry.reveal', $id);
-        abort_if($version < 0 || $version > $entry->version, 422);
+        if ($version < 0 || $version > $entry->version) {
+            throw ValidationException::withMessages(['version' => 'Choose an existing version.']);
+        }
         $version = $version ?: (int) $entry->version;
 
         return ['version' => $version, 'payload' => $this->secrets->read('entries/'.$id, $version)];
@@ -310,18 +319,27 @@ final class Catalog
 
     public function import(string $workspace, #[\SensitiveParameter] string $json): int
     {
-        $this->access->workspace($workspace, ['owner']);
-        try {
-            $rows = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\Throwable) {
-            abort(422);
+        $this->access->workspace($workspace, ['owner', 'editor']);
+        $rows = json_decode($json);
+        $message = 'Paste a JSON array of 1 to 50 entry objects.';
+        if (! is_array($rows) || count($rows) < 1 || count($rows) > 50) {
+            throw ValidationException::withMessages(['import' => $message]);
         }
-        abort_unless(is_array($rows) && array_is_list($rows) && count($rows) > 0 && count($rows) <= 50, 422);
-        foreach ($rows as $row) {
-            abort_unless(is_array($row), 422);
-            $data = $this->validate($row);
-            abort_unless($this->access->environment($data['environment_id'])->workspace_id === $workspace, 404);
-            $this->checkType($workspace, $data);
+        foreach ($rows as $i => $row) {
+            if (! $row instanceof \stdClass) {
+                throw ValidationException::withMessages(['import' => 'Entry '.($i + 1).' is not an entry object. '.$message]);
+            }
+        }
+        $rows = json_decode($json, true);
+        foreach ($rows as $i => $row) {
+            try {
+                $data = $this->validate($row);
+                abort_unless($this->access->environment($data['environment_id'])->workspace_id === $workspace, 404);
+                $this->checkType($workspace, $data);
+            } catch (ValidationException $e) {
+                // The messages name fields and rules, never values; the entry is named by its place in the array.
+                throw ValidationException::withMessages(['import' => array_map(fn ($text) => 'Entry '.($i + 1).': '.$text, array_slice(array_merge(...array_values($e->errors())), 0, 2))]);
+            }
         }
 
         return DB::transaction(function () use ($rows, $workspace) {

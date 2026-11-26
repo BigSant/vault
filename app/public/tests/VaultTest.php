@@ -101,6 +101,41 @@ final class VaultTest extends TestCase
         return app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key', 'secret' => json_encode(['token' => $this->sentinel])]);
     }
 
+    public function test_catalog_entry_link_restores_only_same_workspace_list_filters(): void
+    {
+        $id = $this->entry();
+        $query = http_build_query(['workspace' => $this->workspace, 'q' => 'Private name',
+            'project' => DB::table('projects')->value('id'), 'environment' => $this->environment,
+            'type' => 'api_key', 'state' => 'active', 'page' => 1]);
+        $entry = '/entries/'.$id.'?from=';
+        $this->get('/?'.$query.'&unknown=1')->assertOk()->assertSee($entry.rawurlencode($query), false);
+        $this->get($entry.rawurlencode($query))->assertOk()->assertViewHas('backUrl', '/?'.$query);
+        foreach (['https://example.org', '//example.org', 'workspace=another', $query.'&next=/logout', $query.'&q[]=bad'] as $invalid) {
+            $this->get($entry.rawurlencode($invalid))->assertOk()->assertViewHas('backUrl', '/?workspace='.$this->workspace);
+        }
+    }
+
+    public function test_members_refill_only_the_form_that_failed(): void
+    {
+        $member = User::create(['id' => (string) Str::uuid(), 'name' => 'Reader', 'email' => 'reader@example.test', 'password' => 'unused']);
+        DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'viewer']);
+        $path = '/workspaces/'.$this->workspace.'/members';
+        foreach (['row:'.$member->id, 'add'] as $form) {
+            $this->get($path)->assertOk();
+            $this->post($path, ['form' => $form, 'name' => $member->name, 'email' => 'invalid', 'role' => 'editor'])
+                ->assertRedirect($path)->assertSessionHas('form_errors');
+            $dom = new \DOMDocument;
+            @$dom->loadHTML($this->get($path)->assertOk()->getContent());
+            $xpath = new \DOMXPath($dom);
+            $row = "//form[input[@name='form' and @value='row:".$member->id."']]";
+            $add = "//form[input[@name='form' and @value='add']]";
+            $this->assertSame($form === 'add' ? 'viewer' : 'editor', $xpath->evaluate("string($row//option[@selected]/@value)"));
+            $this->assertSame($form === 'add' ? 'editor' : 'viewer', $xpath->evaluate("string($add//option[@selected]/@value)"));
+            $this->assertSame($form === 'add' ? 'invalid' : '', $xpath->evaluate("string($add//input[@name='email']/@value)"));
+            $this->assertSame($form === 'add' ? 'Reader' : '', $xpath->evaluate("string($add//input[@name='name']/@value)"));
+        }
+    }
+
     private function machine(string $entry, bool $approval = false): array
     {
         $id = (string) Str::uuid();
@@ -110,6 +145,72 @@ final class VaultTest extends TestCase
         DB::table('grants')->insert(['id' => $grant, 'machine_id' => $id, 'entry_id' => $entry, 'action' => 'test.http', 'approval' => $approval, 'expires_at' => now()->addHour()]);
 
         return [$id, $token, $grant];
+    }
+
+    public function test_workspace_navigation_enforces_roles(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        foreach (['owner', 'editor', 'viewer'] as $role) {
+            DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => $role]);
+            foreach (['requests', 'agents', 'grants', 'members'] as $page) {
+                $this->get($base.'/'.$page)->assertStatus($role === 'owner' ? 200 : 404);
+            }
+            if ($role === 'owner') {
+                $this->get($base.'/settings')->assertRedirect($base.'/requests');
+            } else {
+                $this->get($base.'/settings')->assertNotFound();
+            }
+        }
+        $this->get($base.'/import')->assertNotFound();
+        $this->post($base.'/import')->assertNotFound();
+    }
+
+    public function test_import_example_uses_the_workspace_environment_and_type_definition(): void
+    {
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $this->get($url)->assertOk();
+        DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'ssh')
+            ->update(['name' => 'A custom certificate', 'key' => 'custom_certificate']);
+
+        $page = $this->get($url)->assertOk()->assertSeeTextInOrder(['Paste entries', 'Environment IDs', 'Type and field keys'])
+            ->assertSee('<code>passphrase</code> optional', false)->assertSee('<code>private_key</code> required', false);
+        $row = json_decode($page->viewData('example'), true, flags: JSON_THROW_ON_ERROR)[0];
+        $this->assertSame($this->environment, $row['environment_id']);
+        $this->assertSame('custom_certificate', $row['type']);
+        $this->assertSame(['private_key' => 'replace-me'], $row['secret_fields']);
+    }
+
+    public function test_owner_and_editor_can_open_import(): void
+    {
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $this->get($url)->assertOk()->assertViewHas('environments', fn ($rows) => $rows->contains('id', $this->environment))
+            ->assertViewHas('types', fn ($rows) => $rows->contains('key', 'api_key'))
+            ->assertSee('"environment_id": "'.$this->environment.'"');
+        DB::table('members')->where('workspace_id', $this->workspace)->update(['role' => 'editor']);
+        $this->get($url)->assertOk();
+        $row = ['environment_id' => $this->environment, 'name' => 'Editor import', 'alias' => 'editor-import', 'type' => 'api_key', 'secret' => '{"token":"synthetic-editor-import"}'];
+        $this->post($url, ['import' => json_encode([$row])])->assertRedirect();
+        $this->assertTrue(DB::table('entries')->where('alias', 'editor-import')->exists());
+    }
+
+    public function test_old_waiting_requests_stay_visible_beyond_the_history_limit(): void
+    {
+        $entry = $this->entry();
+        [$machine, , $grant] = $this->machine($entry);
+        $rows = [];
+        foreach (['pending', 'requires_user_action', ...array_fill(0, 51, 'succeeded')] as $index => $state) {
+            $rows[] = ['id' => (string) Str::uuid(), 'entry_id' => $entry, 'machine_id' => $machine, 'grant_id' => $grant,
+                'request_id' => 'request-'.$index, 'action' => 'test.http', 'version' => 1, 'state' => $state,
+                'expires_at' => now()->addHours($index + 1), 'created_at' => now()->subMinutes(60 - $index)];
+        }
+        DB::table('operations')->insert($rows);
+        $this->get('/workspaces/'.$this->workspace.'/requests')->assertOk()
+            ->assertViewHas('waiting', fn ($waiting) => $waiting->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']])
+            ->assertViewHas('history', fn ($history) => $history->count() === 50)
+            ->assertSeeInOrder(['Requests waiting for you', 'data-waiting-count>2', 'ai-os', 'test.http', 'Private name', 'stage', 'Allow once', 'needs MFA code', 'Continue sign-in', 'Recent requests'])
+            ->assertDontSee($rows[2]['id']);
+        $this->get('/entries/'.$entry)->assertOk()->assertViewHas('waitingCount', 2)
+            ->assertViewHas('operations', fn ($ops) => $ops->take(2)->pluck('id')->all() === [$rows[0]['id'], $rows[1]['id']]);
     }
 
     public function test_secret_stays_in_backend_and_is_not_prefilled_or_listed(): void
@@ -170,10 +271,415 @@ final class VaultTest extends TestCase
 
     public function test_cross_workspace_access_and_last_owner_removal_are_rejected(): void
     {
+        $this->get('/workspaces/'.$this->workspace.'/members')->assertOk()->assertSeeText('you')->assertDontSeeText('Remove');
         $id = $this->entry();
         $other = User::create(['id' => (string) Str::uuid(), 'name' => 'Other', 'email' => 'other@example.test', 'password' => 'unused']);
         $this->actingAs($other)->withSession(['auth_revision' => $other->credentialRevision()])->get('/entries/'.$id)->assertNotFound();
         $this->actingAs($this->owner)->withSession(['auth_revision' => $this->owner->credentialRevision()])->post('/workspaces/'.$this->workspace.'/members', ['email' => $this->owner->email, 'name' => 'Owner', 'role' => 'remove'])->assertConflict();
+    }
+
+    public function test_activity_resolves_grant_subject_and_filters_by_group_and_actor(): void
+    {
+        $entry = $this->entry();
+        [$machine, , $grant] = $this->machine($entry);
+        app(\App\Vault\Access::class)->audit($this->workspace, 'grants.revoke', $grant, 'ok', 'machine:'.$machine);
+        $url = '/workspaces/'.$this->workspace.'/audit';
+        $this->get($url.'?group=grant&actor=machine:'.$machine)->assertOk()->assertSeeText('ai-os')
+            ->assertSeeText('grant.revoke')->assertSeeText('Private name')->assertDontSeeText('entry.create')
+            ->assertSee('href="/entries/'.$entry.'"', false)->assertDontSeeText('Page 1')->assertSeeText('Clear filters')->assertSee('compact-board activity');
+        $this->get($url.'?group=entry&actor=machine:'.$machine)->assertOk()->assertSeeText('No matching activity.');
+        $this->get('/entries/'.$entry)->assertSee('compact-board activity')->assertSeeText('grant.revoke')->assertViewHas('events', fn ($events) => $events->first()->actor_label === 'ai-os'
+            && $events->first()->subject_label === 'Private name');
+    }
+
+    public function test_activity_entry_filter_includes_related_subjects_and_combines_with_request_group(): void
+    {
+        $entry = $this->entry();
+        [, $token, $grant] = $this->machine($entry, true);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'filter-test'])->json('id');
+        $audit = app(\App\Vault\Access::class);
+        $audit->audit($this->workspace, 'grants.revoke', $grant);
+        $audit->audit($this->workspace, 'workspace.create', $this->workspace);
+
+        $url = '/workspaces/'.$this->workspace.'/audit?entry='.$entry;
+        $events = $this->get($url)->assertOk()->assertSeeText('Entry: Private name')->viewData('events');
+        $this->assertEqualsCanonicalizing([$entry, $grant, $op], $events->pluck('subject')->unique()->all());
+        $total = DB::table('audit')->where('workspace_id', $this->workspace)->count();
+        $this->get($url.'&group=request')->assertOk()->assertSeeText('Showing 1 of '.$total)->assertSeeText('request.open')
+            ->assertDontSeeText('entry.create')->assertDontSeeText('grant.revoke');
+
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Other']);
+        DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->get('/workspaces/'.$other.'/audit?entry='.$entry)->assertOk()
+            ->assertViewHas('filterErrors', ['entry' => 'Unknown entry.'])->assertViewHas('entry', fn ($value) => $value === null);
+    }
+
+    public function test_activity_names_setup_users_requests_and_removed_subjects(): void
+    {
+        $entry = $this->entry();
+        [$machine, $token, $grant] = $this->machine($entry, true);
+        $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'request-subject'])->json('id');
+        $type = DB::table('entry_types')->where('key', 'api_key')->first();
+        $missing = (string) Str::uuid();
+        $subjects = [
+            ['member.change', $this->owner->id, 'Owner'], ['workspace.create', $this->workspace, 'Test'],
+            ['project.rename', DB::table('projects')->value('id'), 'Test project'], ['environment.update', $this->environment, 'stage'],
+            ['type.save', $type->id, 'API key'], ['type.save', $type->key, 'API key'], ['type.delete', $missing, null],
+            ['entry.create', $entry, 'Private name'], ['machine.create', $machine, 'ai-os'],
+            ['grants.revoke', $grant, 'Private name'], ['operation.request', $op, 'Private name'],
+        ];
+        foreach ($subjects as [$event, $id]) {
+            app(\App\Vault\Access::class)->audit($this->workspace, $event, $id);
+        }
+        // A subject that no longer resolves has no label: the partial prints a muted "removed item", never the id.
+        $page = $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertSee('<span class="muted">removed item</span>', false)->assertDontSee($missing);
+        $events = $page->viewData('events')->keyBy('subject');
+        foreach ($subjects as [, $id, $label]) {
+            $this->assertSame($label, $events[$id]->subject_label);
+        }
+        $this->assertNull($events[$missing]->subject_url);
+    }
+
+    public function test_owner_decision_labels_and_return_paths(): void
+    {
+        $entry = $this->entry();
+        [$machine, $token] = $this->machine($entry, true);
+        $base = '/workspaces/'.$this->workspace;
+        $foreign = $this->entryInOtherWorkspace();
+        $targets = ['/entries/'.$entry, '/entries/'.$foreign, 'https://example.test', '/entries/'.$entry.'?next=elsewhere'];
+        foreach ($targets as $index => $back) {
+            $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-'.$index])->json('id');
+            $this->post($base.'/operations/'.$op.'/decision', ['decision' => 'deny', 'back' => $back])
+                ->assertRedirect($index === 0 ? $back : $base.'/requests');
+        }
+        $expired = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-expired'])->json('id');
+        $deadline = now()->subMinute()->toDateTimeString();
+        DB::table('operations')->where('id', $expired)->update(['expires_at' => $deadline]);
+        $mfa = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'decision-mfa'])->json('id');
+        DB::table('operations')->where('id', $mfa)->update(['state' => 'requires_user_action']);
+        foreach ($targets as $index => $back) {
+            $this->post($base.'/operations/'.$mfa.'/mfa', ['code' => '123456', 'back' => $back])
+                ->assertRedirect($index === 0 ? $back : $base.'/requests');
+        }
+        $history = $this->get($base.'/requests')->assertOk()->viewData('history')->keyBy('id');
+        $this->assertSame('denied', $history[$op]->decision_label);
+        $this->assertSame('revoked', $history[$op]->state);
+        $this->assertSame('expired', $history[$expired]->decision_label);
+        $this->assertSame($deadline, $history[$expired]->expires_at);
+        $this->assertSame('pending', $history[$expired]->state);
+    }
+
+    private function entryInOtherWorkspace(): string
+    {
+        $workspace = (string) Str::uuid();
+        $project = (string) Str::uuid();
+        $environment = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $workspace, 'name' => 'Other']);
+        DB::table('projects')->insert(['id' => $project, 'workspace_id' => $workspace, 'name' => 'Other project']);
+        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'test']);
+        $row = (array) DB::table('entries')->first();
+        $row['id'] = (string) Str::uuid();
+        $row['environment_id'] = $environment;
+        DB::table('entries')->insert($row);
+
+        return $row['id'];
+    }
+
+    public function test_due_count_in_view_entry_page_caps_and_import_item_errors(): void
+    {
+        $entry = $this->entry();
+        $other = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Other due', 'alias' => 'other-due',
+            'type' => 'api_key', 'secret' => '{"token":"test"}']);
+        DB::table('entries')->whereIn('id', [$entry, $other])->update(['rotate_at' => '2020-11-01 12:00:00']);
+        // No filter: the workspace's number, the plain label.
+        $this->get('/')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 2 && $stats['active'] === 2)
+            ->assertSee('<b>2</b><span>rotation due →</span>', false)->assertDontSeeText('in this view');
+        // Search or a filter on: the number is counted inside them (what the link will show), and the label says so.
+        $this->get('/?q=Other')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 1 && $stats['active'] === 2)
+            ->assertSee('is-scoped', false)->assertSee('<b>1</b><span>rotation due in this view →</span>', false);
+        $this->get('/?q=Other&state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 1)
+            ->assertSee('<b>1</b><span>rotation due in this view</span>', false)->assertSeeText('Showing 1 of 2 entries');
+        // Nothing due in the view: a plain number, not a link to an empty list.
+        $this->get('/?type=missing')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 0)
+            ->assertSee('<div class="stat"><b>0</b><span>rotation due in this view</span></div>', false)->assertDontSee('stat-link', false);
+        // The state filter alone is the stat's own filter: the number and the label stay.
+        $this->get('/?state=due')->assertOk()->assertViewHas('stats', fn ($stats) => $stats['due'] === 2)->assertSee('<b>2</b><span>rotation due</span>', false);
+
+        // The entry page lists the last 10 events and the last 10 finished requests; the links lead to the rest.
+        foreach (range(1, 14) as $i) {
+            DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => $this->owner->id, 'event' => 'entry.reveal', 'subject' => $entry, 'outcome' => 'ok', 'created_at' => now()->subMinutes($i)]);
+        }
+        $page = $this->get('/entries/'.$entry)->assertOk()->assertViewHas('events', fn ($events) => $events->count() === 10)
+            ->assertSeeText('The last 10 events for this entry and its requests.')->assertSeeText('All activity for this entry →')
+            ->assertSee('<h2 id="requests">Recent requests</h2>', false)->assertSeeText('Request activity for this entry →');
+        $this->assertStringContainsString('requestSections($query, 10)', (string) file_get_contents(app_path('Http/Workspace.php')));
+
+        // Import: an error names the failing item by its place in the array, never its values.
+        $url = '/workspaces/'.$this->workspace.'/import';
+        $good = ['environment_id' => $this->environment, 'name' => 'Imported', 'alias' => 'imported', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}'];
+        $this->get($url)->assertOk();
+        $this->post($url, ['import' => json_encode([$good, ['name' => 'No environment', 'alias' => 'x', 'type' => 'api_key', 'secret' => '{"token":"synthetic-value"}']])])
+            ->assertStatus(303)->assertSessionHas('form_errors', fn ($errors) => count($errors['import']) >= 1 && str_starts_with($errors['import'][0], 'Entry 2: ')
+                && ! str_contains(json_encode($errors), 'synthetic-value'));
+        $this->assertSame(0, DB::table('entries')->where('name', 'Imported')->count());
+        $this->post($url, ['import' => json_encode([$good, 'text'])])->assertStatus(303)
+            ->assertSessionHas('form_errors', fn ($errors) => $errors['import'] === ['Entry 2 is not an entry object. Paste a JSON array of 1 to 50 entry objects.']);
+    }
+
+    public function test_grant_approval_and_due_filter(): void
+    {
+        $entry = $this->entry();
+        [$machine, , $grant] = $this->machine($entry, true);
+        $url = '/workspaces/'.$this->workspace.'/grants';
+        $this->get($url)->assertOk()->assertSeeText('Approval')->assertSeeText('asks every time')->assertDontSeeText('Clear filters')
+            ->assertSee('<select name="machine_id" required><option value="">Choose an agent</option>', false)
+            ->assertSee('<select name="action" required><option value="">Choose an action</option>', false)
+            ->assertSee('<select name="entry_id" required><option value="">Choose an entry</option>', false)
+            ->assertSeeText('test.http');
+        $this->get($url.'?agent='.$machine.'&entry='.$entry)->assertOk()->assertSeeText('Showing 1 of 1 grant')
+            ->assertSeeText('Agent: ai-os')->assertSeeText('Entry: Private name')->assertSeeText('Clear filters');
+        DB::table('grants')->where('id', $grant)->update(['approval' => false]);
+        $this->get($url)->assertOk()->assertSeeText('runs without asking')->assertSee('/revoke/grants/'.$grant);
+        DB::table('machines')->where('id', $machine)->update(['revoked_at' => now()]);
+        $this->get($url)->assertOk()->assertDontSee('/revoke/grants/'.$grant)->assertSeeText('agent revoked');
+        $this->get('/?q=Private')->assertOk()->assertSeeText('Search: Private')
+            ->assertSee('<button class="catalog-search">Search</button>', false)->assertDontSee('<span class="sr-only"> active</span>', false);
+        $this->get('/?project=missing')->assertSeeText('Showing 0 of 1 entry')->assertViewHas('archivedCount', 0);
+        $this->get('/?due=1')->assertSeeText('Showing 0 of 1 entry')->assertSee('value="due" selected>Rotation due', false)->assertViewHas('scopeCount', 1)->assertViewHas('entries', fn ($entries) => $entries->isEmpty())
+            ->assertViewHas('stats', fn ($stats) => $stats['active'] === 1);
+        DB::table('entries')->where('id', $entry)->update(['rotate_at' => '2020-11-01 12:00:00']);
+        $filters = ['workspace' => $this->workspace, 'project' => DB::table('environments')->where('id', $this->environment)->value('project_id'),
+            'environment' => $this->environment, 'q' => 'Private', 'type' => 'api_key'];
+        foreach ([false, true] as $due) {
+            $current = $filters + ($due ? ['due' => 1] : []) + ['page' => 2];
+            $target = $filters + ($due ? [] : ['state' => 'due']);
+            $this->get('/?'.http_build_query($current))->assertOk()
+                ->assertSee('href="'.e('/?'.http_build_query($target)).'"'.($due ? ' aria-current="true"' : ''), false);
+        }
+        $this->get('/?state=due')->assertSeeText('State: Rotation due')->assertSeeText('Showing 1 of 1 entry')
+            ->assertSeeInOrder(['data-label="Entry"', 'rotation due</span> since 2020-11-01', 'data-label="Project"'], false);
+        $this->get('/?due=1&state=archived')->assertViewHas('entries', fn ($entries) => $entries->pluck('id')->all() === [$entry]);
+        DB::table('entries')->where('id', $entry)->update(['state' => 'archived']);
+        $this->get('/')->assertViewHas('archivedCount', 1)->assertSeeText('1 archived entry →');
+        app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Active', 'alias' => 'still-active',
+            'type' => 'api_key', 'secret' => '{"token":"test"}']);
+        $this->get('/?state=archived')->assertSee('<h1 id="page-title">Entries</h1>', false)->assertSeeText('Showing 1 of 1 entry')
+            ->assertSeeText('State: Archived')->assertSee('<small><span class="chip muted">archived</span></small>', false)->assertDontSeeText('used by agents');
+        $this->get('/?state=archived&q=missing')->assertSeeText('Showing 0 of 1 entry');
+    }
+
+    public function test_grants_order_by_effective_state_then_agent_and_action(): void
+    {
+        $entry = $this->entry();
+        [$agent, , $first] = $this->machine($entry);
+        $other = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $other, 'workspace_id' => $this->workspace, 'name' => 'zebra',
+            'token_hash' => hash('sha256', $other), 'expires_at' => now()->addDay()]);
+        $ids = [];
+        foreach ([[$other, 'aaa', false], [$agent, 'zzz', false], [$agent, 'aaa', true]] as [$machine, $action, $expired]) {
+            $id = (string) Str::uuid();
+            $ids[] = $id;
+            DB::table('grants')->insert(['id' => $id, 'machine_id' => $machine, 'entry_id' => $entry,
+                'action' => $action, 'expires_at' => $expired ? now()->subDay() : now()->addDay()]);
+        }
+        $this->get('/workspaces/'.$this->workspace.'/grants')->assertViewHas('grants',
+            fn ($grants) => $grants->pluck('id')->all() === [$first, $ids[1], $ids[0], $ids[2]]);
+    }
+
+    public function test_catalog_remembers_only_a_workspace_the_user_can_access(): void
+    {
+        $other = (string) Str::uuid();
+        DB::table('workspaces')->insert(['id' => $other, 'name' => 'Zebra']);
+        DB::table('members')->insert(['workspace_id' => $other, 'user_id' => $this->owner->id, 'role' => 'owner']);
+        $this->withSession(['last_workspace' => $other])->get('/')->assertViewHas('space', fn ($space) => $space->id === $other);
+        DB::table('members')->where('workspace_id', $other)->delete();
+        $this->get('/')->assertViewHas('space', fn ($space) => $space->id === $this->workspace);
+    }
+
+    public function test_revoked_dates_override_expiry(): void
+    {
+        $entry = $this->entry();
+        [$agent, , $grant] = $this->machine($entry);
+        $base = '/workspaces/'.$this->workspace;
+        $revoked = '2024-05-06 11:30:00';
+        foreach ([[$revoked, null], [null, $revoked], [$revoked, $revoked]] as [$grantDate, $agentDate]) {
+            DB::table('grants')->where('id', $grant)->update(['revoked_at' => $grantDate, 'expires_at' => '2025-02-01 00:00:00']);
+            DB::table('machines')->where('id', $agent)->update(['revoked_at' => $agentDate, 'expires_at' => '2025-01-01 00:00:00']);
+            $response = $this->get($base.'/grants')->assertOk()->assertSeeText('Revoked 2024-05-06 11:30 UTC')
+                ->assertDontSeeText('2025-02-01')->assertDontSeeText('2025-01-01');
+            if ($agentDate) {
+                $response->assertSeeTextInOrder(['Revoked 2024-05-06 11:30 UTC', 'agent revoked']);
+                $this->get($base.'/agents')->assertSeeText('Revoked 2024-05-06 11:30 UTC')->assertDontSeeText('2025-01-01');
+            } else {
+                $response->assertDontSeeText('agent revoked');
+            }
+        }
+    }
+
+    public function test_expired_agent_and_missing_grant_prerequisites(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $this->get($base.'/grants')->assertSeeText('No grants yet.')->assertSeeText('No active agents.')->assertSeeText('No active entries.')
+            ->assertDontSee('name="machine_id"', false);
+        $entry = $this->entry();
+        $this->get($base.'/grants?entry='.$entry)->assertSeeText('No matching grants.');
+        [$agent] = $this->machine($entry);
+        $this->get($base.'/agents')->assertSee('/revoke/machines/'.$agent);
+        DB::table('machines')->where('id', $agent)->update(['expires_at' => '2020-11-25 14:00:00']);
+        $this->get($base.'/agents')->assertDontSee('/revoke/machines/'.$agent)->assertSee('Expired');
+        $this->get($base.'/grants')->assertSeeText('No active agents.')->assertDontSeeText('No active entries.')
+            ->assertSeeText('Expired 2020-11-25 14:00 UTC')->assertSeeText('agent expired')->assertSeeText('Grant expiry:');
+        DB::table('machines')->where('id', $agent)->update(['expires_at' => now()->addDay()]);
+        file_put_contents($this->temp.'/connectors.json', '{"actions":{}}');
+        $this->get($base.'/grants')->assertSeeText('No actions are configured.')->assertDontSee('name="machine_id"', false);
+    }
+
+    public function test_activity_uses_event_time_before_id_on_both_pages(): void
+    {
+        $entry = $this->entry();
+        $audit = app(\App\Vault\Access::class);
+        $audit->audit($this->workspace, 'entry.older', $entry);
+        $audit->audit($this->workspace, 'entry.newer', $entry);
+        DB::table('audit')->where('event', 'entry.older')->update(['created_at' => now()->addDays(2)]);
+        DB::table('audit')->where('event', 'entry.newer')->update(['created_at' => now()->addDay()]);
+        foreach (['/workspaces/'.$this->workspace.'/audit', '/entries/'.$entry] as $url) {
+            $this->get($url)->assertOk()->assertViewHas('events', fn ($events) => $events->first()->event === 'entry.older');
+        }
+    }
+
+    public function test_member_row_role_change_and_removal(): void
+    {
+        $member = User::create(['id' => (string) Str::uuid(), 'name' => 'Member', 'email' => 'member@example.test', 'password' => 'unused']);
+        $identity = ['email' => $member->email, 'name' => $member->name];
+        $url = '/workspaces/'.$this->workspace.'/members';
+        $this->get($url)->assertOk()->assertSeeText('Add another owner before changing your role')
+            ->assertSee('<button type="button" data-generate="first-password" aria-label="Generate initial password">Generate</button></span><small class="hint" id="first-password-hint">Blank for an existing account. At least 14 characters for a new one.</small></div>', false)
+            ->assertSee('aria-describedby="first-password-hint"', false)
+            ->assertSee('aria-label="Generate initial password"', false)
+            ->assertDontSee('aria-label="Role for Owner"', false);
+        $this->post($url, $identity + ['form' => 'add', 'role' => 'owner'])->assertRedirect($url);
+        $this->post($url, $identity + ['form' => 'add', 'role' => 'viewer'])->assertStatus(303)
+            ->assertSessionHas('form_errors.email', ['This person is already a member. Change their role in the list above.']);
+        $this->assertDatabaseHas('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'owner']);
+        $this->get($url)->assertSee('aria-label="Role for Owner"', false)->assertDontSeeText('Add another owner');
+        $this->post($url, $identity + ['role' => 'viewer'])->assertRedirect($url);
+        $this->get($url)->assertOk()->assertSee('aria-label="Role for Member"', false)->assertSee('Remove Member from this workspace?');
+        $this->post($url, $identity + ['role' => 'editor'])->assertRedirect($url);
+        $this->assertDatabaseHas('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id, 'role' => 'editor']);
+        $this->post($url, $identity + ['role' => 'remove'])->assertRedirect($url);
+        $this->assertDatabaseMissing('members', ['workspace_id' => $this->workspace, 'user_id' => $member->id]);
+        $this->post($url, ['name' => 'Owner', 'email' => $this->owner->email, 'role' => 'viewer'])->assertConflict();
+    }
+
+    public function test_wrong_inline_password_returns_to_the_entry_form_with_only_non_secret_input(): void
+    {
+        $page = '/entries/new?workspace='.$this->workspace;
+        $this->get($page)->assertOk();
+        $this->withSession(['confirmed_at' => time() - 301])->post('/entries', [
+            'name' => 'Draft entry', 'environment_id' => $this->environment,
+            'confirm_password' => 'wrong-password', 'secret_fields' => ['token' => $this->sentinel],
+        ])->assertStatus(303)->assertRedirect($page)
+            ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.'])
+            ->assertSessionHas('_old_input', ['name' => 'Draft entry', 'environment_id' => $this->environment]);
+        $this->assertDatabaseCount('entries', 0);
+    }
+
+    public function test_wrong_inline_password_returns_to_the_requests_page(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $path = $base.'/operations/'.Str::uuid().'/decision';
+        $this->get($base.'/requests')->assertOk();
+        $this->withSession(['confirmed_at' => time() - 301])->post($path, [
+            'decision' => 'deny', 'confirm_password' => 'wrong-password',
+        ])->assertStatus(303)->assertRedirect($base.'/requests')->assertSessionHas('error_form', $path)
+            ->assertSessionHas('form_errors.confirm_password', ['Current password is not right.']);
+    }
+
+    public function test_member_and_import_errors_return_to_their_forms(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $cases = [
+            ['members', ['name' => 'New member', 'email' => 'new@example.test', 'role' => 'editor'], 'password', 'Enter an initial password for a new user.'],
+            ['import', ['import' => '{'], 'import', 'Paste a JSON array of 1 to 50 entry objects.'],
+            ['import', ['import' => '[[]]'], 'import', 'Entry 1 is not an entry object. Paste a JSON array of 1 to 50 entry objects.'],
+        ];
+        foreach ($cases as [$page, $input, $field, $message]) {
+            $url = $base.'/'.$page;
+            $this->get($url)->assertOk();
+            $this->post($url, $input)->assertStatus(303)->assertRedirect($url)
+                ->assertSessionHas('form_errors', fn ($errors) => $errors[$field] === [$message]);
+            $this->get($url)->assertSeeText($message);
+        }
+    }
+
+    public function test_activity_ignores_invalid_filters_and_keeps_valid_ones(): void
+    {
+        $this->entry();
+        $url = '/workspaces/'.$this->workspace.'/audit';
+        $all = $this->get($url)->assertOk()->assertViewHas('filterErrors', [])->viewData('events')->pluck('id');
+        $this->assertNotEmpty($all);
+        $invalid = ['from' => '2026-02-30', 'to' => 'tomorrow', 'group' => 'unknown', 'actor' => 'unknown',
+            'outcome' => 'unknown', 'entry' => (string) Str::uuid()];
+        $response = $this->get($url.'?'.http_build_query($invalid))->assertOk();
+        $this->assertEqualsCanonicalizing(array_keys($invalid), array_keys($response->viewData('filterErrors')));
+        $this->assertEquals($all, $response->viewData('events')->pluck('id'));
+        $this->get($url.'?from=2026-02-30&outcome=denied')->assertOk()
+            ->assertViewHas('filterErrors', ['from' => 'From (UTC) must be a real date like 2026-12-31.'])
+            ->assertViewHas('events', fn ($events) => $events->total() === 0);
+    }
+
+    public function test_confirmation_labels_preserve_display_names_and_identify_actions(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $entry = $this->entry();
+        [$machine, $token] = $this->machine($entry, true);
+        $operation = $this->withToken($token)->postJson('/api/v1/execute', [
+            'entry_id' => $entry, 'action' => 'test.http', 'request_id' => 'label-request',
+        ])->assertJsonPath('state', 'pending')->json('id');
+        $decision = "$base/operations/$operation/decision";
+        $this->withSession(['confirmed_at' => time() - 301]);
+        foreach ([
+            ["$base/grants", ['entry_id' => $entry, 'machine_id' => $machine, 'action' => 'test.http'], 'Add grant', 'test.http for ai-os on Private name'],
+            [$decision, ['decision' => 'approve'], 'Allow once', 'test.http on Private name'],
+            [$decision, ['decision' => 'deny'], 'Deny', 'test.http on Private name'],
+            ["$base/types", ['name' => 'Mixed Case'], 'Save entry type', 'Mixed Case'],
+            ["$base/types/api_key/delete", [], 'Remove entry type', DB::table('entry_types')->where('workspace_id', $this->workspace)->where('key', 'api_key')->value('name')],
+            ["/entries/$entry/destroy", [], 'Destroy', 'Private name'],
+        ] as [$path, $fields, $verb, $name]) {
+            // The action is named once, by the solid button ("Confirm: <action>"); the verb has no colon of its own.
+            $this->post($path, $fields)->assertForbidden()->assertDontSeeText('Action to confirm')
+                ->assertSee('<button class="go action-name">Confirm: '.$verb.' <span class="name">'.$name.'</span></button>', false)
+                ->assertSeeInOrder(['<div class="callout warn" id="confirm-status" role="status">', '<div class="form-foot"><p class="note">The confirmation is valid for 5 minutes.</p>'], false);
+        }
+        $this->post("/entries/$entry/unarchive")->assertForbidden()
+            ->assertSee('Confirm: Restore <span class="name">Private name</span> from archive</button>', false);
+        // A reveal names the version it asks for; the current one is just the entry.
+        $this->post("/entries/$entry/reveal")->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal <span class="name">Private name</span></button>', false);
+        $this->post("/entries/$entry/reveal", ['version' => '1'])->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal version 1 of <span class="name">Private name</span></button>', false);
+        $this->post("/entries/$entry/reveal", ['version' => '1x'])->assertForbidden()->assertSee('<button class="go action-name">Confirm: Reveal <span class="name">Private name</span></button>', false);
+        $this->post("$base/grants")->assertForbidden()->assertSee('<button class="go action-name">Confirm and continue</button>', false);
+        $ready = $this->post('/confirm', ['pending' => session('pending_action.nonce'), 'current_password' => 'Synthetic-password-123!'])->assertOk();
+        $this->assertMatchesRegularExpression('~<button class="go action-name">\s*Continue\s*</button>~', $ready->getContent());
+    }
+
+    public function test_activity_filters_by_outcome_and_inclusive_dates(): void
+    {
+        foreach ([['01', 'denied'], ['02', 'ok'], ['02', 'denied'], ['03', 'denied'], ['04', 'succeeded'], ['04', 'failed'], ['04', 'expired'], ['04', 'revoked']] as [$day, $outcome]) {
+            DB::table('audit')->insert(['workspace_id' => $this->workspace, 'actor' => 'user:'.$this->owner->id,
+                'event' => 'entry.reveal', 'subject' => null, 'outcome' => $outcome, 'created_at' => '2026-01-'.$day.' 23:59:59']);
+        }
+        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertDontSee('class="filter-status"', false)->assertDontSeeText('Page 1 of 1');
+        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=ok')->assertSeeText('Outcome: OK')
+            ->assertViewHas('events', fn ($events) => $events->pluck('outcome')->sort()->values()->all() === ['ok', 'succeeded']);
+        foreach (['failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'] as $value => $label) {
+            $this->get('/workspaces/'.$this->workspace.'/audit?outcome='.$value)->assertSeeText('Outcome: '.$label)
+                ->assertViewHas('events', fn ($events) => $events->pluck('outcome')->all() === [$value]);
+        }
+        $this->get('/workspaces/'.$this->workspace.'/audit?outcome=denied&from=2026-01-02&to=2026-01-02')
+            ->assertOk()->assertSeeText('Showing 1 of 8 events')->assertSeeText('Outcome: Denied')
+            ->assertSeeText('From: 2026-01-02')->assertSeeText('To: 2026-01-02')
+            ->assertViewHas('events', fn ($events) => $events->first()->created_at === '2026-01-02 23:59:59' && $events->first()->outcome === 'denied');
     }
 
     public function test_import_validates_all_rows_before_any_write(): void
@@ -232,7 +738,7 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         [$machine,$token] = $this->machine($id);
-        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertUnprocessable();
+        $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Name', 'alias' => 'alias', 'type' => 'login', 'secret' => '{"username":"u","password":"p"}'])->assertStatus(303)->assertSessionHasErrors('entry');
         $this->app['auth']->logout();
         $this->withToken($token)->postJson('/entries/'.$id.'/reveal')->assertRedirect('/login');
     }
@@ -260,7 +766,7 @@ final class VaultTest extends TestCase
         [$machine,$token,$grant] = $this->machine($id, true);
         $op = $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-before-revoke'])->json('id');
         $this->post('/workspaces/'.$this->workspace.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
-        $this->post('/workspaces/'.$this->workspace.'/revoke/grants/'.$grant)->assertRedirect();
+        $this->post('/workspaces/'.$this->workspace.'/revoke/grants/'.$grant)->assertRedirect('/workspaces/'.$this->workspace.'/grants');
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1, 'approval' => '1'])->assertRedirect();
         $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertJsonPath('state', 'revoked');
         $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $id, 'action' => 'test.http', 'request_id' => 'request-after-revoke'])->assertJsonPath('state', 'pending');
@@ -314,15 +820,23 @@ final class VaultTest extends TestCase
         $type = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'FTP server')->first();
         $this->assertSame('ftp_server', $type->key);
         $this->assertSame(['server_address', 'contrasena'], array_column(json_decode($type->fields, true), 'key'));
+        // Types are listed by name whatever the case: "apple vault" stands among the capitalised names, not after them.
+        $this->post($types, ['name' => 'apple vault', 'field_key' => [''], 'field_label' => ['Token'], 'field_kind' => ['secret'], 'field_required' => ['1']])->assertRedirect();
+        $names = array_values(app(\App\Vault\EntryTypes::class)->names($this->workspace));
+        $this->assertContains('apple vault', $names);
+        $sorted = $names;
+        usort($sorted, fn ($x, $y) => strcasecmp($x, $y));
+        $this->assertSame($sorted, $names);
+        $this->assertNotSame('apple vault', end($names));
         $this->get('/entries/new?workspace='.$this->workspace)->assertOk()->assertSee('Server address')->assertSee('secret_fields[contrasena]', false);
 
         $entry = ['environment_id' => $this->environment, 'name' => 'FTP', 'alias' => 'ftp', 'type' => 'ftp_server'];
-        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertUnprocessable()->assertSee('Contraseña');
+        $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test']])->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => str_contains(implode(' ', $errors->all()), 'Contraseña'));
         $this->post('/entries', [...$entry, 'secret_fields' => ['server_address' => 'ftp.example.test', 'contrasena' => $this->sentinel]])->assertRedirect();
         $this->assertSame(1, DB::table('entries')->where('type', 'ftp_server')->count());
-        $this->post('/entries', [...$entry, 'type' => 'missing_type', 'secret_fields' => ['x' => 'y']])->assertUnprocessable();
+        $this->post('/entries', [...$entry, 'type' => 'missing_type', 'secret_fields' => ['x' => 'y']])->assertStatus(303)->assertSessionHasErrors();
 
-        $this->post($types.'/ftp_server/delete')->assertUnprocessable();
+        $this->post($types.'/ftp_server/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($types, ['name' => 'Unused', 'field_label' => ['Field'], 'field_key' => [''], 'field_kind' => ['text'], 'field_required' => ['0']]);
         $this->post($types.'/unused/delete')->assertRedirect();
         $this->assertFalse(DB::table('entry_types')->where('key', 'unused')->exists());
@@ -349,8 +863,22 @@ final class VaultTest extends TestCase
         $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret' => '{"note":"synthetic"}']);
         $machine = (string) Str::uuid();
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
-        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1])->assertStatus(303)->assertSessionHasErrors();
         $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $machine, 'entry_id' => $this->entry(), 'action' => 'test.http', 'days' => 1])->assertRedirect();
+    }
+
+    public function test_sparse_checkbox_indices_follow_their_rows(): void
+    {
+        $base = '/workspaces/'.$this->workspace;
+        $names = [0 => 'First', 1 => 'Second', 2 => 'Third', 8 => 'Added'];
+        $checked = [0 => '1', 2 => '1', 8 => '1'];
+        $this->post($base.'/template', ['env_name' => $names, 'env_production' => $checked])->assertRedirect()->assertSessionHasNoErrors();
+        $template = DB::table('workspaces')->where('id', $this->workspace)->value('environment_template');
+        $this->assertSame([true, false, true, true], array_column(json_decode($template, true), 'production'));
+
+        $this->post($base.'/types', ['name' => 'Sparse fields', 'field_label' => $names, 'field_required' => $checked])->assertRedirect()->assertSessionHasNoErrors();
+        $fields = DB::table('entry_types')->where('workspace_id', $this->workspace)->where('name', 'Sparse fields')->value('fields');
+        $this->assertSame([true, false, true, true], array_column(json_decode($fields, true), 'required'));
     }
 
     public function test_environment_template_rename_production_and_safe_delete(): void
@@ -362,11 +890,11 @@ final class VaultTest extends TestCase
         $envs = DB::table('environments')->where('project_id', $project)->orderBy('name')->get();
         $this->assertSame(['dev', 'live', 'qa'], $envs->pluck('name')->all());
         $this->assertTrue((bool) $envs->firstWhere('name', 'live')->production);
-        $this->post($base.'/projects', ['name' => 'Shop'])->assertUnprocessable();
+        $this->post($base.'/projects', ['name' => 'Shop'])->assertStatus(303)->assertSessionHasErrors();
 
         $dev = $envs->firstWhere('name', 'dev')->id;
         $this->post($base.'/environments/'.$dev, ['name' => 'development', 'production' => '0'])->assertRedirect();
-        $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertUnprocessable();
+        $this->post($base.'/environments/'.$dev, ['name' => 'qa', 'production' => '0'])->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/environments', ['project_id' => $project, 'name' => 'preprod', 'production' => '1'])->assertRedirect();
         $this->assertTrue((bool) DB::table('environments')->where('project_id', $project)->where('name', 'preprod')->value('production'));
         $this->get($base.'/structure')->assertOk()->assertSee('development')->assertSee('preprod');
@@ -375,8 +903,8 @@ final class VaultTest extends TestCase
         $this->assertFalse(DB::table('environments')->where('id', $this->environment)->exists());
         $this->post($base.'/environments/'.$dev.'/delete')->assertRedirect();
         app(Catalog::class)->create(['environment_id' => $envs->firstWhere('name', 'qa')->id, 'name' => 'n', 'alias' => 'a', 'type' => 'api_key', 'secret' => '{"token":"t"}']);
-        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertUnprocessable();
-        $this->post($base.'/projects/'.$project.'/delete')->assertUnprocessable();
+        $this->post($base.'/environments/'.$envs->firstWhere('name', 'qa')->id.'/delete')->assertStatus(303)->assertSessionHasErrors();
+        $this->post($base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($base.'/projects/'.$project, ['name' => 'Shop 2'])->assertRedirect();
         $this->assertSame('Shop 2', DB::table('projects')->where('id', $project)->value('name'));
 
@@ -402,7 +930,7 @@ final class VaultTest extends TestCase
         $this->assertStringNotContainsString($this->sentinel, json_encode(DB::table('entry_changes')->get()));
         $this->assertStringNotContainsString('synthetic-rotated', json_encode(DB::table('entry_changes')->get()));
 
-        $this->get('/entries/'.$id)->assertOk()->assertSee('Versions')->assertSee('API key')->assertSee('“Private name” → “Renamed”', false)->assertDontSee($this->sentinel);
+        $this->get('/entries/'.$id)->assertOk()->assertSee('Versions')->assertSee('API key')->assertSee('"Private name" → "Renamed"', false)->assertDontSee($this->sentinel);
         $this->post('/entries/'.$id.'/reveal', ['version' => 1])->assertOk()->assertSee($this->sentinel)->assertSee('older version 1', false)->assertSee('differs')->assertDontSee('synthetic-rotated');
 
         $this->post('/entries/'.$id.'/restore-version', ['version' => 1])->assertRedirect();
@@ -420,15 +948,15 @@ final class VaultTest extends TestCase
     public function test_type_key_is_canonical_and_usage_ignores_case_and_destroyed_entries(): void
     {
         $row = ['environment_id' => $this->environment, 'name' => 'Import', 'alias' => 'import', 'type' => 'API_KEY', 'secret' => '{"token":"synthetic-import"}'];
-        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertUnprocessable();
-        $this->post('/entries', $row)->assertUnprocessable();
+        $this->post('/workspaces/'.$this->workspace.'/import', ['import' => json_encode([$row])])->assertStatus(303)->assertSessionHasErrors();
+        $this->post('/entries', $row)->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(0, DB::table('entries')->count());
 
         // A legacy row whose type differs only by case still counts as usage.
         $id = $this->entry();
         DB::table('entries')->where('id', $id)->update(['type' => 'API_KEY']);
         $types = '/workspaces/'.$this->workspace.'/types';
-        $this->post($types.'/api_key/delete')->assertUnprocessable();
+        $this->post($types.'/api_key/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(1, $this->get($types)->assertOk()->viewData('usage')['api_key']);
         $this->assertTrue(DB::table('entry_types')->where('key', 'api_key')->exists());
 
@@ -487,7 +1015,7 @@ final class VaultTest extends TestCase
         $machine = (string) Str::uuid();
         DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'ai-os', 'token_hash' => str_repeat('c', 64), 'expires_at' => now()->addDay()]);
         $grant = ['machine_id' => $machine, 'entry_id' => $id, 'action' => 'test.http', 'days' => 1];
-        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertUnprocessable()->assertDontSee('synthetic');
+        $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertStatus(303)->assertSessionHasErrors()->assertSessionHas('errors', fn ($errors) => !str_contains(implode(' ', $errors->all()), 'synthetic'));
         $this->assertSame(0, DB::table('grants')->count());
         $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Note', 'alias' => 'note', 'type' => 'secure_note', 'secret_fields' => ['token' => 'synthetic-token']])->assertRedirect();
         $this->post('/workspaces/'.$this->workspace.'/grants', $grant)->assertRedirect();
@@ -544,9 +1072,9 @@ final class VaultTest extends TestCase
         $this->assertSame(['token', 'endpoint'], $fields());
 
         // Keys are immutable and server-assigned.
-        $this->post($url, $this->typeForm(['field_key' => ['token', 'password'], 'field_label' => ['API key', 'Sneaky'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
-        $this->post($url, $this->typeForm(['field_key' => ['token', 'token'], 'field_label' => ['API key', 'Again'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertUnprocessable();
-        $this->post('/workspaces/'.$this->workspace.'/types', ['name' => 'Fresh', 'field_key' => ['chosen_by_client'], 'field_label' => ['Label'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertUnprocessable();
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'password'], 'field_label' => ['API key', 'Sneaky'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertStatus(303)->assertSessionHasErrors();
+        $this->post($url, $this->typeForm(['field_key' => ['token', 'token'], 'field_label' => ['API key', 'Again'], 'field_kind' => ['secret', 'text'], 'field_required' => ['1', '0']]))->assertStatus(303)->assertSessionHasErrors();
+        $this->post('/workspaces/'.$this->workspace.'/types', ['name' => 'Fresh', 'field_key' => ['chosen_by_client'], 'field_label' => ['Label'], 'field_kind' => ['text'], 'field_required' => ['0']])->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(['token', 'endpoint'], $fields());
 
         // A new row whose label slugs to an existing key gets a fresh key; the existing key keeps its place and meaning.
@@ -563,7 +1091,7 @@ final class VaultTest extends TestCase
         $this->post($types.'/audited/delete')->assertRedirect();
         $this->assertSame(1, DB::table('audit')->where('event', 'type.delete')->where('subject', $row->id)->count());
         // A rejected save leaves no "ok" audit row behind.
-        $this->post($types, ['name' => 'Rejected', 'field_label' => []])->assertUnprocessable();
+        $this->post($types, ['name' => 'Rejected', 'field_label' => []])->assertStatus(303)->assertSessionHasErrors();
         $this->assertSame(1, DB::table('audit')->where('event', 'type.save')->count());
     }
 
@@ -588,14 +1116,14 @@ final class VaultTest extends TestCase
     {
         $id = $this->entry();
         $this->post('/entries/'.$id, ['environment_id' => $this->environment, 'name' => 'Private name', 'alias' => 'safe-alias', 'type' => 'api_key',
-            'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertUnprocessable();
+            'secret_fields' => ['token' => 'x'], 'clear_fields' => [['nested']]])->assertStatus(303)->assertSessionHasErrors('clear_fields');
         $types = '/workspaces/'.$this->workspace.'/types';
-        $this->post($types, $this->typeForm(['name' => ['x']]))->assertUnprocessable();
+        $this->post($types, $this->typeForm(['name' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
         foreach (['field_label', 'field_key', 'field_kind', 'field_required', 'field_remove'] as $column) {
-            $this->post($types, $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
-            $this->post($types.'/api_key', $this->typeForm([$column => [['nested']]]))->assertUnprocessable();
+            $this->post($types, $this->typeForm([$column => [['nested']]]))->assertStatus(303)->assertSessionHasErrors();
+            $this->post($types.'/api_key', $this->typeForm([$column => [['nested']]]))->assertStatus(303)->assertSessionHasErrors();
         }
-        $this->post($types.'/api_key', $this->typeForm(['revision' => ['x']]))->assertUnprocessable();
+        $this->post($types.'/api_key', $this->typeForm(['revision' => ['x']]))->assertStatus(303)->assertSessionHasErrors();
     }
 
     public function test_mfa_replay_is_rejected(): void

@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 
 final class StructureTest extends TestCase
 {
+    private string $connectors;
     private User $owner;
 
     private string $workspace;
@@ -21,6 +22,11 @@ final class StructureTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Pages that list actions read the operator's connector file. Give every test its own, so the suite does not
+        // depend on /opt/vault existing on the machine that runs it.
+        $this->connectors = tempnam(sys_get_temp_dir(), 'vault-connectors-');
+        file_put_contents($this->connectors, json_encode(['actions' => ['test.http' => ['kind' => 'http', 'url' => 'https://example.invalid/status']]]));
+        config(['vault.connectors' => $this->connectors]);
         $this->assertSame('sqlite', config('database.default'));
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
         Artisan::call('migrate', ['--force' => true]);
@@ -28,6 +34,14 @@ final class StructureTest extends TestCase
         $this->workspace = $this->workspace();
         $this->base = '/workspaces/'.$this->workspace;
         $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $this->owner->credentialRevision()]);
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->connectors) && is_file($this->connectors)) {
+            unlink($this->connectors);
+        }
+        parent::tearDown();
     }
 
     private function workspace(): string
@@ -39,9 +53,52 @@ final class StructureTest extends TestCase
         return $id;
     }
 
+    public function test_entry_and_import_link_to_the_first_missing_setup_step(): void
+    {
+        $pages = ['/entries/new?workspace='.$this->workspace, $this->base.'/import'];
+        foreach ($pages as $page) {
+            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#add-project">Add a project in Setup, then an environment</a>', false);
+        }
+        [$project, $environment] = $this->project($this->workspace);
+        DB::table('environments')->where('id', $environment)->delete();
+        foreach ($pages as $page) {
+            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#p-'.$project.'">Add an environment to a project in Setup</a>', false);
+        }
+    }
+
+    public function test_management_pages_link_to_their_add_section(): void
+    {
+        foreach (['agents' => 'agent', 'grants' => 'grant', 'members' => 'member'] as $page => $item) {
+            $this->get($this->base.'/'.$page)->assertOk()->assertSeeInOrder([
+                'class="btn" href="#add-'.$item.'"', '<h2 id="add-'.$item.'">',
+            ], false);
+        }
+    }
+
+    public function test_foreign_filters_are_ignored_and_never_expose_foreign_grants(): void
+    {
+        $other = $this->workspace();
+        $fixtures = [];
+        foreach ([$this->workspace, $other] as $workspace) {
+            [, $environment] = $this->project($workspace);
+            $entry = $this->entry($environment, 'active');
+            $machine = (string) Str::uuid();
+            DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $workspace, 'name' => $machine, 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
+            DB::table('grants')->insert(['id' => (string) Str::uuid(), 'machine_id' => $machine, 'entry_id' => $entry, 'action' => 'action.'.$machine, 'expires_at' => now()->addDay()]);
+            $fixtures[] = [$machine, $entry];
+        }
+        [[$agent, $entry], [$otherAgent, $otherEntry]] = $fixtures;
+        $this->get($this->base.'/grants?agent='.$otherAgent.'&entry='.$otherEntry)
+            ->assertOk()->assertViewHas('agent', fn ($value) => $value === null)->assertViewHas('entry', fn ($value) => $value === null)
+            ->assertSee('select name="agent"', false)->assertSee('select name="entry"', false)->assertSeeText('Apply')
+            ->assertSee('action.'.$agent)->assertDontSee($otherAgent)->assertDontSee($otherEntry);
+        $this->get($this->base.'/grants?agent='.$agent.'&entry='.$entry)->assertOk()
+            ->assertSee('value="'.$agent.'" selected', false)->assertSee('value="'.$entry.'" selected', false);
+    }
+
     public function test_template_rejects_names_that_differ_only_in_case_or_accent(): void
     {
-        $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertUnprocessable();
+        $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/projects', ['name' => 'Example'])->assertRedirect();
         $project = DB::table('projects')->where('workspace_id', $this->workspace)->value('id');
         $this->assertEqualsCanonicalizing(['local', 'test', 'stage', 'prod'], DB::table('environments')->where('project_id', $project)->pluck('name')->all());
@@ -53,7 +110,7 @@ final class StructureTest extends TestCase
             ['name' => 'qa', 'production' => false], ['name' => 'qa', 'production' => true],
         ])]);
 
-        $this->post($this->base.'/projects', ['name' => 'New project'])->assertUnprocessable();
+        $this->post($this->base.'/projects', ['name' => 'New project'])->assertStatus(303)->assertSessionHasErrors();
         $this->assertDatabaseMissing('projects', ['workspace_id' => $this->workspace]);
         $this->assertDatabaseMissing('audit', ['workspace_id' => $this->workspace, 'event' => 'project.create']);
     }
@@ -168,8 +225,8 @@ final class StructureTest extends TestCase
         $archived = $this->entry($environment, 'archived');
         $destroyed = $this->entry($environment, 'destroyed');
 
-        $this->post($this->base.'/projects/'.$project.'/delete')->assertUnprocessable();
-        $this->post($this->base.'/environments/'.$environment.'/delete')->assertUnprocessable();
+        $this->post($this->base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments/'.$environment.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->assertDatabaseHas('entries', ['id' => $archived, 'state' => 'archived']);
         $this->assertDatabaseHas('entries', ['id' => $destroyed, 'state' => 'destroyed']);
         $this->assertDatabaseEmpty('audit');
@@ -179,11 +236,11 @@ final class StructureTest extends TestCase
     {
         [$project, $environment] = $this->project($this->workspace);
         [$other] = $this->project($this->workspace);
-        $this->post($this->base.'/projects', ['name' => $project])->assertUnprocessable();
-        $this->post($this->base.'/projects/'.$other, ['name' => $project])->assertUnprocessable();
-        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'test'])->assertUnprocessable();
+        $this->post($this->base.'/projects', ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/projects/'.$other, ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'test'])->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'qa'])->assertRedirect();
-        $this->post($this->base.'/environments/'.$environment, ['name' => 'qa'])->assertUnprocessable();
+        $this->post($this->base.'/environments/'.$environment, ['name' => 'qa'])->assertStatus(303)->assertSessionHasErrors();
     }
 
     private function project(string $workspace): array

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Account;
 use App\Http\Identity;
 use App\Http\Workspace;
 use App\Vault\Operations;
@@ -35,7 +36,16 @@ Route::middleware('vault.auth')->group(function () {
     Route::post('/password', [Identity::class, 'changePassword'])->middleware('throttle:sensitive');
     Route::post('/logout', [Identity::class, 'logout']);
     Route::post('/confirm', [Identity::class, 'confirm'])->middleware('throttle:sensitive');
+    Route::get('/confirm', [Account::class, 'confirmForm']);
+    Route::get('/account', [Account::class, 'show']);
+    Route::get('/workspaces/new', [Account::class, 'newWorkspace']);
     Route::post('/workspaces', [Workspace::class, 'workspace']);
+    Route::get('/workspaces/{workspace}/import', [Workspace::class, 'importForm'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/waiting', [Account::class, 'waiting'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/requests', [Workspace::class, 'requests'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/agents', [Workspace::class, 'agents'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/grants', [Workspace::class, 'grants'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/members', [Workspace::class, 'members'])->whereUuid('workspace');
     Route::post('/workspaces/{workspace}/projects', [Workspace::class, 'project']);
     Route::post('/workspaces/{workspace}/environments', [Workspace::class, 'environment']);
     Route::get('/workspaces/{workspace}/structure', [Workspace::class, 'structurePage'])->whereUuid('workspace');

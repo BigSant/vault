@@ -2,47 +2,108 @@
 @section('title', $entry->name)
 @section('content')
 @php
-    $canEdit = $role !== 'viewer' && $entry->state === 'active';
+    $isOwner = $space->role === 'owner';
+    $isEditor = $space->role !== 'viewer';
+    $canEdit = $isEditor && $entry->state === 'active';
+    $showLifecycle = $canEdit || ($entry->state === 'archived' && $isEditor);
+    $archiveHeading = $isOwner && $entry->state === 'archived' ? 'Archive and destroy' : 'Archive';
     $label = fn ($key) => $labels[$key] ?? $key;
     $metaNames = ['name' => 'Name', 'alias' => 'Agent alias', 'tags' => 'Tags', 'rotate_at' => 'Rotation reminder'];
     $stateChip = ['active' => 'ok', 'archived' => 'muted', 'destroyed' => 'bad'][$entry->state] ?? 'muted';
     $current = (int) $entry->version;
     $dash = fn ($v) => $v === null || $v === '' ? '—' : $v;
+    $shownCurrent = isset($secret) && (! $shownVersion || $shownVersion === $current);
+    // An older version is on screen: every text about hiding and revealing again names it.
+    $shownOlder = isset($secret) && $shownVersion && $shownVersion !== $current ? (int) $shownVersion : null;
+    $hiddenText = $shownOlder ? 'Hidden. Reveal version '.$shownOlder.' again to see it.' : 'Hidden. Reveal again to see it.';
+    $hiddenNote = $shownOlder ? 'Version '.$shownOlder.' values are hidden again. Reveal version '.$shownOlder.' again to see them.'
+        : 'Current version '.$current.' values are hidden again. Reveal again to see them.';
+    $day = fn ($value) => substr(str_replace('T', ' ', (string) $value), 0, 16);
+    $waitingCount = isset($waitingCount) ? (int) $waitingCount : ($isOwner
+        ? $operations->filter(fn ($o) => in_array($o->state, ['pending', 'requires_user_action'], true) && strtotime((string) $o->expires_at) > time())->count()
+        : 0);
+    // Versions are listed a page at a time, newest first.
+    $vPage = max(1, (int) ($historyPage ?? 1));
+    $vMore = isset($historyHasMore) ? (bool) $historyHasMore : ! empty($historyOlder);
+    $vUrl = fn (int $p) => '/entries/'.$entry->id.($p > 1 ? '?vpage='.$p : '').'#versions';
 @endphp
-<a class="back" href="/?workspace={{ $entry->workspace_id }}">← Entries</a>
+{{-- Two widths, as everywhere: boards end at --wide; the facts, the cards and the archive forms keep --card. --}}
+<div class="entry-page">
+<a class="back" href="{{ $backUrl }}">← Entries</a>
 <div class="head">
-    <div>
-        <h1 class="name">{{ $entry->name }}</h1>
-        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }} · version {{ $current }}</span></p>
+    {{-- .title-block: on phones the h1 takes the whole row and "Edit entry" stands at the right of the meta line. --}}
+    <div class="title-block">
+        <div class="title-row">
+            <h1 class="name">{{ $entry->name }}</h1>
+            @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
+        </div>
+        <p class="sub">{{ $environment->project }} @include('sign', ['name' => $environment->name, 'production' => $environment->production]) <span class="chip {{ $stateChip }}">{{ $entry->state }}</span> <span>{{ $type?->name ?? $entry->type }}&nbsp;· version {{ $current }}</span></p>
     </div>
-    @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Update</a>@endif
 </div>
-<nav class="subnav"><a class="btn" href="#data">Values</a><a class="btn" href="#versions">Versions</a>@if($role === 'owner')<a class="btn" href="#access">Agent access</a><a class="btn" href="#activity">Activity</a>@endif</nav>
+@php $hasWaiting = $isOwner && $waitingCount > 0; @endphp
+@if($isEditor)
+{{-- Jump links right under the title: the sections in page order, each named like its heading. Links, not actions.
+     When requests wait for this owner, they are the first link and the first section. --}}
+<nav class="subnav" aria-label="On this page">
+    {{-- A <details data-wide-open>: on wide screens app.js keeps it open and its summary is a plain label (one line
+         of links); on phones it is a closed drawer. --}}
+    <details class="jump" data-wide-open>
+        <summary>On this page</summary>
+        <div class="jump-links">
+            @if($isOwner)<a href="#waiting" data-shown-with="waiting" @if(!$hasWaiting) hidden @endif>Requests waiting for you</a>@endif
+            <a href="#details">Details</a><a href="#values">Secret values</a><a href="#versions">Versions</a>
+            @if($isOwner)<a href="#access">Agent access</a><a href="#requests">Recent requests</a><a href="#activity">Activity</a>@endif
+            @if($showLifecycle)<a href="#archive">{{ $archiveHeading }}</a>@endif
+        </div>
+    </details>
+    {{-- Phones, while the drawer is closed: the values are one tap away for a person who may reveal them. --}}
+    @if($canEdit)<a class="jump-quick" href="#values">Secret values <span aria-hidden="true">↓</span></a>@endif
+</nav>
+@endif
+{{-- Requests that wait for this owner are the first section. Their count is said once, by the section heading.
+     While nothing waits the heading row is hidden and the region is empty; a refresh in place fills both. --}}
+@if($isOwner)
+<div class="waiting-first">
+@include('operations', ['mode' => 'waiting', 'quietEmpty' => true, 'workspace' => $entry->workspace_id, 'hideEntry' => true, 'back' => '/entries/'.$entry->id, 'refreshUrl' => '/entries/'.$entry->id,
+    'confirmAsk' => $canEdit ? 'Enter your current password, then choose a request action, or reveal, restore or archive below.' : null])
+</div>
+@endif
 
-<table class="facts">
-    <tr><th>Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted">— the only name agents see</span></td></tr>
-    <tr><th>Tags</th><td>{{ $entry->tags ?: '—' }}</td></tr>
-    <tr><th>Updated</th><td>{{ $entry->updated_at }}</td></tr>
-    <tr><th>Rotation reminder</th><td>{{ $entry->rotate_at ? substr($entry->rotate_at, 0, 10) : 'not set' }}@if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">due</span>@endif</td></tr>
+<h2 id="details">Details</h2>
+<table class="facts" aria-labelledby="details">
+    <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted nobreak">— the name agents see</span></td></tr>
+    <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
+    <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
+    <tr><th scope="row">Rotation reminder (UTC)</th><td>@if($entry->rotate_at){{ substr($entry->rotate_at, 0, 10) }}@else<span class="muted">not set</span>@endif @if($entry->rotate_at && strtotime($entry->rotate_at) < time()) <span class="chip warn">rotation due</span>@endif</td></tr>
 </table>
-
-<h2 id="data">Secret values</h2>
-@if($environment->production)<div class="tape"><span>Production credentials</span></div>@endif
-<div class="card">
+{{-- A viewer has no Secret values section: what the role sees is one note under the details. --}}
+@if(!$isEditor)
+<p class="note">Viewers see entry details and version history, not values.</p>
+@else
+<h2 id="values">Secret values</h2>
+@if(!isset($secret) && !$canEdit)
+    {{-- Nothing can be done here: a plain note, not an action card. --}}
+    <p class="note">Secret values cannot be revealed while this entry is {{ $entry->state }}.</p>
+@else
+{{-- Production shows as the card's own hazard edge, so the warning is exactly as wide as the values. --}}
+<div class="card solo{{ $environment->production && $canEdit ? ' danger' : '' }}">
+    @if($environment->production && $canEdit)<p class="block-label"><span class="chip warn">Production credentials</span></p>@endif
     @isset($secret)
         @if($shownVersion && $shownVersion !== $current)
             <div class="callout warn"><p>Showing an <b>older version {{ $shownVersion }}</b> (current is {{ $current }}). Fields marked <span class="chip warn">differs</span> are not the same as now.</p></div>
+            <p class="note" data-hidden-note="{{ $hiddenNote }}">Version {{ $shownVersion }}. Values hide again after 30 seconds.</p>
         @else
-            <p class="note">Current version {{ $current }}. Values hide again after 30 seconds.</p>
+            <p class="note" data-hidden-note="{{ $hiddenNote }}">Current version {{ $current }}. Values hide again after 30 seconds.</p>
         @endif
         @foreach($secret as $field => $value)
-            <div class="secret-row">
-                <div class="block-label">{{ $label($field) }}
+            {{-- The value and its Copy share a row at every width; the field name is the line above. --}}
+            <div class="secret-row compact">
+                <div class="block-label">@if(isset($labels[$field]))<span class="name">{{ $labels[$field] }}</span>@else<code class="name">{{ $field }}</code>@endif
                     @if(!isset($labels[$field]))<span class="chip muted">no longer in type</span>@endif
                     @if(in_array($field, $differs, true))<span class="chip warn">differs</span>@endif
                 </div>
-                <pre data-secret class="secret" id="secret-{{ $loop->index }}">{{ $value }}</pre>
-                <div class="controls"><button type="button" data-copy="secret-{{ $loop->index }}">Copy</button></div>
+                <pre data-secret data-hidden-text="{{ $hiddenText }}"@if($shownOlder) data-version="{{ $shownOlder }}"@endif class="secret" id="secret-{{ $loop->index }}">{{ $value }}</pre>
+                <div class="controls"><button type="button" data-copy="secret-{{ $loop->index }}" aria-label="Copy {{ $label($field) }}">Copy</button></div>
             </div>
         @endforeach
         @php $onlyCurrent = array_diff($differs, array_keys($secret)); @endphp
@@ -52,24 +113,47 @@
         <p class="note">Values are not sent to this page until you reveal them.</p>
     @endisset
     @if($canEdit)
-        <div class="form-foot">
-            <p class="note">Every reveal goes to the activity log. If asked, confirm your password at the bottom of the page. Older versions are under Versions.</p>
-            <form class="controls" method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<button class="go">Reveal current</button></form>
+        {{-- One password field for every Reveal on this page (here and per version): an expired confirmation asks
+             here, in place, and never sends a reveal to the confirm page. While requests wait for this owner, their
+             block at the top of the page ("confirm-decide") is the page's one confirmation state and one password
+             field: this block then shows nothing while the confirmation is valid, and points up when it expired.
+             Restore (Versions) and Archive entry name this block too, so they are held here like a reveal.
+             While values are on screen, "Hide values" (first in the foot, script only) conceals them right away. --}}
+        @include('confirm-inline', ['verb' => 'reveal, restore or archive', 'ask' => 'Enter your current password, then reveal values, restore a version or archive the entry.', 'shared' => 'confirm-reveal', 'primary' => $isOwner ? 'confirm-decide' : null, 'primaryShown' => $hasWaiting])
+        {{-- Under an older version the foot holds three buttons: the note then stands above them (.stack), so the
+             buttons keep one row. --}}
+        <div class="form-foot{{ $shownOlder ? ' stack' : '' }}">
+            <p class="note">Every reveal goes to the activity log. Older versions are under Versions.</p>
+            {{-- Under an older version the way back to the same values comes first; "Reveal current" is the other choice.
+                 While values are on screen no Reveal is the solid button: "Reveal again" turns solid when app.js hides
+                 them (data-go-when-hidden). data-held-name: the held button's wording, the entry name in its own case. --}}
+            <div class="controls">
+                {{-- Shown by app.js while values are on screen: conceals them at once, before the 30 seconds end. Plain, never solid. --}}
+                @isset($secret)<button type="button" data-hide-values hidden>Hide values</button>@endisset
+                @if($shownOlder)
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<button aria-label="Reveal current values of {{ $entry->name }}" data-held-name="Reveal current: {{ $entry->name }}">Reveal current</button></form>
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf<input type="hidden" name="version" value="{{ $shownOlder }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button data-go-when-hidden aria-label="Reveal version {{ $shownOlder }} again: values of {{ $entry->name }}" data-held-name="Reveal version {{ $shownOlder }} again: {{ $entry->name }}">Reveal version {{ $shownOlder }} again</button></form>
+                @else
+                <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal" data-confirm-default>@csrf @if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif @if($shownCurrent)<button data-go-when-hidden aria-label="Reveal again: current values of {{ $entry->name }}" data-held-name="Reveal again: {{ $entry->name }}">Reveal again</button>@else<button class="go" aria-label="Reveal current values of {{ $entry->name }}" data-held-name="Reveal current: {{ $entry->name }}">Reveal current</button>@endif</form>
+                @endif
+            </div>
         </div>
     @endif
 </div>
+@endif
+@endif
 
 <h2 id="versions">Versions</h2>
-<p class="note">Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.</p>
-<div class="scroll"><table class="board versions">
-    <thead><tr><th scope="col">Version</th><th scope="col">When (UTC)</th><th scope="col">Who</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"></th>@endif</tr></thead>
+<p class="note">@if($isEditor)Every save creates a version. This shows who changed which fields and when; the values themselves only appear when you reveal a version.@else Every save creates a version. This shows who changed which fields and when.@endif</p>
+<div class="scroll"><table class="board compact-board versions" aria-labelledby="versions">
+    <thead><tr><th scope="col">Version</th><th scope="col">Saved (UTC)</th><th scope="col">By</th><th scope="col">Changes</th>@if($canEdit)<th scope="col"><span class="sr-only">Actions</span></th>@endif</tr></thead>
     <tbody>
     @forelse($history as $h)
         <tr class="{{ $h['version'] === $current ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Version"><b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
-            <td class="when" data-label="When (UTC)">{{ $h['at'] ? substr(str_replace('T', ' ', $h['at']), 0, 19) : '—' }}</td>
-            <td data-label="Who">{{ $h['user'] ?? '—' }}</td>
-            <td data-label="Changes"><div class="changes">
+            <td class="full" data-label="Version"><small class="k">Version</small> <b>{{ $h['version'] }}</b> @if($h['version'] === $current)<span class="chip ok">current</span>@endif @unless($h['available'])<span class="chip muted">purged</span>@endunless</td>
+            <td class="when" data-label="Saved (UTC)">@if($h['at'])<small class="k">Saved</small> <span class="nobreak">{{ $day($h['at']) }} <small class="k">UTC</small></span>@else<span class="muted">save time unknown</span>@endif</td>
+            <td data-label="By">@if($h['user'] ?? null)<small class="k">by</small> {{ $h['user'] }}@else<span class="muted">author unknown</span>@endif</td>
+            <td class="changes-cell full" data-label="Changes"><div class="changes">
                 @if($h['changes'] === null)
                     <span class="muted">No details (created before the change log existed)</span>
                 @else
@@ -78,7 +162,7 @@
                         $others = array_filter(['added' => $f['other_added'] ?? 0, 'changed' => $f['other_changed'] ?? 0, 'removed' => $f['other_removed'] ?? 0]);
                     @endphp
                     @if($h['event'] === 'create')
-                        <div><b>Created:</b> {{ implode(', ', array_map($label, $f['added'] ?? [])) ?: '—' }}</div>
+                        <div><b>Added:</b> {{ implode(', ', array_map($label, $f['added'] ?? [])) ?: '—' }}</div>
                     @else
                         @if($h['event'] === 'restore')<div><span class="chip steel">restored</span> from version {{ $c['restored_from'] }}</div>@endif
                         @if(!empty($f['changed']))<div><b>Changed:</b> {{ implode(', ', array_map($label, $f['changed'])) }}</div>@endif
@@ -86,81 +170,92 @@
                         @if(!empty($f['removed']))<div><b>Removed:</b> {{ implode(', ', array_map($label, $f['removed'])) }}</div>@endif
                         @if(!empty($c['carried']))<div><b>Kept from current:</b> {{ implode(', ', array_map($label, (array) $c['carried'])) }}</div>@endif
                         @foreach($c['meta'] ?? [] as $key => [$before, $after])
-                            <div><b>{{ $metaNames[$key] ?? $key }}:</b> “{{ $dash($before) }}” → “{{ $dash($after) }}”</div>
+                            <div><b>{{ $metaNames[$key] ?? $key }}:</b> "{{ $dash($before) }}" → "{{ $dash($after) }}"</div>
                         @endforeach
                     @endif
-                    @foreach($others as $what => $n)<div class="muted">{{ $n }} other field{{ $n === 1 ? '' : 's' }} {{ $what }}</div>@endforeach
+                    @foreach($others as $what => $n)<div class="muted">{{ $n }} {{ $what }} {{ $n === 1 ? 'field is' : 'fields are' }} no longer in the type</div>@endforeach
                     @if($h['event'] !== 'create' && empty($f['changed']) && empty($f['added']) && empty($f['removed']) && empty($c['meta']) && !$others)<span class="muted">No value changes</span>@endif
                 @endif
             </div></td>
             @if($canEdit)
-            <td class="act" data-label=""><div class="controls">
+            <td class="act full" data-label="Actions"><div class="controls">
                 @if($h['available'])
-                    <form method="post" action="/entries/{{ $entry->id }}/reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button>View</button></form>
+                    <form method="post" action="/entries/{{ $entry->id }}/reveal#values" data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}">@if($vPage > 1)<input type="hidden" name="vpage" value="{{ $vPage }}">@endif<button aria-label="Reveal version {{ $h['version'] }} values" data-held-name="Reveal version {{ $h['version'] }}: {{ $entry->name }}">Reveal</button></form>
                     @if($h['version'] !== $current)
-                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version.">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button>Restore</button></form>
+                        <form method="post" action="/entries/{{ $entry->id }}/restore-version" data-confirm="Make version {{ $h['version'] }} the current one? This creates a new version." data-confirm-from="confirm-reveal">@csrf<input type="hidden" name="version" value="{{ $h['version'] }}"><button aria-label="Restore version {{ $h['version'] }}" data-held-name="Restore version {{ $h['version'] }}: {{ $entry->name }}">Restore</button></form>
                     @endif
                 @endif
             </div></td>
             @endif
         </tr>
     @empty
-        <tr class="is-idle"><td colspan="5" data-label="" class="muted">No versions.</td></tr>
+        <tr class="is-idle"><td colspan="{{ $canEdit ? 5 : 4 }}" data-label="" class="muted">{{ $vPage > 1 ? 'No older versions.' : 'No versions.' }}</td></tr>
     @endforelse
     </tbody>
 </table></div>
-@if(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
+{{-- Older versions: the controller passes $historyPage (1 = newest) and $historyHasMore; ?vpage=N opens page N.
+     Without $historyPage (a controller that lists only the newest) the old note stays. --}}
+@if(isset($historyPage))
+    @if($vPage > 1 || $vMore)
+    <nav class="pager" aria-label="Version pages"><span>@if($vPage > 1)<a href="{{ $vUrl($vPage - 1) }}">← Newer versions</a>@endif</span><span class="muted">@if($history)Versions {{ $history[array_key_last($history)]['version'] }}–{{ $history[array_key_first($history)]['version'] }} of {{ $current }}@endif</span><span>@if($vMore)<a href="{{ $vUrl($vPage + 1) }}">Older versions →</a>@endif</span></nav>
+    @endif
+@elseif(!empty($historyOlder))<p class="note">Showing the newest {{ count($history) }} versions. Older ones are kept but not listed.</p>@endif
 
-@if($canEdit || ($entry->state === 'archived' && $role !== 'viewer'))
-<h2>Lifecycle</h2>
+@if($isOwner)
+<h2 id="access">Agent access</h2>
+@if($grants->isEmpty())
+    <div class="empty">No agent may use this entry. <a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></div>
+@else
+<div class="scroll"><table class="board compact-board access" aria-labelledby="access">
+    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">End date (UTC)</th><th scope="col">State</th></tr></thead>
+    <tbody>
+    @foreach($grants as $grant)
+        {{-- The controller sets state, effective_expires_at (the earlier of the grant's and the agent's end), expiry_reason
+             (why it is not the grant's own date) and expires_at (the grant's own date). Shown by the end-date partial, as on Grants. --}}
+        @php $gState = $grant->state; @endphp
+        <tr class="{{ $gState === 'active' ? (\App\Vault\Access::endsSoon($grant->effective_revoked_at ?? null, $grant->effective_expires_at) ? 'is-wait' : 'is-ok') : 'is-idle' }}">
+            <td class="who" data-label="Agent"><b>{{ $grant->machine }}</b></td>
+            <td class="action" data-label="Action"><code>{{ $grant->action }}</code></td>
+            <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($grant->approval ? 'asks every time' : 'runs without asking') : ($grant->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>
+            <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $grant->effective_revoked_at ?? null, 'ends' => $grant->effective_expires_at, 'reason' => $grant->expiry_reason ?? null, 'own' => $grant->expires_at])</td>
+            <td class="state" data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
+        </tr>
+    @endforeach
+    </tbody>
+</table></div>
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/grants?entry={{ $entry->id }}">Manage grants →</a></p>
+@endif
+@include('operations', ['mode' => 'history', 'workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id, 'empty' => 'No finished or running requests for this entry.', 'hideEntry' => true])
+{{-- The entry page lists the last 10 finished requests and the last 10 events; the links lead to all of them. --}}
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}&amp;group=request">Request activity for this entry →</a></p>
+<h2 id="activity">Activity</h2>
+<p class="note">The last 10 events for this entry and its requests.</p>
+@include('activity', ['events' => $events, 'hideSubject' => $entry->id, 'labelledby' => 'activity'])
+<p class="note"><a class="more-link" href="/workspaces/{{ $entry->workspace_id }}/audit?entry={{ $entry->id }}">All activity for this entry →</a></p>
+@endif
+
+@if($showLifecycle)
+<h2 id="archive">{{ $archiveHeading }}</h2>
 <div class="deck">
     @if($canEdit)
-    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Agent permissions for it are revoked.">@csrf
-        <h3>Archive</h3>
-        <div class="form-foot"><p class="note">Revokes every agent permission for this entry. You can bring it back later.</p><button class="stop">Archive</button></div>
+    <form class="action" method="post" action="/entries/{{ $entry->id }}/archive" data-confirm="Archive this entry? Grants for it are revoked." data-confirm-from="confirm-reveal">@csrf
+        <div class="form-foot"><p class="note">Archiving revokes every grant for this entry and hides its values. You can bring it back later.</p><button class="stop" data-held-name="Archive entry: {{ $entry->name }}">Archive entry</button></div>
     </form>
     @endif
-    @if($entry->state === 'archived' && $role !== 'viewer')
+    @if($entry->state === 'archived' && $isEditor)
     <form class="action" method="post" action="/entries/{{ $entry->id }}/unarchive">@csrf
-        <h3>Restore from archive</h3>
-        <div class="form-foot"><p class="note">Agent permissions have to be granted again.</p><button>Restore</button></div>
+        @if($isOwner)<h3>Restore from archive</h3>@endif
+        <div class="form-foot"><p class="note">Makes the entry active again. Grants have to be added again.</p><button>Restore from archive</button></div>
     </form>
-    @if($role === 'owner')
+    @if($isOwner)
     <form class="action danger" method="post" action="/entries/{{ $entry->id }}/destroy">@csrf
         <h3>Destroy permanently</h3>
-        <label><span>Type DELETE</span><input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
+        <label><span>Type DELETE to destroy</span><input name="confirmation" required pattern="DELETE" autocomplete="off"></label>
         <div class="form-foot"><p class="note">Removes every version from the live store. Backups keep it until they expire.</p><button class="stop">Destroy all versions</button></div>
     </form>
     @endif
     @endif
 </div>
 @endif
-
-@if($role === 'owner')
-<h2 id="access">Agent access</h2>
-<div class="scroll"><table class="board">
-    <thead><tr><th scope="col">Agent</th><th scope="col">Action</th><th scope="col">Approval</th><th scope="col">Expires</th><th scope="col">State</th></tr></thead>
-    <tbody>
-    @forelse($grants as $grant)
-        @php $gState = $grant->revoked_at || $grant->machine_revoked_at ? 'revoked' : (min(strtotime($grant->expires_at), strtotime($grant->machine_expires_at)) <= time() ? 'expired' : 'active'); @endphp
-        <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
-            <td data-label="Agent"><b>{{ $grant->machine }}</b></td>
-            <td data-label="Action"><code>{{ $grant->action }}</code></td>
-            <td data-label="Approval">{{ $grant->approval ? 'every time' : 'not asked' }}</td>
-            <td class="when" data-label="Expires">{{ $grant->expires_at }}</td>
-            <td data-label="State"><span class="chip {{ $gState === 'active' ? 'ok' : 'muted' }}">{{ $gState }}</span></td>
-        </tr>
-    @empty
-        <tr class="is-idle"><td colspan="5" data-label="">No agent may use this entry. <a href="/workspaces/{{ $entry->workspace_id }}/settings">Grant an action</a></td></tr>
-    @endforelse
-    </tbody>
-</table></div>
-@include('operations', ['workspace' => $entry->workspace_id, 'refreshUrl' => '/entries/'.$entry->id])
-<h2 id="activity">Activity</h2>
-<p class="note">The last 30 events for this entry and its operations.</p>
-<div class="scroll"><table class="list">
-    <thead><tr><th scope="col">When (UTC)</th><th scope="col">Event</th><th scope="col">Actor</th><th scope="col">Outcome</th></tr></thead>
-    <tbody>@forelse($events as $event)<tr><td class="nobreak">{{ $event->created_at }}</td><td><code>{{ $event->event }}</code></td><td>{{ $event->actor }}</td><td>@include('outcome', ['outcome' => $event->outcome])</td></tr>@empty<tr><td colspan="4" class="muted">No events yet.</td></tr>@endforelse</tbody>
-</table></div>
-@endif
+</div>
 @endsection

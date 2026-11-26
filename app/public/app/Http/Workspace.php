@@ -9,6 +9,7 @@ use App\Vault\EntryTypes;
 use App\Vault\Operations;
 use App\Vault\Secrets;
 use App\Vault\Structure;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -21,32 +22,56 @@ final class Workspace
     public function __construct(private Access $access, private Catalog $catalog, private Operations $ops, private Secrets $secrets,
         private EntryTypes $types, private Structure $structure) {}
 
+    private const LIST_FILTERS = ['q', 'project', 'environment', 'type', 'state', 'page'];
+
     public function index(Request $r)
     {
-        $spaces = DB::table('workspaces')->join('members', 'members.workspace_id', '=', 'workspaces.id')->where('members.user_id', $r->user()->id)->select('workspaces.*', 'members.role')->get();
-        $id = $r->query('workspace') ?? $spaces->first()?->id;
+        $spaces = DB::table('workspaces')->join('members', 'members.workspace_id', '=', 'workspaces.id')->where('members.user_id', $r->user()->id)->select('workspaces.*', 'members.role')->orderBy('workspaces.name')->get();
+        $id = $r->query('workspace') ?? $spaces->firstWhere('id', $r->session()->get('last_workspace'))?->id ?? $spaces->first()?->id;
         $space = $id ? $this->access->workspace($id) : null;
-        $projects = $space ? DB::table('projects')->where('workspace_id', $id)->get() : collect();
-        $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->get();
-        $query = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
-            ->where('projects.workspace_id', $id)->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active')->select('entries.*', 'environments.name as environment', 'projects.name as project')
-            ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
-        if ($r->filled('q')) {
-            $term = mb_substr((string) $r->query('q'), 0, 100);
-            $query->where(function ($q) use ($term) {
-                $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
-            });
+        if ($r->query('due') === '1') {
+            $r->query->set('state', 'due');
+            $r->query->remove('due');
         }
+        $projects = $space ? DB::table('projects')->where('workspace_id', $id)->orderBy('name')->get() : collect();
+        $environments = $space ? $this->workspaceEnvironments($id) : collect();
+        $query = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.workspace_id', $id)->select('entries.*', 'environments.name as environment', 'projects.name as project')
+            ->selectSub(DB::table('operations')->selectRaw('MAX(updated_at)')->whereColumn('entry_id', 'entries.id')->where('state', 'succeeded'), 'last_used_at');
+        $archivedCount = (clone $query)->where('entries.state', 'archived')->count();
+        $query->where('entries.state', $r->query('state') === 'archived' ? 'archived' : 'active');
+        $scopeCount = (clone $query)->count();
         foreach (['project' => 'projects.id', 'environment' => 'environments.id', 'type' => 'entries.type'] as $filter => $column) {
             if ($r->filled($filter)) {
                 $query->where($column, $r->query($filter));
             }
         }
 
-        $query->addSelect('environments.production');
+        if ($r->filled('q')) {
+            $term = mb_substr((string) $r->query('q'), 0, 100);
+            $query->where(function ($q) use ($term) {
+                $q->where('entries.name', 'like', '%'.$term.'%')->orWhere('entries.alias', 'like', '%'.$term.'%')->orWhere('entries.tags', 'like', '%'.$term.'%');
+            });
+        }
+        // The rotation-due stat links to the list with the search and the project, environment and type filters kept,
+        // so its number is counted inside them: it is what the link will show.
+        $dueInView = $space && $r->query('state') !== 'archived' ? (clone $query)->whereNotNull('entries.rotate_at')->where('entries.rotate_at', '<', now())->count() : 0;
+        if ($r->query('state') === 'due') {
+            $query->where('entries.rotate_at', '<', now());
+        }
 
-        return view('catalog', ['spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
-            'typeNames' => $space ? $this->types->names($space->id) : [], 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
+        $query->addSelect('environments.production');
+        $active = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.workspace_id', $id)->where('entries.state', 'active');
+        $stats = $space ? [
+            'active' => $active->count(),
+            'due' => $dueInView,
+            'production' => (clone $active)->where('environments.production', true)->count(),
+            'used' => (clone $active)->whereExists(fn ($q) => $q->from('operations')->whereColumn('operations.entry_id', 'entries.id')->where('operations.state', 'succeeded')->where('operations.updated_at', '>=', now()->subDays(7)))->count(),
+        ] : ['active' => 0, 'due' => 0, 'production' => 0, 'used' => 0];
+
+        return view('catalog', ['from' => http_build_query(['workspace' => $id] + $r->only(self::LIST_FILTERS)), 'spaces' => $spaces, 'space' => $space, 'projects' => $projects, 'environments' => $environments,
+            'typeNames' => $space ? $this->types->names($space->id) : [], 'stats' => $stats, 'archivedCount' => $archivedCount, 'scopeCount' => $scopeCount, 'entries' => $query->orderBy('entries.name')->paginate(30)->withQueryString()]);
     }
 
     public function workspace(Request $r)
@@ -86,7 +111,7 @@ final class Workspace
     {
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $projects = DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->get();
-        $environments = DB::table('environments')->whereIn('project_id', $projects->pluck('id'))->orderBy('name')->get()->groupBy('project_id');
+        $environments = $this->workspaceEnvironments($workspace)->groupBy('project_id');
         $counts = DB::table('entries')->whereIn('environment_id', $environments->flatten()->pluck('id'))->where('state', '!=', 'destroyed')->groupBy('environment_id')
             ->selectRaw('environment_id, COUNT(*) as total')->pluck('total', 'environment_id');
         $template = $this->structure->template($space);
@@ -173,12 +198,14 @@ final class Workspace
         $space = $this->access->workspace($workspace, ['owner', 'editor']);
         $entry = $r->query('entry') ? $this->access->entry($r->query('entry'), ['owner', 'editor']) : null;
         abort_if($entry && $entry->workspace_id !== $workspace, 404);
-        $environments = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
-            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderBy('environments.name')->get();
+        $environments = $this->workspaceEnvironments($workspace);
+        $firstProjectId = $environments->isEmpty()
+            ? DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->value('id')
+            : null;
         $types = $this->types->all($workspace)->when($entry, fn ($all) => $all->where('key', $entry->type))->values();
         abort_if($types->isEmpty() && $entry, 409);
 
-        return view('entry-form', compact('entry', 'environments', 'workspace', 'types', 'space'));
+        return view('entry-form', compact('firstProjectId', 'entry', 'environments', 'workspace', 'types', 'space'));
     }
 
     public function create(Request $r)
@@ -202,6 +229,21 @@ final class Workspace
         return $this->entryView($id);
     }
 
+    private function catalogBackUrl(string $workspace, mixed $from): string
+    {
+        $fallback = '/?'.http_build_query(['workspace' => $workspace]);
+        if (! is_string($from)) {
+            return $fallback;
+        }
+        parse_str($from, $query);
+        if (($query['workspace'] ?? null) !== $workspace || array_diff(array_keys($query), ['workspace', ...self::LIST_FILTERS])
+            || array_filter($query, 'is_array')) {
+            return $fallback;
+        }
+
+        return '/?'.http_build_query($query);
+    }
+
     private function entryView(string $id, ?array $secret = null, ?int $shownVersion = null, array $differs = [])
     {
         $entry = $this->access->entry($id);
@@ -212,21 +254,27 @@ final class Workspace
         $environment = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('environments.id', $entry->environment_id)
             ->select('environments.name', 'environments.production', 'projects.name as project')->first();
         $historyOlder = false;
-        $history = $entry->state === 'destroyed' ? [] : $this->catalog->history($entry, older: $historyOlder);
+        $historyPage = max(1, min(100000, (int) request()->input('vpage', 1)));
+        $history = $entry->state === 'destroyed' ? [] : $this->catalog->history($entry, older: $historyOlder, page: $historyPage);
+        $historyHasMore = $historyOlder;
         $grants = collect();
         $events = collect();
         $operations = collect();
+        $waitingCount = 0;
         if ($role === 'owner') {
-            $operations = DB::table('operations')->where('entry_id', $id)->orderByDesc('created_at')->limit(25)->get();
+            $query = $this->requestRows($space->id)->where('operations.entry_id', $id);
+            [$waiting, $finished] = $this->requestSections($query, 10);
+            $waitingCount = $waiting->count();
+            $operations = $waiting->concat($finished);
             $grants = DB::table('grants')->join('machines', 'machines.id', '=', 'grants.machine_id')->where('entry_id', $id)
-                ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get();
-            $events = DB::table('audit')->where('workspace_id', $entry->workspace_id)->where(function ($query) use ($id) {
-                $query->where('subject', $id)->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
-                    ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
-            })->orderByDesc('id')->limit(30)->get();
+                ->select('grants.*', 'machines.name as machine', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')->get()->each(fn ($grant) => $this->grantStatus($grant));
+            $events = $this->entryEvents(DB::table('audit')->where('workspace_id', $space->id), $id)->orderByDesc('created_at')->orderByDesc('id')->limit(10)->get();
+            $this->resolveEvents($space->id, $events);
         }
 
-        return view('entry', compact('entry', 'role', 'secret', 'grants', 'events', 'operations', 'type', 'labels', 'environment', 'history', 'historyOlder', 'shownVersion', 'differs', 'space'));
+        $backUrl = $this->catalogBackUrl($space->id, request()->input('from'));
+
+        return view('entry', compact('backUrl', 'entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)
@@ -276,8 +324,43 @@ final class Workspace
         return redirect('/?workspace='.$entry->workspace_id);
     }
 
+    private function workspaceEnvironments(string $workspace)
+    {
+        return DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+            ->select('environments.*', 'projects.name as project')->orderBy('projects.name')->orderByDesc('environments.production')->orderBy('environments.name')->get();
+    }
+
+    public function importForm(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner', 'editor']);
+
+        $environments = $this->workspaceEnvironments($workspace);
+        $firstProjectId = $environments->isEmpty()
+            ? DB::table('projects')->where('workspace_id', $workspace)->orderBy('name')->value('id')
+            : null;
+        $types = $this->types->all($workspace);
+
+        $example = null;
+        if ($environments->isNotEmpty() && $types->isNotEmpty()) {
+            $type = $types->first();
+            $fields = collect($type->fields);
+            $required = $fields->where('required', true);
+            $exampleFields = $required->isEmpty() ? $fields->take(1) : $required;
+            $example = json_encode([[
+                'environment_id' => $environments->first()->id,
+                'name' => 'Example entry',
+                'alias' => 'example-entry',
+                'type' => $type->key,
+                'secret_fields' => (object) $exampleFields->mapWithKeys(fn ($field) => [$field['key'] => 'replace-me'])->all(),
+            ]], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+        }
+
+        return view('import', compact('firstProjectId', 'space', 'environments', 'types', 'example'));
+    }
+
     public function import(Request $r, string $workspace)
     {
+        $this->access->workspace($workspace, ['owner', 'editor']);
         $this->access->recent($r);
         $d = $r->validate(['import' => 'required|string|max:900000']);
         $this->catalog->import($workspace, $d['import']);
@@ -287,15 +370,111 @@ final class Workspace
 
     public function settings(string $workspace)
     {
-        $space = $this->access->workspace($workspace, ['owner']);
-        $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('workspace_id', $workspace)->select('users.id', 'users.name', 'users.email', 'members.role')->get();
-        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')->get();
-        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)->where('entries.state', 'active')->select('entries.id', 'entries.name', 'entries.type')->get();
-        $grants = DB::table('grants')->whereIn('machine_id', $machines->pluck('id'))->get();
-        $operations = DB::table('operations')->whereIn('machine_id', $machines->pluck('id'))->orderByDesc('created_at')->limit(50)->get();
-        $actions = $this->ops->definitions();
+        $this->access->workspace($workspace, ['owner']);
 
-        return view('settings', compact('space', 'members', 'machines', 'entries', 'grants', 'operations', 'actions'));
+        return redirect('/workspaces/'.$workspace.'/requests');
+    }
+
+    private function requestRows(string $workspace)
+    {
+        return DB::table('operations')->join('machines', 'machines.id', '=', 'operations.machine_id')
+            ->join('entries', 'entries.id', '=', 'operations.entry_id')
+            ->join('environments', 'environments.id', '=', 'entries.environment_id')
+            ->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('machines.workspace_id', $workspace)->where('projects.workspace_id', $workspace)
+            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project')
+            ->orderByDesc('operations.created_at')->orderByDesc('operations.id');
+    }
+
+    private function requestSections(Builder $operations, int $historyLimit): array
+    {
+        $states = ['pending', 'requires_user_action'];
+        $now = now();
+        $waiting = (clone $operations)->whereIn('operations.state', $states)->where('operations.expires_at', '>', $now)
+            ->reorder('operations.expires_at')->orderBy('operations.created_at')->orderBy('operations.id')->get();
+        $history = $operations->where(fn ($query) => $query->whereNotIn('operations.state', $states)->orWhere('operations.expires_at', '<=', $now))->limit($historyLimit)->get();
+
+        $revoked = $history->where('state', 'revoked')->pluck('id');
+        $denied = $revoked->isEmpty() ? [] : DB::table('audit')->where('event', 'operation.deny')
+            ->whereIn('subject', $revoked)->pluck('subject')->flip()->all();
+        foreach ($waiting->concat($history) as $row) {
+            $row->decision_label = match (true) {
+                isset($denied[$row->id]) => 'denied',
+                in_array($row->state, $states, true) && $row->expires_at <= $now->toDateTimeString() => 'expired',
+                default => $row->state,
+            };
+        }
+
+        return [$waiting, $history];
+    }
+
+    public function requests(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        [$waiting, $history] = $this->requestSections($this->requestRows($workspace), 50);
+
+        return view('requests', compact('space', 'waiting', 'history'));
+    }
+
+    public function agents(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')
+            ->selectSub(DB::table('grants')->selectRaw('COUNT(*)')->whereColumn('machine_id', 'machines.id')
+                ->whereNull('grants.revoked_at')->where('grants.expires_at', '>', now())
+                ->whereNull('machines.revoked_at')->where('machines.expires_at', '>', now()), 'active_grants')
+            ->orderBy('name')->get();
+
+        return view('agents', compact('space', 'machines'));
+    }
+
+    private function grantStatus(object $grant): void
+    {
+        $grant->effective_expires_at = min($grant->expires_at, $grant->machine_expires_at);
+        $grant->state = strtotime($grant->effective_expires_at) <= time() ? 'expired' : 'active';
+        $grant->expiry_reason = null;
+        $grant->effective_revoked_at = $grant->revoked_at;
+        if ($grant->revoked_at || $grant->machine_revoked_at) {
+            $grant->state = 'revoked';
+            if ($grant->machine_revoked_at && (! $grant->revoked_at || $grant->machine_revoked_at <= $grant->revoked_at)) {
+                $grant->effective_revoked_at = $grant->machine_revoked_at;
+                $grant->expiry_reason = 'agent revoked';
+            }
+        } elseif ($grant->machine_expires_at < $grant->expires_at) {
+            $grant->expiry_reason = $grant->state === 'expired' ? 'agent expired' : 'agent expires';
+        }
+    }
+
+    public function grants(Request $r, string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')->orderBy('name')->get()->keyBy('id');
+        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'environments.project_id')
+            ->where('projects.workspace_id', $workspace)->select('entries.id', 'entries.name', 'entries.type', 'entries.state', 'environments.production', 'projects.name as project', 'environments.name as environment')->orderBy('entries.name')->get()->keyBy('id');
+        $agent = is_string($r->query('agent')) ? $machines->get($r->query('agent')) : null;
+        $entry = is_string($r->query('entry')) ? $entries->get($r->query('entry')) : null;
+        $query = DB::table('grants')->whereIn('machine_id', $machines->keys())->whereIn('entry_id', $entries->keys());
+        $total = ($agent || $entry) ? (clone $query)->count() : null;
+        $grants = $query
+            ->when($agent, fn ($q) => $q->where('machine_id', $agent->id))->when($entry, fn ($q) => $q->where('entry_id', $entry->id))
+            ->join('machines', 'machines.id', '=', 'grants.machine_id')->select('grants.*', 'machines.revoked_at as machine_revoked_at', 'machines.expires_at as machine_expires_at')
+            ->orderByRaw('CASE WHEN grants.revoked_at IS NULL AND machines.revoked_at IS NULL AND grants.expires_at > ? AND machines.expires_at > ? THEN 0 ELSE 1 END', [now(), now()])
+            ->orderBy('machines.name')->orderBy('grants.action')->orderBy('grants.id')->get()->each(fn ($grant) => $this->grantStatus($grant));
+        $actions = $this->ops->definitions();
+        $types = $this->types->all($workspace);
+        $typeNames = $types->pluck('name', 'key');
+        $typeFields = $types->mapWithKeys(fn ($type) => [$type->key => array_column(array_filter($type->fields, fn ($field) => $field['required']), 'key')]);
+
+        return view('grants', compact('space', 'machines', 'entries', 'agent', 'entry', 'grants', 'actions', 'typeNames', 'typeFields', 'total'));
+    }
+
+    public function members(string $workspace)
+    {
+        $space = $this->access->workspace($workspace, ['owner']);
+        $members = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')->where('workspace_id', $workspace)
+            ->select('users.id', 'users.name', 'users.email', 'members.role')->orderBy('users.name')->get();
+
+        return view('members', compact('space', 'members'));
     }
 
     public function member(Request $r, string $workspace)
@@ -303,16 +482,25 @@ final class Workspace
         $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
         $d = $r->validate(['email' => 'required|email|max:200', 'name' => 'required|string|max:100', 'password' => 'nullable|string|min:14|max:200', 'role' => 'required|in:owner,editor,viewer,remove']);
-        DB::transaction(function () use ($workspace, $d) {
+        $adding = $r->input('form') === 'add';
+        DB::transaction(function () use ($workspace, $d, $adding) {
             DB::table('workspaces')->where('id', $workspace)->lockForUpdate()->first();
             $user = User::where('email', strtolower($d['email']))->first();
             if (! $user) {
-                abort_unless(! empty($d['password']) && $d['role'] !== 'remove', 422);
+                if ($d['role'] === 'remove') {
+                    throw ValidationException::withMessages(['email' => 'Choose an existing member to remove.']);
+                }
+                if (empty($d['password'])) {
+                    throw ValidationException::withMessages(['password' => 'Enter an initial password for a new user.']);
+                }
                 $id = (string) Str::uuid();
                 $this->secrets->write('auth/'.$id, ['totp' => TOTP::generate()->getSecret()], 0);
                 $user = User::create(['id' => $id, 'name' => $d['name'], 'email' => strtolower($d['email']), 'password' => Hash::make($d['password'])]);
             }
             $member = DB::table('members')->where('workspace_id', $workspace)->where('user_id', $user->id)->first();
+            if ($adding && $member) {
+                throw ValidationException::withMessages(['email' => 'This person is already a member. Change their role in the list above.']);
+            }
             if ($member?->role === 'owner' && $d['role'] !== 'owner') {
                 abort_if(DB::table('members')->where('workspace_id', $workspace)->where('role', 'owner')->count() <= 1, 409);
             }
@@ -324,22 +512,23 @@ final class Workspace
             $this->access->audit($workspace, 'member.change', $user->id);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/members');
     }
 
     public function machine(Request $r, string $workspace)
     {
-        $this->access->workspace($workspace, ['owner']);
+        $space = $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
         $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30']);
         $token = bin2hex(random_bytes(32));
         $id = (string) Str::uuid();
-        DB::transaction(function () use ($id, $workspace, $d, $token) {
-            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => now()->addDays((int) $d['days']), 'created_at' => now(), 'updated_at' => now()]);
+        $expiresAt = now()->addDays((int) $d['days']);
+        DB::transaction(function () use ($id, $workspace, $d, $token, $expiresAt) {
+            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => $expiresAt, 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($workspace, 'machine.create', $id);
         });
 
-        return view('token', compact('token', 'workspace'));
+        return view('token', ['token' => $token, 'id' => $id, 'space' => $space, 'name' => $d['name'], 'expiresAt' => $expiresAt]);
     }
 
     public function grant(Request $r, string $workspace)
@@ -351,7 +540,9 @@ final class Workspace
         abort_unless($entry->workspace_id === $workspace, 404);
         abort_unless(DB::table('machines')->where('id', $d['machine_id'])->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->exists(), 404);
         $definition = $this->ops->definitions()[$d['action']] ?? null;
-        abort_unless($definition, 422);
+        if (! $definition) {
+            throw ValidationException::withMessages(['action' => 'Choose an available action.']);
+        }
         // The action reads these fields from the secret, so the entry's type must require them.
         $type = $this->types->find($workspace, $entry->type);
         $required = $type ? array_column(array_filter($type->fields, fn ($f) => $f['required']), 'key') : [];
@@ -360,7 +551,7 @@ final class Workspace
         }
         // The type only describes new versions; the version the action would read must actually hold the fields.
         if ($missing = $this->catalog->missingFields($entry->id, EntryTypes::actionFields($definition['kind']))) {
-            throw ValidationException::withMessages(['action' => 'The current version of this entry has no value for: '.implode(', ', $missing).'. Update the entry first.']);
+            throw ValidationException::withMessages(['action' => 'The current version of this entry has no value for: '.implode(', ', $missing).'. Edit the entry first.']);
         }
         DB::transaction(function () use ($workspace, $d) {
             DB::table('machines')->where('id', $d['machine_id'])->lockForUpdate()->first();
@@ -373,7 +564,7 @@ final class Workspace
             $this->access->audit($workspace, 'grant.create', $d['entry_id']);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.'/grants');
     }
 
     public function revoke(Request $r, string $workspace, string $kind, string $id)
@@ -393,7 +584,7 @@ final class Workspace
         });
 
         // The broker rechecks authorization before network requests and every second while waiting.
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'));
     }
 
     public function decision(Request $r, string $workspace, string $id)
@@ -413,7 +604,7 @@ final class Workspace
             $this->access->audit($workspace, 'operation.'.$d['decision'], $id);
         });
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return $this->afterDecision($r, $workspace);
     }
 
     public function mfa(Request $r, string $workspace, string $id)
@@ -427,14 +618,141 @@ final class Workspace
         $this->access->audit($workspace, 'operation.mfa', $id);
         $this->ops->broker('POST', '/operations/'.$id.'/mfa', $d);
 
-        return redirect('/workspaces/'.$workspace.'/settings');
+        return $this->afterDecision($r, $workspace);
     }
 
-    public function audit(string $workspace)
+    private function afterDecision(Request $r, string $workspace)
+    {
+        $back = $r->input('back');
+        if (is_string($back) && str_starts_with($back, '/entries/')) {
+            $id = substr($back, strlen('/entries/'));
+            if (Str::isUuid($id) && DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+                ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+                ->where('entries.id', $id)->exists()) {
+                return redirect('/entries/'.$id);
+            }
+        }
+
+        return redirect('/workspaces/'.$workspace.'/requests');
+    }
+
+    private function actorNames(string $workspace, $actors): array
+    {
+        $names = [];
+        foreach (['user' => DB::table('users'), 'machine' => DB::table('machines')->where('workspace_id', $workspace)] as $kind => $query) {
+            $ids = $actors->filter(fn ($actor) => str_starts_with($actor, $kind.':'))->map(fn ($actor) => Str::after($actor, ':'));
+            foreach ($query->whereIn('id', $ids)->pluck('name', 'id') as $id => $name) {
+                $names[$kind.':'.$id] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    private function resolveEvents(string $workspace, $events, ?array $names = null): void
+    {
+        $names ??= $this->actorNames($workspace, $events->pluck('actor')->unique());
+        $ids = $events->pluck('subject')->filter()->unique();
+        $entries = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+            ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace);
+        $related = [];
+        foreach (['operations', 'grants'] as $table) {
+            $related += (clone $entries)->join($table, $table.'.entry_id', '=', 'entries.id')
+                ->whereIn($table.'.id', $ids)->select('entries.id as entry_id', $table.'.id as subject_id')->get()->pluck('entry_id', 'subject_id')->all();
+        }
+        $entryNames = $entries->whereIn('entries.id', $ids->merge(array_values($related)))->pluck('entries.name', 'entries.id');
+        $agents = DB::table('machines')->where('workspace_id', $workspace)->whereIn('id', $ids)->pluck('name', 'id');
+        $subjects = DB::table('users')->whereIn('id', $ids)->pluck('name', 'id')
+            ->union(DB::table('workspaces')->where('id', $workspace)->whereIn('id', $ids)->pluck('name', 'id'))
+            ->union(DB::table('projects')->where('workspace_id', $workspace)->whereIn('id', $ids)->pluck('name', 'id'))
+            ->union(DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')
+                ->where('projects.workspace_id', $workspace)->whereIn('environments.id', $ids)->pluck('environments.name', 'environments.id'));
+        $types = DB::table('entry_types')->where('workspace_id', $workspace)
+            ->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('key', $ids))->get(['id', 'key', 'name']);
+        $typeNames = $types->pluck('name', 'id')->union($types->pluck('name', 'key'));
+        foreach ($events as $event) {
+            $event->actor_kind = match (Str::before($event->actor, ':')) {
+                'machine' => 'agent', 'user' => 'user', default => 'system',
+            };
+            $event->actor_label = $names[$event->actor] ?? $event->actor_kind;
+            $entry = $related[$event->subject] ?? $event->subject;
+            $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject)
+                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null);
+            $event->subject_url = $entryNames->has($entry) ? '/entries/'.$entry
+                : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject : null);
+        }
+    }
+
+    private function entryEvents(Builder $query, string $id): Builder
+    {
+        return $query->where(function ($subjects) use ($id) {
+            $subjects->where('subject', $id)
+                ->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
+                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
+        });
+    }
+
+    public function audit(Request $r, string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
-        $events = DB::table('audit')->where('workspace_id', $workspace)->orderByDesc('id')->paginate(50);
+        $query = DB::table('audit')->where('workspace_id', $workspace);
+        $actors = (clone $query)->distinct()->pluck('actor');
+        $names = $this->actorNames($workspace, $actors);
+        $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
+        $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
+            'request' => ['operation'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+        $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'];
+        $rules = ['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)),
+            'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:'.implode(',', array_keys($outcomeLabels)),
+            'from' => 'nullable|date_format:Y-m-d', 'to' => 'nullable|date_format:Y-m-d'];
+        $filters = $r->only(array_keys($rules));
+        $validator = validator($filters, $rules);
+        $messages = ['entry' => 'Unknown entry.', 'group' => 'Unknown event group.', 'actor' => 'Unknown actor.',
+            'outcome' => 'Unknown outcome.', 'from' => 'From (UTC) must be a real date like 2026-12-31.',
+            'to' => 'To (UTC) must be a real date like 2026-12-31.'];
+        $filterErrors = array_intersect_key($messages, $validator->errors()->messages());
+        if (isset($filters['actor']) && !isset($filterErrors['actor']) && !$actors->containsStrict($filters['actor'])) {
+            $filterErrors['actor'] = $messages['actor'];
+        }
+        $entry = null;
+        if (!isset($filterErrors['entry']) && ($id = $filters['entry'] ?? null)) {
+            $entry = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
+                ->join('projects', 'projects.id', '=', 'environments.project_id')->where('projects.workspace_id', $workspace)
+                ->where('entries.id', $id)->first(['entries.id', 'entries.name']);
+            if (!$entry) {
+                $filterErrors['entry'] = $messages['entry'];
+            }
+        }
+        foreach ($filterErrors as $key => $message) {
+            unset($filters[$key]);
+            $r->query->remove($key);
+        }
+        $total = array_filter($filters) ? (clone $query)->count() : null;
+        if ($entry) {
+            $this->entryEvents($query, $entry->id);
+        }
+        if ($group = $filters['group'] ?? null) {
+            $query->where(function ($q) use ($groups, $group) {
+                foreach ($groups[$group] as $prefix) {
+                    $q->orWhere('event', 'like', $prefix.'.%');
+                }
+            });
+        }
+        if ($actor = $filters['actor'] ?? null) {
+            $query->where('actor', $actor);
+        }
+        if ($outcome = $filters['outcome'] ?? null) {
+            $query->whereIn('outcome', $outcome === 'ok' ? ['ok', 'succeeded'] : [$outcome]);
+        }
+        if ($from = $filters['from'] ?? null) {
+            $query->whereDate('created_at', '>=', $from);
+        }
+        if ($to = $filters['to'] ?? null) {
+            $query->whereDate('created_at', '<=', $to);
+        }
+        $events = $query->orderByDesc('created_at')->orderByDesc('id')->paginate(50)->withQueryString();
+        $this->resolveEvents($workspace, $events->getCollection(), $names);
 
-        return view('audit',compact('space','events'));
+        return view('audit', compact('space', 'events', 'groups', 'actorOptions', 'total', 'entry', 'filterErrors', 'outcomeLabels'));
     }
 }

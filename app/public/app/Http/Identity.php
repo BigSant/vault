@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use OTPHP\TOTP;
 
 final class Identity
@@ -38,7 +39,7 @@ final class Identity
             $this->secrets->write('auth/'.$id, ['totp' => $totp->getSecret()], 0);
             $user = User::create(['id' => $id, 'name' => $d['name'], 'email' => strtolower($d['email']), 'password' => Hash::make($d['password'])]);
             $ws = (string) Str::uuid();
-            DB::table('workspaces')->insert(['id' => $ws, 'name' => 'Asmeniniai', 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('workspaces')->insert(['id' => $ws, 'name' => 'Personal', 'created_at' => now(), 'updated_at' => now()]);
             DB::table('members')->insert(['workspace_id' => $ws, 'user_id' => $id, 'role' => 'owner']);
             DB::table('settings')->where('key', 'bootstrap_used')->update(['value' => '1']);
             $this->access->audit($ws, 'owner.setup', $id, 'ok', 'user:'.$id);
@@ -135,10 +136,20 @@ final class Identity
     public function confirm(Request $r)
     {
         $d = $r->validate(['current_password' => 'required|string|max:200']);
-        abort_unless(Hash::check($d['current_password'], $r->user()->password), 401);
+        $pending = \App\Vault\PendingAction::forConfirmation($r);
+        $return = $pending['return'] ?? Account::safePath($r->input('return'));
+        if (! Hash::check($d['current_password'], $r->user()->password)) {
+            abort_if($r->expectsJson(), 401);
+
+            return response()->view('confirm', ['return' => $return, 'blocked' => false, 'failed' => true, 'pending' => $pending, 'navFirst' => true], 401);
+        }
         $r->session()->put('confirmed_at', time());
 
-        return redirect('/');
+        if ($pending) {
+            $r->session()->forget(\App\Vault\PendingAction::KEY);
+            return view('confirm', compact('pending', 'return') + ['ready' => true, 'navFirst' => true]);
+        }
+        return redirect($return);
     }
 
     public function changePassword(Request $r)
@@ -146,7 +157,10 @@ final class Identity
         $d = $r->validate(['current_password' => 'required|string|max:200', 'password' => 'required|string|min:14|max:200|confirmed']);
         DB::transaction(function () use ($r, $d) {
             $user = User::where('id', $r->user()->id)->lockForUpdate()->firstOrFail();
-            abort_unless(Hash::check($d['current_password'], $user->password), 401);
+            // Back to the form with the message on the field, like any other validation error.
+            if (! Hash::check($d['current_password'], $user->password)) {
+                throw ValidationException::withMessages(['current_password' => 'Current password is not right.']);
+            }
             DB::table('users')->where('id', $r->user()->id)->update(['password' => Hash::make($d['password'])]);
             DB::table('sessions')->where('user_id', $r->user()->id)->delete();
             $this->access->audit(null, 'user.password', $r->user()->id);

@@ -1,23 +1,45 @@
 @extends('layout')
-@section('title', 'Not completed')
+@php
+    $title = [401 => 'Sign-in failed', 403 => 'Not allowed', 404 => 'Not found', 409 => 'Not possible now', 419 => 'Session expired',
+        422 => 'Check the form', 429 => 'Too many attempts'][$status] ?? 'Not available';
+    // $shell: a signed-in person sees the error under the normal header. Guests and a failing service get the bare page.
+    $shell = ! empty($shell);
+    // The bare page has no header to go anywhere from, and "entries" means nothing to a guest: it always offers Sign in.
+    $signIn = ! $shell || in_array($status, [401, 419], true);
+    // Back to the workspace last opened in this session; the entries page checks membership again.
+    $last = $shell ? session('last_workspace') : null;
+    $home = is_string($last) && $last !== '' ? '/?workspace='.rawurlencode($last) : '/';
+    // 409 and 422 for a signed-in person: the controller may pass $returnPath, a safe same-origin GET path to the
+    // page the action came from. The button then leads there; without it the button and the instruction say "entries".
+    $returnPath = $shell && in_array($status, [409, 422], true) && isset($returnPath) && is_string($returnPath) && $returnPath !== '' ? $returnPath : null;
+@endphp
+@section('title', $title)
+@section('quiet-nav', '1')
+@unless($shell)
 @section('bare', '1')
+@endunless
 @section('content')
-<div class="card">
-    <h1>Not completed <span class="chip bad">{{ $status }}</span></h1>
+<div class="{{ $shell ? 'error-page' : 'card' }}">
+    <h1>{{ $title }}</h1>
+    {{-- The status code is plain dim text: the callout below is the page's one red mark. --}}
+    <p class="error-status">Error {{ $status }}</p>
     <div class="callout bad">
         <p>{{ match($status) {
             401 => 'Check your sign-in details or the authenticator code.',
-            403 => 'This needs the right role and a fresh password confirmation.',
-            404 => 'Not found, or not available to you.',
-            409 => 'The entry or permission changed meanwhile. Reload the page and try again.',
-            419 => 'The session expired. Sign in again.',
+            403 => 'Your role in this workspace does not allow it, or the code you entered was wrong.',
+            404 => 'This page does not exist, or is not available to you.',
+            409 => 'It changed meanwhile, or it is still in use. Nothing was changed.',
+            419 => 'The session expired. Nothing was saved.',
             422 => 'Check required fields, value formats and password length.',
-            429 => 'Too many attempts. Wait a minute.',
+            429 => 'Wait a minute, then try again.',
             default => 'The service is not available right now. Try again.',
         } }}</p>
         @if(!empty($messages))<ul>@foreach($messages as $message)<li>{{ $message }}</li>@endforeach</ul>@endif
     </div>
-    <p class="note">Secret fields are deliberately not refilled on an error page.</p>
-    <div class="controls"><a class="btn" href="/">Back to entries</a></div>
+    {{-- One recovery instruction, in the order it is done; its first step is the button below. --}}
+    @if($status === 419)<p class="note">Sign in again, then open the form and fill it in again. Secret fields are not refilled.</p>
+    @elseif($status === 422)<p class="note">{{ $returnPath ? 'Go back to the previous page to correct the form.' : ($signIn ? 'Sign in, then open the form again to correct it.' : 'Go back to entries, then open the form again to correct it.') }} Secret fields are not refilled.</p>
+    @elseif($status === 409)<p class="note">{{ $returnPath ? 'Go back to the previous page to see the current state, then try again.' : ($signIn ? 'Sign in to see the current state, then try again.' : 'Go back to entries to see the current state, then try again.') }}</p>@endif
+    <div class="controls"><a class="btn" href="{{ $signIn ? '/login' : ($returnPath ?? $home) }}">{{ $signIn ? 'Sign in' : ($returnPath ? 'Back to previous page' : 'Back to entries') }}</a></div>
 </div>
 @endsection

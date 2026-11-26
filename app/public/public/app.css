@@ -4,14 +4,15 @@
 --board:#0c0e0b;--panel:#13170f;--panel-2:#191e14;--field:#0f120c;--rule:#283022;--edge:#7a8566;
 --ink:#ece6d3;--dim:#b0b4a1;--faint:#969b88;
 --amber:#ffb22e;--amber-fill:#ffb22e;--amber-hover:#ffc75e;--on-accent:#1a1205;
---amber-glow:rgba(255,178,46,.35);--amber-tint:rgba(255,178,46,.22);--amber-line:#99711c;--wash:rgba(255,178,46,.07);--amber-edge:#ffb22e;
---go:#4fe08c;--go-glow:rgba(79,224,140,.55);--go-tint:rgba(79,224,140,.1);--go-line:#378957;
+--amber-glow:rgba(255,178,46,.35);--amber-line:#99711c;--wash:rgba(255,178,46,.07);--amber-edge:#ffb22e;
+--go:#4fe08c;--go-glow:rgba(79,224,140,.55);--go-line:#378957;
 --stop:#ff5b4f;--stop-glow:rgba(255,91,79,.6);--stop-line:#c64c41;
---steel:#7b9dd0;--steel-ink:#c3d6f3;--steel-tint:rgba(111,147,201,.16);--steel-line:#5a769c;
+--steel-ink:#c3d6f3;--steel-tint:rgba(111,147,201,.16);--steel-line:#5a769c;
 --hazard:#f4c20d;--steel-fill:#3f67a8;--stage-fill:#8f5a0a;--prod-fill:#b3261e;
 --top-1:#171c12;--top-2:#10130d;--lamp-off:#20261a;--row-edge:#0a0c08;--scroll-thumb:#4a5540;
---term-bg:#070806;--term-ink:#d8e8c8;--term-faint:#8d927f;
+--term-bg:#070806;--term-ink:#d8e8c8;
 --qr-light:#ece6d3;
+--card:760px;--wide:1100px;
 --mono:ui-monospace,"JetBrains Mono","Iosevka","IBM Plex Mono","SF Mono","Cascadia Code","DejaVu Sans Mono",Menlo,Consolas,monospace}
 *{box-sizing:border-box}
 html{background:var(--board);scrollbar-color:var(--scroll-thumb) var(--board)}
@@ -29,6 +30,26 @@ main>p,.note,.callout p{max-width:80ch}
 /* Header */
 .top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:12px 28px;border-bottom:1px solid var(--rule);
 background:linear-gradient(180deg,var(--top-1),var(--top-2))}
+/* One right edge: on desktop the header's contents start and end where main's do. main is at most 1760 px wide
+   and centred, and what sits in it ends at --wide; the paddings below repeat that sum, so the account menu ends
+   where the boards end at every width (the bar itself stays full width). */
+@media (min-width:901px){
+.top{--top-left:max(28px,calc((100% - 1760px)/2 + 28px));padding-left:var(--top-left);padding-right:max(28px,calc(100% - var(--wide) - var(--top-left)))}
+/* The bar is one row, whatever the names are: the nav keeps its width, the two menus give way and cut their names
+   with an ellipsis (the whole name is in the menu's accessible name and, for the workspace, in its list). The
+   account name is capped at 16em; the workspace name keeps at least 8em. */
+.top{flex-wrap:nowrap}
+.top>.mark,.top>.nav{flex:none}
+.top>.nav{flex-wrap:nowrap}
+.top>details.menu{flex:0 1 auto}
+.top>details.menu.space{min-width:8em;max-width:24em}
+.top>details.menu.account{min-width:0;max-width:16em}
+.top>details.menu>summary{max-width:100%}
+/* The account summary reaches 12 px past its box (its negative margin puts its text on the page edge). */
+.top>details.menu.account>summary{max-width:calc(100% + 12px)}
+}
+/* Just above the phone layout the bar is tight: smaller gaps keep the usual names whole down to 901 px (12 px, never less: the account summary reaches 12 px past its box). */
+@media (min-width:901px) and (max-width:1040px){.top{gap:12px}}
 .mark{font:800 17px/1.2 var(--mono);letter-spacing:.08em;color:var(--amber)}
 .mark:hover{text-decoration:none}
 .mark small{display:block;letter-spacing:.04em;font-size:12px;color:var(--dim);font-weight:400;max-width:22em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -36,10 +57,44 @@ background:linear-gradient(180deg,var(--top-1),var(--top-2))}
 .nav{display:flex;gap:6px;flex-wrap:wrap}
 .nav .btn{white-space:nowrap}
 .nav .on{border-color:var(--amber);color:var(--amber);box-shadow:inset 0 -2px 0 var(--amber)}
-.who{display:flex;align-items:center;gap:10px;color:var(--dim);font-size:12px;letter-spacing:.04em}
-.who b{color:var(--ink);font-weight:600}
-.who form{margin:0}
-.who button{padding:4px 9px;min-height:26px;font-size:11.5px}
+.nav .btn .chip{vertical-align:0;line-height:1.3}
+
+/* Header menus: the workspace switcher and the account menu. Plain <details>, so they work without script. */
+details.menu{position:relative;margin:0;background:none;border:none;border-radius:0;min-width:0}
+details.menu>summary{display:flex;align-items:center;gap:8px;min-height:32px;max-width:24em;padding:6px 11px;border:1px solid var(--edge);border-radius:3px;
+background:var(--field);font:600 13px/1.3 var(--mono);color:var(--ink)}
+details.menu>summary::before,details.menu[open]>summary::before{content:none}
+details.menu>summary::after{content:"\25BE";color:var(--amber);flex:none}
+details.menu>summary:hover,details.menu[open]>summary{border-color:var(--amber)}
+details.menu.account>summary{background:transparent;border-color:transparent;color:var(--dim)}
+details.menu.account>summary:hover,details.menu.account[open]>summary{border-color:var(--amber);color:var(--ink)}
+@media (min-width:901px){details.menu.account>summary{margin-right:-12px}}
+.menu-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu-list{position:absolute;z-index:20;top:calc(100% + 4px);left:0;display:grid;grid-template-columns:minmax(0,1fr);min-width:15em;width:max-content;max-width:min(26em,calc(100vw - 32px));
+max-height:70vh;overflow-y:auto;padding:4px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;box-shadow:0 10px 28px var(--term-bg)}
+details.menu.account .menu-list{left:auto;right:0;min-width:11em}
+.menu-head{margin:0;padding:6px 10px 4px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+/* In the open list a name is whole: it wraps, with the role beside it (two names that differ only at the end stay
+   apart). The closed menu in the bar keeps its one line and its ellipsis. */
+.menu-list .menu-name{white-space:normal;overflow:visible;overflow-wrap:anywhere}
+.menu-list a>.chip{flex:none}
+.menu-list a{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:36px;padding:6px 10px;border-radius:3px;
+border-left:3px solid transparent;color:var(--ink);font-size:13px}
+.menu-list a:hover{background:var(--panel-2);color:var(--amber);text-decoration:none}
+.menu-list a.on{border-left-color:var(--amber);background:var(--panel-2);font-weight:700}
+.menu-list a.menu-foot{margin-top:4px;border-top:1px solid var(--rule);border-radius:0 0 3px 3px;color:var(--amber)}
+.menu-list form{margin:4px 0 0;padding:6px;border-top:1px solid var(--rule)}
+.menu-list form button{width:100%}
+
+/* Tabs: the pages of one area, under its h1 */
+.tabs{display:flex;gap:2px;margin:0 0 16px;border-bottom:1px solid var(--rule);overflow-x:auto;scrollbar-width:thin}
+.tabs a{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:8px 14px;border-radius:3px 3px 0 0;
+font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:var(--dim)}
+.tabs a:hover{color:var(--amber);background:var(--panel);text-decoration:none}
+.tabs a.on{color:var(--amber);background:var(--panel-2);box-shadow:inset 0 -2px 0 var(--amber)}
+.tabs a:focus-visible{outline-offset:-2px}
+.tabs .chip{vertical-align:0;line-height:1.3}
+.head+.tabs{margin-top:6px}
 
 /* Buttons */
 .btn,button{font:700 12px/1.2 var(--mono);cursor:pointer;color:var(--ink);background:var(--panel-2);border:1px solid var(--edge);
@@ -50,22 +105,50 @@ button.go,.btn.go{background:var(--amber-fill);border-color:var(--amber-edge);co
 button.go:hover,.btn.go:hover{background:var(--amber-hover);color:var(--on-accent);box-shadow:0 0 18px var(--amber-glow)}
 button.stop{color:var(--stop);border-color:var(--stop-line)}
 button.stop:hover{color:var(--stop);border-color:var(--stop)}
+/* Disabled: every variant (go, stop, ok, form submit) turns into the same quiet dashed button. No opacity, so the
+   text keeps its contrast (--faint on --panel is above 4.5:1). */
+button:disabled,button:disabled:hover{opacity:1;cursor:not-allowed;background:var(--panel)!important;color:var(--faint)!important;
+border-color:var(--edge)!important;border-style:dashed;box-shadow:none!important}
 .controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .controls form{margin:0}
-.controls .btn,.controls button{padding:5px 10px;min-height:28px;font-size:11.5px}
+/* Compact buttons belong to table rows only; header actions and form submits keep the normal size. */
+:is(.board,.list,.facts) .controls :is(.btn,button){padding:5px 10px;min-height:28px;font-size:12px}
 
 /* Page */
 main{padding:22px 28px 60px;max-width:1760px;margin:0 auto}
+/* Two widths, everywhere. --wide caps everything that sits directly in a page (boards, stats, filter bars, heads,
+   a multi-column .deck), so a page has one right edge; --card is for forms, standalone cards, facts and short
+   lists, which set it themselves. Pages add no widths of their own. */
+:where(main:not(.login)>*){max-width:var(--wide)}
 h1{font:700 20px/1.25 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:0 0 16px;overflow-wrap:anywhere}
 h1.name{text-transform:none;letter-spacing:.02em}
+/* Data (project, entry, agent names) is never uppercased: wrap it in .name inside any uppercase label. */
+:is(h1,h2,h3,summary,th,.block-label,.menu-head,.tabs a,.btn,button,.chip,.toolbar label) .name{text-transform:none;letter-spacing:.02em}
 h2{display:flex;align-items:center;gap:12px;font:700 13px/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;
 color:var(--amber);margin:34px 0 12px}
 h2::after{content:"";flex:1;border-top:1px solid var(--rule)}
 h2[id]{scroll-margin-top:16px}
 h3{font:700 14px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;margin:0 0 12px;color:var(--ink)}
+/* Form sections inside a card: <fieldset><legend>, the legend looking like a card h3. .legend gives the same look
+   to a title that is neither (the inline password confirmation). */
+fieldset{min-width:0;margin:0;padding:0;border:none}
+legend,.legend{display:block;width:100%;padding:0;margin:0 0 12px;font:700 14px/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
 h3 small{display:block;margin-top:3px;color:var(--faint);font:400 12px/1.4 var(--mono);overflow-wrap:anywhere;text-transform:none;letter-spacing:0}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 4px}
 .head h1{margin-bottom:6px}
+/* Title row: the name and its one action share a line on wide screens. On phones the h1 takes the whole row and
+   the action stands at the right of the meta line under it (.title-block). */
+.head>div:only-child{flex:1;min-width:0}
+.title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.title-row h1{min-width:0}
+.title-row .btn{flex:none;white-space:nowrap}
+@media (max-width:900px){
+.title-block{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:0 12px}
+.title-block>.title-row{display:contents}
+.title-block h1{grid-column:1/-1}
+.title-block .btn{grid-area:2/2}
+.title-block>.sub{grid-area:2/1;min-height:40px}
+}
 .head .sub{color:var(--dim);font-size:13px;margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .back{display:inline-block;margin:0 0 12px;font-size:13px}
 .note{color:var(--dim);font-size:13px}
@@ -89,6 +172,9 @@ box-shadow:inset 0 0 0 1.5px var(--edge);vertical-align:-1px}
 @keyframes pulse{50%{opacity:.3}}
 .sign{display:inline-block;padding:3px 9px 4px;font:800 11.5px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;
 color:#fff;border-radius:3px;background:var(--steel-fill);white-space:nowrap}
+/* A sign is one line. Where its box has a width of its own (a board cell or card, a fold's head, an entry's title
+   line, a held summary) a long environment name wraps inside the sign instead of leaving that box. */
+:is(.board,.fold-name,.head .sub,.field-val,.held-what) .sign{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .sign.stage{background:var(--stage-fill)}
 .sign.prod{background:repeating-linear-gradient(-45deg,var(--hazard) 0 4px,#111 4px 8px) left bottom/100% 3px no-repeat,var(--prod-fill)}
 .callout{border:1px solid var(--rule);border-left:4px solid var(--go);background:var(--panel);padding:10px 14px;margin:0 0 16px;border-radius:3px}
@@ -104,25 +190,63 @@ background:repeating-linear-gradient(-45deg,var(--hazard) 0 18px,#111 18px 36px)
 .stat span{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 
 /* Board: the main table, every row a card with a state stripe */
-.scroll{overflow-x:auto;max-width:100%;scrollbar-color:var(--scroll-thumb) transparent}
+.scroll{overflow-x:auto;scrollbar-color:var(--scroll-thumb) transparent}
 .board{width:100%;border-collapse:separate;border-spacing:0 6px}
 .board th{white-space:nowrap;text-align:left;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
 font-weight:600;padding:0 12px 2px}
 .board td{background:var(--panel);padding:10px 12px;vertical-align:top;border-top:1px solid var(--rule);border-bottom:1px solid var(--row-edge);font-size:13px}
 .board td[data-label]::before{content:none}
-.board td:first-child{border-radius:4px 0 0 4px;border-left:3px solid var(--amber)}
+.board td:first-child{border-radius:4px 0 0 4px;border-left:3px solid var(--stripe)}
 .board td:last-child{border-radius:0 4px 4px 0}
-.board tr.is-ok td:first-child{border-left-color:var(--go)}
-.board tr.is-bad td:first-child{border-left-color:var(--stop)}
-.board tr.is-idle td:first-child{border-left-color:var(--faint)}
+/* Row stripe: the row's state class sets --stripe once; the table row and its card (phone, and below 1180 px for
+   Requests and Grants) both draw it. .is-plain is a row that has no state (a person on Members). */
+.board tr{--stripe:var(--amber)}
+.board tr.is-ok{--stripe:var(--go)}
+.board tr.is-bad{--stripe:var(--stop)}
+.board tr.is-idle{--stripe:var(--faint)}
+.board tr.is-wait{--stripe:var(--amber)}
+.board tr.is-plain{--stripe:var(--rule)}
 .board td.name{min-width:14em;max-width:26em}
 .board td.name a{font-weight:700;font-size:14px}
 .board td.name small{display:block;margin-top:3px;color:var(--faint);overflow-wrap:anywhere}
+/* A when-cell is one line, unless it marks what must stay whole with span.nobreak (the date): then the text after
+   it (a reason such as "· agent expired") may wrap under the date instead of widening the column. */
 .board td.when{white-space:nowrap}
+.board td.when:has(>.nobreak){white-space:normal}
 .board td.when small{display:block;color:var(--faint)}
+/* A secondary line ("Grant expiry: …") may wrap under the value; it never widens the column. */
+.board td.when small.wrap{white-space:normal}
+/* Long data never widens a board: a name (agent, entry) and an action code wrap, inside a word when they must. */
+.board td:is(.who,.action,.name){overflow-wrap:anywhere}
+/* A section heading with something beside it (the waiting requests: "Check now", "Pause automatic checks" and
+   the status). The heading keeps its rule line. The row reads left to right in the order of the document: the two
+   buttons, then the status. The status has a fixed slot as wide as its longest steady text ("Paused · last checked
+   HH:MM UTC") and ends at the right edge, so the buttons never move when it changes; a longer answer wraps in it. */
+.section-head{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:34px 0 12px}
+.section-head>h2{flex:1 1 16em;min-width:0;margin:0}
+.section-head[hidden]{display:none}
+.refresh-row{display:flex;align-items:center;gap:8px;flex:none;margin:0}
+.refresh-row .note{flex:none;width:31ch;margin:0 0 0 4px;text-align:right}
+.refresh-row :is(.btn,button){flex:none;white-space:nowrap}
+/* The toggle is as wide as its longer label ("Resume automatic checks"), so neither button moves when it is pressed. */
+.refresh-row [data-refresh-pause]{min-width:17.7em}
+/* "Pause automatic checks": a quiet toggle (aria-pressed) beside "Check now". It has the edge every control has
+   and is quieter by its fill, colour and weight. Pressed, it reads "Resume automatic checks" and carries the amber
+   edge, so the paused state shows on the control as well as in the status. */
+button.quiet{background:none;color:var(--dim);font-weight:600}
+button.quiet:hover{color:var(--ink)}
+button.quiet[aria-pressed=true]{border-color:var(--amber-edge);color:var(--amber)}
+/* What follows the tabs starts at the same height on every tab, a heading or not. */
+.tabs+.section-head,.tabs+h2{margin-top:0}
 .board .line{display:block}
 .board .line+.line{margin-top:3px}
 .board .line b{color:var(--dim);font-weight:600}
+/* Row actions (Revoke, Remove, Reveal, Restore) sit at the right edge in a column no wider than its buttons. */
+@media (min-width:901px){
+.board td:last-child:not(.decision):has(.controls,>form){width:1%;white-space:nowrap;text-align:right}
+.board td:last-child:not(.decision) .controls{justify-content:flex-end;flex-wrap:nowrap}
+.board td:last-child:not(.decision)>form{display:inline-flex;justify-content:flex-end;margin:0}
+}
 
 /* List: plain and dense */
 .list{width:100%;border-collapse:collapse}
@@ -131,42 +255,103 @@ padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
 .list td{padding:7px 10px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere;vertical-align:middle}
 .list td input:not([type=checkbox]),.list td select{min-width:8em}
 .list small{display:block;color:var(--faint)}
-.facts{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
-.facts th{width:16em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
+/* Facts tables and short two-column lists are as wide as a form card (--card); boards end at --wide. */
+.facts{width:100%;max-width:var(--card);border-collapse:collapse;background:var(--panel);border:1px solid var(--rule);margin:0 0 14px}
+.capped{max-width:var(--card)}
+.facts th{width:18em;text-align:left;vertical-align:top;font-size:13px;color:var(--dim);font-weight:600;padding:10px 14px;border-bottom:1px solid var(--rule)}
 .facts td{padding:9px 14px;border-bottom:1px solid var(--rule);font-size:13px;overflow-wrap:anywhere}
 .facts tr:last-child th,.facts tr:last-child td{border-bottom:none}
 .box{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:12px 16px}
 
 /* Forms */
-.deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:12px;align-items:start}
+/* Two cards fit --wide side by side: 2 x 520 + 12 = 1052. A deck that does not have that room stacks its cards, and
+   a stacked card is no wider than a standalone one (--card); in two columns each is narrower than that anyway. */
+.deck{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:12px;align-items:start}
+.deck>*{min-width:0;max-width:var(--card)}
 .deck.wide{grid-template-columns:minmax(0,1fr)}
 form.action,.card{margin:0;background:var(--panel);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;padding:14px 16px}
 form.action.danger,.card.danger{border-top:7px solid transparent;
 background:linear-gradient(var(--panel),var(--panel)) padding-box,repeating-linear-gradient(-45deg,var(--hazard) 0 10px,#111 10px 20px) border-box}
-.stats,.list,.facts,.deck,main>form.action,.scroll,.box{margin-bottom:14px}
+/* One width for every standalone form card: a form outside a deck, or alone in one. Pages add no width classes. */
+form.action:not(.deck>form.action),.deck>form.action:only-child{max-width:var(--card)}
+main.login form.action{max-width:none}
+.stats,.list,.facts,.deck,form.action:not(.deck>form.action),.scroll,.box{margin-bottom:14px}
 .board,.scroll:has(>.board){margin-bottom:8px}
 .scroll>.board,.scroll>.list,form.action .scroll,.card .scroll{margin-bottom:0}
 label{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
 label small{color:var(--faint);font-size:12px}
 label.check{display:flex;gap:9px;align-items:flex-start;color:var(--ink)}
-label.stack{grid-template-columns:1fr;gap:4px}
+label.stack{grid-template-columns:minmax(0,1fr);gap:4px}
 input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{font:14px/1.4 var(--mono);color:var(--ink);background:var(--field);
 border:1px solid var(--edge);border-radius:3px;padding:7px 10px;min-height:36px;width:100%;caret-color:var(--amber)}
 input:not([type=checkbox]):not([type=radio]):focus,textarea:focus,select:focus{outline:none;border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
 input:not([type=checkbox]):not([type=radio]):focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber)}
 input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
-input[type=date]{color-scheme:dark}
 textarea{min-height:7em;resize:vertical;font-size:13px}
 input[type=checkbox],input[type=radio]{accent-color:var(--amber-fill);width:16px;height:16px;margin:2px 0 0;flex:none}
+/* Form foot: the note on the left (above on phones), submit buttons at the right at their natural width. */
 .form-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-top:12px}
 .form-foot .note{margin:0}
+.form-foot .note:empty{display:none}
+/* A foot with three buttons: the note stands above them, the buttons stay at the right. */
+.form-foot.stack{flex-direction:column;align-items:stretch;gap:10px}
+.form-foot.stack>.controls{align-self:flex-end;margin-left:0;max-width:100%}
 .form-foot .controls{flex:none;justify-content:flex-end}
-.form-foot button:not(.go):not(.stop){border-color:var(--amber);color:var(--amber)}
+.form-foot>:is(button,.btn,.controls):last-child{margin-left:auto;flex:none}
+label.check.stop{color:var(--stop)}
 .toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 8px}
 .toolbar label{display:flex;flex-direction:column;align-items:stretch;gap:4px;margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
 .toolbar label.grow{flex:1;min-width:16em}
 .toolbar select{width:auto;max-width:18em}
+.toolbar :is(button,.btn){min-height:36px}
+.toolbar>a:not(.btn),.toolbar .clear{display:inline-flex;align-items:center;min-height:36px;font-size:13px}
 .toolbar .count{margin-left:auto;color:var(--dim);font-size:13px;align-self:center}
+/* Filter bar (Entries, Grants, Activity): <details class="filters" data-wide-open> holding one .toolbar.
+   Wide screens: app.js keeps it open and its summary is not shown, so it is a plain bar and never a toggle (without
+   script the summary stays, to open it). Phones: a closed drawer. The status line below it carries the count with
+   Clear filters beside it (.filter-count), then one chip per active filter (.chip.filter). */
+details.filters{margin:0 0 10px}
+details.filters>summary{padding:7px 12px;display:flex;align-items:center;gap:8px}
+details.filters>summary::before,details.filters[open]>summary::before{flex:none;content:"\25B8"}
+details.filters[open]>summary::before{content:"\25BE"}
+details.filters .toolbar{margin:0;padding:4px 12px 12px}
+.filter-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 10px;max-width:var(--wide);font-size:13px;color:var(--dim)}
+.filter-count a{margin-left:6px}
+.chip.filter{font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink);background:var(--panel-2);white-space:normal;overflow-wrap:anywhere}
+@media (min-width:901px){
+details.filters[data-wide-open]{background:none;border:none;border-radius:0}
+details.filters[data-wide-open]>summary{display:inline-flex;min-height:32px;padding:4px 12px 4px 0;margin:0 0 2px;font-size:12px;font-weight:400;color:var(--dim)}
+details.filters[data-wide-open]>summary:hover{color:var(--amber)}
+details.filters[data-wide-open][open]>summary{display:none}
+details.filters[data-wide-open] .toolbar{padding:0}
+/* The bar ends where the board under it ends: Apply stands at the right edge (Grants, Activity). On Entries the
+   search field takes the room instead and the bar is as wide as its fields. */
+main>details.filters[data-wide-open] .toolbar>button:last-child{margin-left:auto}
+/* Entries: the search field and the filters share one line. */
+form.catalog-filters{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px}
+form.catalog-filters>.entry-search{flex:1 1 15rem;margin:0}
+form.catalog-filters>details.filters{flex:0 1 auto;min-width:0;margin:0}
+/* With the bar open (script) the search field and the four filters are one row, Apply last at the right edge,
+   whatever the names in the selects are: a select is at most 12em wide and gives way before anything wraps (a long
+   project name is cut by the select, and whole in its list). */
+form.catalog-filters:has(>details.filters[open]){flex-wrap:nowrap}
+form.catalog-filters>details.filters[open] .toolbar{flex-wrap:nowrap}
+form.catalog-filters>details.filters[open] .toolbar label{flex:0 1 auto;min-width:6.5em}
+form.catalog-filters>details.filters[open] .toolbar select{width:100%;min-width:0;max-width:12em}
+form.catalog-filters>details.filters[open] .toolbar button{flex:none}
+/* "All environments" is never cut at rest: that select keeps 13em (182 px; the option needs 177) and the others
+   give way. "All projects" keeps its 146 px too (12.2em of the label's 12 px), so the row is still one row at
+   901 px, and from 1000 px up every select shows its resting option whole. */
+form.catalog-filters>details.filters[open] .toolbar label:has(>select[name=environment]){flex:none}
+form.catalog-filters>details.filters[open] .toolbar select[name=environment]{width:13em;max-width:none}
+form.catalog-filters>details.filters[open] .toolbar label:has(>select[name=project]){min-width:12.2em}
+/* Grants: the Entry filter names an entry with its project and environment; it may use the room the bar has. */
+main>details.filters[data-wide-open] .toolbar select[name=entry]{max-width:28em}
+}
+/* Entries: the Search button is for the closed drawer; an open filter bar has Apply, which sends the search too. */
+.catalog-filters:has(details.filters[open]) .catalog-search{display:none}
+/* A drawer is a control: it has the edge every control has. */
+@media (max-width:900px){details.filters{border-color:var(--edge)}details.filters>summary{min-height:40px}}
 .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0}
 .inline label{margin:0}
 .inline input:not([type=checkbox]){width:auto;flex:1;min-width:10em}
@@ -188,57 +373,203 @@ font:13px/1.5 var(--mono);overflow:auto;white-space:pre-wrap;overflow-wrap:anywh
 .block-label .chip{letter-spacing:.06em}
 .secret-row{margin:0 0 12px}
 .secret-row .controls{margin-top:6px}
+/* A revealed value (the entry page): the field name is a line, then the value with its Copy on the same row, at
+   every width. A note about a failed copy takes the whole row under them. */
+.secret-row.compact{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:start}
+.secret-row.compact>.block-label,.secret-row.compact>.copy-note{grid-column:1/-1}
+.secret-row.compact>.block-label{margin-bottom:0}
+.secret-row.compact>.controls{margin-top:0}
+.note+.secret-row{margin-top:12px}
+/* Copy failed: the note stays under the Copy button until a copy works or the value is hidden. When the button is
+   in a form foot (the token card) the note sits under that row, at the right like the button. */
+.secret-row .copy-note,.form-foot+.copy-note{margin:6px 0 0}
+.block-label+.copy-note{margin:0 0 6px}
+.form-foot+.copy-note{text-align:right}
 pre[data-hidden]{color:var(--faint)}
-.masked{font:700 22px/1 var(--mono);letter-spacing:.3em;color:var(--faint);margin:6px 0 12px}
+.masked{font:700 22px/1 var(--mono);letter-spacing:.08em;color:var(--faint);margin:6px 0 12px}
 .empty{padding:30px;text-align:center;color:var(--dim);border:1px dashed var(--edge);border-radius:4px}
 .empty b{display:block;color:var(--ink);margin-bottom:4px}
-.pager{display:flex;justify-content:space-between;gap:10px;margin:4px 0 14px;font-size:13px}
-.foot{margin-top:28px;color:var(--faint);font-size:12px;display:flex;gap:8px;align-items:center}
+.pager{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 14px;font-size:13px}
+.foot{margin-top:28px;color:var(--faint);font-size:12px}
 
 /* Entry history */
 .changes{display:grid;gap:2px}
 .changes .muted{font-size:12px}
 .changes b{color:var(--dim);font-weight:600}
-.subnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+/* Jump links to the sections of a long page: one line of quiet underlined links, never button-like. */
+nav.subnav{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap;margin:4px 0 14px;padding:0 0 8px;border-bottom:1px dashed var(--rule);font-size:13px}
+nav.subnav .subnav-label{color:var(--faint);font-size:12px;white-space:nowrap}
+nav.subnav a,nav.subnav a:hover{display:inline-flex;align-items:center;min-height:28px;padding:0;border:none;border-radius:0;background:none;
+font:400 13px/1.3 var(--mono);letter-spacing:0;text-transform:none;white-space:nowrap;color:var(--dim);
+text-decoration:underline;text-decoration-color:var(--edge);text-decoration-thickness:1px;text-underline-offset:5px}
+nav.subnav a:hover{color:var(--amber);text-decoration-color:var(--amber)}
+/* Phone: the links wrap onto as many lines as they need; nothing scrolls sideways. */
+@media (max-width:900px){
+nav.subnav{gap:0 18px}
+nav.subnav .subnav-label{flex-basis:100%}
+nav.subnav a,nav.subnav a:hover{min-height:40px}
+}
+/* Jump links of a long page with many sections (the entry page): <details class="jump" data-wide-open>. Wide
+   screens: app.js keeps it open and its summary is a plain label before one line of links. Phones: a closed drawer
+   "On this page", so the links do not take four lines before the content. */
+details.jump{flex:1;min-width:0;margin:0;background:none;border:none;border-radius:0}
+details.jump>summary{padding:0;font:400 12px/1.3 var(--mono);color:var(--faint)}
+details.jump>summary::before,details.jump[open]>summary::before{content:none}
+.jump-links{display:flex;align-items:center;gap:2px 18px;flex-wrap:wrap}
+@media (min-width:901px){
+/* The label floats; the links are a flex box of their own beside it, so wrapped links never start under the label. */
+details.jump[open]>summary{float:left;margin-right:18px;line-height:28px;cursor:default;pointer-events:none;white-space:nowrap}
+}
+@media (max-width:900px){
+nav.subnav:has(>details.jump){padding:0;border-bottom:none}
+details.jump{background:var(--panel);border:1px solid var(--edge);border-radius:4px}
+details.jump>summary{display:flex;align-items:center;gap:8px;min-height:40px;padding:7px 12px;font:600 13px/1.4 var(--mono);color:var(--ink)}
+details.jump>summary::before{content:"\25B8";color:var(--amber);flex:none}
+details.jump[open]>summary::before{content:"\25BE";color:var(--amber);flex:none}
+.jump-links{gap:0 18px;padding:0 12px 8px}
+/* Beside the closed drawer: one tap to the values. The open drawer lists the same link, so this one goes. */
+nav.subnav:has(>.jump-quick){flex-wrap:nowrap;align-items:flex-start;gap:8px}
+nav.subnav>a.jump-quick,nav.subnav>a.jump-quick:hover{flex:none;min-height:40px;padding:7px 12px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;font:600 13px/1.4 var(--mono);white-space:nowrap;text-decoration:none;color:var(--ink)}
+nav.subnav>a.jump-quick:hover{border-color:var(--amber);color:var(--amber)}
+nav.subnav>a.jump-quick span{margin-left:6px;color:var(--amber)}
+nav.subnav>details.jump[open]+a.jump-quick{display:none}
+}
+@media (min-width:901px){nav.subnav>a.jump-quick{display:none}}
+/* Entry page: boards end at --wide like everywhere; facts, cards and the archive forms keep --card. */
+.entry-page>:is(.head,nav.subnav)+h2,.entry-page>.waiting-first:has(>.section-head[hidden])+h2{margin-top:18px}
+.entry-page>.deck{max-width:var(--card)}
+@media (min-width:901px){
+.entry-page .board td.name{min-width:0}
+.board.requests td.action .rid{white-space:nowrap}
+}
+.board.requests .rid{color:var(--faint)}
 
 /* Sign-in */
 main.login{max-width:520px;margin:0 auto;padding:10vh 16px 24px}
 main.login .mark{display:block;margin:0 0 22px;text-align:center}
 main.login form.action,main.login .card{padding:20px 22px}
-main.login label{grid-template-columns:8em minmax(0,1fr)}
+main.login label,main.login .field{grid-template-columns:10.5em minmax(0,1fr)}
+main.login .field>label{display:block;margin:0}
 .totp-qr{display:block;width:240px;height:240px;margin:6px auto 14px;background:var(--qr-light);padding:8px;border-radius:4px;image-rendering:pixelated}
 
 @media (max-width:900px){
-.top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:10px 16px}
-.top .mark{grid-column:1;grid-row:1}.top .who{grid-column:2;grid-row:1;flex-wrap:wrap;justify-content:flex-end}
-.top .spacer{display:none}.top .nav{grid-column:1/-1}
-.nav{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}.nav .btn{flex:none}
+/* The workspace name and the account name share the room that is left beside the mark: each gets what it needs
+   while there is room, and when both are long they get equal shares and both end in an ellipsis (two tracks that
+   grow together up to their content; the last one also takes what is over, so the account menu ends at the edge).
+   Rows: [mark, workspace switcher, account menu], then [nav]. app.js moves the account menu before the nav in the
+   document at this width, so the focus order is the order seen. (CSS reading-flow is not used: in Chrome it takes the two
+   menus' summaries out of the Tab order of this grid.) */
+.top{display:grid;grid-template-columns:auto minmax(0,max-content) minmax(0,auto);gap:8px 8px;padding:10px 16px}
+.top details.menu.account{justify-self:end;max-width:100%}
+.top .spacer{display:none}.top .nav{grid-column:1/-1;grid-row:2}
+.top details.menu.space{justify-self:start;max-width:100%}.top details.menu>summary{min-height:40px;max-width:100%}
+.nav{gap:6px}.nav .btn:first-child:nth-last-child(n+4),.nav .btn:first-child:nth-last-child(n+4)~.btn{flex:1 1 auto}
+.menu-list a{min-height:44px}.tabs a{min-height:40px}
 main{padding:18px 16px}.deck,.deck.wide{grid-template-columns:1fr}
-.btn,button,.controls .btn,.controls button{min-height:40px;padding:9px 14px}
-.who button{min-height:36px}
+.btn,button,:is(.board,.list,.facts) .controls :is(.btn,button){min-height:40px;padding:9px 14px}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-height:40px}
+/* Phones: both buttons on one row at the left edge, the status as a small line under them: it belongs to "Check
+   now". The password line that follows is another matter and stands apart, under a dashed rule. */
+.section-head+.confirm-inline.shared:not(.is-needed){padding-top:10px;border-top:1px dashed var(--rule)}
+.section-head .refresh-row{flex:1 1 100%;flex-wrap:wrap;gap:4px 8px}
+.section-head .refresh-row .note{flex:1 1 100%;width:auto;margin:0;text-align:left;font-size:12px}
 .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:12px 14px}
 .stat{min-width:0;overflow-wrap:anywhere}.stat b{font-size:19px}.stat:last-child:nth-child(odd){grid-column:1/-1}
-.form-foot{flex-direction:column;align-items:stretch}.form-foot .controls{align-self:flex-end}
-label,main.login label{grid-template-columns:1fr;gap:4px}
-.toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}
-.board thead{display:none}.board,.board tbody,.board tr,.board td{display:block;width:100%}
-.board tr{margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px;overflow:hidden}
-.board tr.is-ok{border-left-color:var(--go)}.board tr.is-bad{border-left-color:var(--stop)}.board tr.is-idle{border-left-color:var(--faint)}
+.form-foot{flex-direction:column;align-items:stretch}.form-foot>:is(button,.btn,.controls){align-self:flex-end;margin-left:0}
+label,main.login label,main.login .field{grid-template-columns:minmax(0,1fr);gap:4px}
+.toolbar label,.toolbar label.grow{flex:1 1 100%;min-width:0}.toolbar select{max-width:none;width:100%}.toolbar button{width:100%}.toolbar :is(button,.btn){min-height:40px}.toolbar>a:not(.btn),.toolbar .clear{min-height:40px}
+.board,.board tbody,.board tr,.board td{display:block;width:100%}
+/* Column heads stay for screen readers (app.js adds the table roles the block layout takes away). */
+.board thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.board tr{margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--stripe);border-radius:4px;overflow:hidden}
 .board td{background:transparent;border-radius:0!important;border-top:none;border-bottom:none;padding:6px 14px}
 .board td:first-child{border-left:none;padding-top:12px}.board td:last-child{padding-bottom:12px}
 .board td.name{max-width:none}.board td.when{white-space:normal}
-.board td[data-label]::before{content:attr(data-label);display:block;margin-bottom:2px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.board td[data-label]::before{content:attr(data-label);content:attr(data-label)/"";display:block;margin-bottom:2px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
 .board td[data-label=""]::before{content:none}
-.list{display:block;overflow-x:auto;max-width:100%}
 .facts,.facts tbody,.facts tr,.facts th,.facts td{display:block;width:100%}
 .facts th{padding:10px 12px 2px;border-bottom:none}.facts td{padding:2px 12px 10px}
-.inline{flex-direction:column;align-items:stretch}.inline input:not([type=checkbox]){width:100%}.board.versions td.act{padding-top:4px}}
-@media (max-width:600px){input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{font-size:16px}.totp-qr{width:220px;height:220px}}
+.inline{flex-direction:column;align-items:stretch}.inline input:not([type=checkbox]){width:100%}.inline>button{align-self:flex-end}}
+@media (max-width:600px){.top{position:relative}.top details.menu{position:static}
+.top details.menu .menu-list,.top details.menu.account .menu-list{left:16px;right:16px;top:auto;width:auto;max-width:none;margin-top:4px}
+details.menu.account>summary{padding:6px 4px}
+.tabs{flex-wrap:wrap;overflow-x:visible}
+.nav{gap:4px}.nav .btn{padding:9px 5px;font-size:12px;letter-spacing:0}.nav .btn .chip{padding:0 4px;font-size:11.5px;letter-spacing:0}
+input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{font-size:16px}.totp-qr{width:220px;height:220px}}
+/* Editable rows: a table on wide screens, one labelled card per row on phones, so no control is clipped. */
+.list.edit td{vertical-align:middle}
+.list.edit td.act .controls{justify-content:flex-end;flex-wrap:nowrap}
+.list.edit label.check{margin:0}
+@media (max-width:900px){
+.list.edit thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}.list.edit,.list.edit tbody,.list.edit tr,.list.edit td{display:block;width:100%}
+.list.edit tr{margin:0 0 10px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--rule);border-left:3px solid var(--edge);border-radius:4px}
+.list.edit td{padding:0 0 8px;border:none}.list.edit td:last-child{padding-bottom:0}.list.edit td:empty{display:none}
+.list.edit td[data-label]::before{content:attr(data-label);content:attr(data-label)/"";display:block;margin-bottom:3px;font:600 12px/1.4 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.list.edit td.act{padding-top:4px}.list.edit td.act .controls{flex-wrap:wrap}
+.fold-foot button{width:auto}}
+/* Requests (the boards of agent requests). Every property is set once: what differs between the table (1181 px
+   and up) and the card (below) stands in one of the two blocks after the shared rules, never in both. */
+/* The site MFA code keeps its visible label; the button lines up with the input, on the same line. */
+.board.requests form.mfa{align-items:flex-end;gap:8px}
+.board.requests form.mfa label{font-size:12px;color:var(--dim);white-space:nowrap}
+.board.requests form.mfa button{flex:none;white-space:nowrap}
+.board.requests .state{white-space:nowrap}
+.board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). The
+   deadline and the time left open the Decision cell, above the controls they limit, at every width. */
+.board.requests td.decision .line.expires{margin-bottom:6px}
+.board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
+/* Allow once and Deny: full-size buttons with room between them, so the wrong one is not hit. */
+@media (min-width:901px){
+.board.requests td.decision .controls{gap:12px}
+.board.requests td.decision .controls button{min-height:32px;padding:7px 13px}
+}
+@media (max-width:1180px){
+/* Card. The MFA field is as wide as its label, never wider: on a narrow card it must not reach under the button. */
+.board.requests form.mfa label{flex:1 1 11em;min-width:11em}
+.board.requests form.mfa label input{min-width:0}
+/* The time left follows the deadline on its line; the separator stays with the deadline, so a wrapped line never
+   starts with it. */
+.board.requests .line.expires>.nobreak:has(+.left:not([hidden]))::after{content:"\00A0\00B7";color:var(--faint)}
+}
+@media (min-width:1181px){
+/* Table. "Requests waiting for you" and "Recent requests" are two boards with the same leading columns, in a fixed
+   layout: Agent, Action, Entry, State and Requested have one width each, so a column starts at the same place in
+   both and no data moves it, and the last column (Decision or Finished) takes what is left, always inside the
+   board. The widths are what the usual cell needs: a sixteen-letter action, "Payment gateway API" as an entry name,
+   "waiting for approval" with its lamp, and one date under Requested (the deadline stands in the Decision cell). The Agent column holds thirteen letters (102 px of text, as on Grants):
+   "ci-runner" is one line, and a long name breaks after its hyphens ("deployment-", "orchestrator-"), inside a
+   word only when one part is longer than that or the name has no hyphen. Longer codes wrap in their cell. */
+.board.requests{table-layout:fixed}
+.board.requests th.c-who{width:123px}
+.board.requests th.c-action{width:144px}
+.board.requests th.c-entry{width:193px}
+.board.requests th.c-state{width:200px}
+.board.requests th.c-when{width:152px}
+/* Without the Entry column (an entry page) its width goes to Agent and Action, so a long agent name and a long
+   action code break at their hyphens; State, Requested and the last column start where they do on Requests. */
+.board.requests.no-entry th.c-who{width:176px}
+.board.requests.no-entry th.c-action{width:284px}
+.board.requests td{overflow-wrap:anywhere}
+/* Six columns fit --wide: 12 px between two columns (6 + 6); the last one keeps the board's normal right padding
+   (12 px), so "Continue sign-in" does not sit on the edge. */
+.board.requests :is(th,td):not(:first-child){padding-left:6px}
+.board.requests :is(th,td):not(:last-child){padding-right:6px}
+.board.requests td.decision .line.expires{white-space:nowrap}
+/* The time left is a line of its own under the deadline: the cell is as high in a request's last minute ("under 1
+   min left") as before it. */
+.board.requests .left{display:block;margin-top:3px}
+/* Allow once and Deny share one row. The MFA field needs eight digits and no more (8ch plus its padding; its label
+   may run on above the button), and has one width wherever the board is a table: on Requests, and on an entry
+   page, where the cell would have room for more. */
+.board.requests td.decision{white-space:nowrap}
+.board.requests td.decision .controls,.board.requests form.mfa{flex-wrap:nowrap}
+.board.requests form.mfa label{flex:0 0 8.6em;min-width:0}
+.board.requests form.mfa label input{min-width:calc(8ch + 24px)}
+}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .nobreak{white-space:nowrap}
 .card .form-foot:first-child{margin:0 0 12px;align-items:center;flex-wrap:wrap}
-.card .add-env{margin-top:12px;padding-top:12px;border-top:1px dashed var(--rule)}
-.add-env label.check{color:var(--dim)}
 .card>.form-foot:first-child,.card>input+.form-foot{margin:0 0 12px;align-items:center}
 .card+.controls{margin:8px 0 0}
 .card .scroll{margin:6px 0 0}
@@ -248,8 +579,641 @@ h3.gap{margin-top:22px;padding-top:14px;border-top:1px dashed var(--rule)}
 label.indent{margin-left:min(14em,30%)}
 @media (max-width:900px){label.indent{margin-left:0}}
 .form-foot button,.form-foot .btn{white-space:nowrap}
+/* A button that names its action with data (the confirm page: "Confirm: Reveal <entry name>"): the label wraps
+   inside the card and is never cut; the data is in normal weight, so the verb and the name read as two parts.
+   display:block: the label is running text (a button is a flex box, which would set its parts side by side). */
+.form-foot:has(.action-name) .controls{flex:0 1 auto;min-width:0;max-width:100%}
+.form-foot button.action-name{display:block;flex:0 1 auto;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4}
+button.action-name .name{font-weight:400}
+/* Wide screens: a short label shares the row with the note. A long one does not fit beside it: the two buttons
+   then take the row under the note, at the right, and stay one row themselves (Cancel beside the button, whose
+   label wraps), so Cancel is never left alone on a line above it. */
+@media (min-width:901px){
+.form-foot:has(.action-name){flex-wrap:wrap;gap:10px 14px}
+.form-foot:has(.action-name) .controls{flex-wrap:nowrap;margin-left:auto}
+.form-foot:has(.action-name) .controls>.btn{flex:none}
+}
+/* Phones: the solid button first, Cancel under it, both at the right edge. */
+@media (max-width:900px){
+.form-foot:has(.action-name) .controls{flex-direction:column;align-items:flex-end;flex-wrap:nowrap}
+.form-foot .controls>.action-name{order:-1}
+}
+/* A button in a row with a field (Members Save, Continue sign-in, Generate) is as tall as the field on wide screens. */
+@media (min-width:901px){
+:is(.controls,.inline,.with-button,.toolbar):has(>:is(input:not([type=hidden]),select),>label>:is(input,select))>:is(button,.btn){min-height:36px}
+/* The other buttons of that table row (Members: Remove beside Save) follow, so the row has one button height. */
+.board tr:has(td :is(select,input:not([type=hidden]))) td :is(button,.btn){min-height:36px}
+}
+/* A form card that is one note and its button (Sign out, Archive entry): the foot is the whole card. */
+form.action>input[type=hidden]:first-child+.form-foot:last-child{margin-top:0;align-items:center}
+/* A page head followed by the stats, or by the search row (archived entries have no stats), keeps the normal block gap. */
+.head:has(+:is(.stats,.catalog-filters,.facts)){margin-bottom:14px}
+.head:has(+:is(.stats,.catalog-filters,.facts)) h1{margin-bottom:0}
+.head:has(+.facts){align-items:center}
+/* Editable rows inside a form card start and end where the fields above them do. */
+@media (min-width:901px){
+form.action .list.edit :is(th,td):first-child{padding-left:0}
+form.action .list.edit :is(th,td):last-child{padding-right:0}
+}
+/* Agent access as a table: a fixed layout, so a long agent name or action code wraps in its own column and the
+   State column is always inside the board. The shares fit "previously ran without asking" and a date with its
+   label on one line from a 1000 px window up. */
+@media (min-width:901px){
+.board.access{table-layout:fixed}
+.board.access th:nth-child(1){width:15%}
+.board.access th:nth-child(2){width:21%}
+.board.access th:nth-child(3){width:27%}
+.board.access th:nth-child(4){width:25%}
+.board.access td{overflow-wrap:anywhere}
+}
 .board.versions td{vertical-align:middle}
 .board.versions td.act{white-space:nowrap}
 button.ok{color:var(--go);border-color:var(--go-line)}
 button.ok:hover{color:var(--go);border-color:var(--go);box-shadow:0 0 12px var(--go-glow)}
 main.login .mark small{max-width:none}
+@media (max-width:900px){.card>.form-foot:first-child{align-items:stretch}.card>.form-foot:first-child>.controls,.card>.form-foot:first-child>.chip{align-self:flex-end}}
+/* Shell helpers */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.skip{position:absolute;left:8px;top:-60px;z-index:50;padding:10px 14px;background:var(--amber-fill);color:var(--on-accent);border-radius:3px;
+font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.skip:focus{top:8px}
+main:focus{outline:none}
+/* A role is a fact about a person, not a state: no state colour. */
+.chip.role{color:var(--ink);border-color:var(--edge);background:var(--panel-2)}
+h2 .chip{flex:none}
+label span small{display:block;margin-top:2px;font-weight:400;letter-spacing:0;text-transform:none}
+/* Card header: the thing's own name form on the left, its removal on the right. Buttons stay plain. */
+.card-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 12px}
+.card-head .inline{flex:1;min-width:min(100%,18em)}
+/* The last note of a card ends the card; notes before it keep the paragraph rhythm. */
+.card>.note:last-child{margin-bottom:0}
+@media (max-width:900px){.card-head{flex-direction:column;align-items:stretch}.card-head .inline{flex:none}.card-head>.controls{align-self:flex-end}}
+/* Fold: a collapsed editor, one per thing */
+details.fold{scroll-margin-top:16px}
+details.fold>summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:44px}
+details.fold>summary::before,details.fold[open]>summary::before{flex:none;content:"\25B8"}
+details.fold[open]>summary::before{content:"\25BE"}
+/* One affordance per fold: a summary with an "Edit" control (.fold-act) carries the marker inside that control; the
+   summary's own marker stays where no word names the toggle. */
+details.fold>summary:has(.fold-act)::before{content:none}
+details.fold>summary:hover .fold-name{color:var(--amber)}
+details.fold[open]{border-top:2px solid var(--amber)}
+details.fold:target{border-color:var(--amber)}
+.fold-name{font-weight:700;font-size:14px;margin-right:auto;overflow-wrap:anywhere}
+.fold-foot{display:flex;justify-content:flex-end;margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--rule)}
+p.fold-foot{display:block;max-width:none}
+/* Input with a button beside it; the button may also sit next to the whole label. */
+.with-button>input,.with-button>label{flex:1;min-width:0}
+.with-button>label{margin:0}
+.with-button:has(>label){align-items:flex-end;margin:0 0 8px}
+/* Phones: the buttons wrap under the field instead of squeezing it. */
+@media (max-width:600px){
+.with-button{flex-wrap:wrap;justify-content:flex-end}
+.with-button>input,.with-button>label{flex:1 1 60%;min-width:60%}
+.with-button:has(>button~button)>input{flex-basis:100%}
+}
+/* Generate asking "Replace value?": the field keeps its line, the question and its two buttons take the next one. */
+.with-button:has(>.confirm-step){flex-wrap:wrap;justify-content:flex-end}
+.with-button:has(>.confirm-step)>input{flex-basis:100%}
+/* Counts beside a heading or in a fold summary are plain text, not chips. */
+h2 .count{flex:none;color:var(--dim);font:400 12px/1.3 var(--mono);letter-spacing:0;text-transform:none}
+/* No margin on the key: when it wraps it starts flush left, like .event-code. */
+.fold-name code{font-weight:400}
+.fold-meta{color:var(--dim);font-size:13px;font-weight:400;white-space:nowrap}
+/* The toggle of a fold, as a compact control with an edge: the marker (▸ closed, ▾ open) and "Edit" or "Close".
+   It is the look only; the whole summary is what is pressed. */
+.fold-act{display:inline-flex;align-items:center;gap:6px;flex:none;min-height:28px;padding:5px 10px;border:1px solid var(--edge);border-radius:3px;
+color:var(--ink);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.fold-act::before{content:"\25B8";color:var(--amber)}
+details[open]>summary .fold-act::before{content:"\25BE"}
+details.fold>summary:hover .fold-act{border-color:var(--amber);color:var(--amber)}
+/* An open fold says "Close" where a closed one says "Edit". */
+details:not([open])>summary .when-open,details[open]>summary .when-closed{display:none}
+/* One environment per row inside a project card. */
+.card details.fold{background:var(--panel-2);margin:0 0 6px}
+.card details.fold>summary{gap:6px 16px}
+.card details.fold .form-foot{align-items:center}
+/* Phone: the name keeps the first line beside the marker; counts and Edit sit on the line below. */
+@media (max-width:900px){details.fold>summary .fold-name{flex:1 1 calc(100% - 40px);margin-right:0}details.fold>summary:has(.fold-act) .fold-name{flex-basis:100%}.fold-act{margin-left:auto}
+/* A project's head and each environment row stay one line: the name or sign, the count, Edit. A long name wraps
+   inside its own share. */
+details.fold:is(.env,.password-fold)>summary{flex-wrap:nowrap;gap:6px 10px}
+details.fold:is(.env,.password-fold)>summary:has(.fold-act) .fold-name{flex:1 1 0;min-width:0}
+/* A project's head: name, count, Edit on one line while they fit. A long name takes the line and wraps in it; the
+   count then drops under the name, with Edit at the right of that second line (.fold-tail holds the two). */
+details.fold.project-edit>summary{gap:6px 10px}
+/* The name takes the free room of a shared line, so the count stands beside Edit there, as on an environment row;
+   alone on the second line the tail is as wide as the card: the count at the left, Edit at the right. */
+details.fold.project-edit>summary:has(.fold-act) .fold-name{flex:9999 1 auto;min-width:0}
+details.fold.project-edit>summary>.fold-tail{display:flex;flex:1 0 auto;align-items:center;justify-content:space-between;gap:10px}}
+/* Wide screens: the count and Edit are one group at the right that never wraps; a long project name wraps in the
+   room at the left of it. */
+@media (min-width:901px){
+details.fold.project-edit>summary{flex-wrap:nowrap}
+details.fold.project-edit>summary>.fold-name{flex:1 1 0;min-width:0}
+.fold-tail{display:flex;flex:none;align-items:center;gap:16px;white-space:nowrap}
+}
+/* Password confirmation inside the page (confirm-inline). Valid: one quiet line, "Confirmed until HH:MM UTC.".
+   Expired (.is-needed, set by the server or app.js): the legend, the reason and the field under a dashed rule.
+   .shared stands outside the forms it serves: above the form foot of the Secret values card, and as a panel of
+   its own above the waiting requests. */
+.confirm-inline{margin-top:14px}
+.confirm-inline .note{margin:0;font-size:12px;color:var(--faint)}
+.confirm-inline.is-needed{padding-top:14px;border-top:1px dashed var(--rule)}
+.confirm-inline.is-needed .note{margin:0 0 8px;font-size:13px;color:var(--dim)}
+.confirm-inline .pending{display:block;margin-top:4px;color:var(--ink);font-weight:600}
+/* The action that waits for the password, as a button under the field. Its name wraps; it is never cut. */
+.confirm-inline .held{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:8px 0 0}
+.confirm-inline .held button{max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}
+/* What the held decision is about, beside its button (the button's description): agent, action, entry, project /
+   environment and the request id, as in the row it came from. */
+.confirm-inline .held-what{flex:1 1 18em;min-width:0;font-size:13px;line-height:1.7;color:var(--dim);overflow-wrap:anywhere}
+.confirm-inline .held-what :is(b,.name){color:var(--ink)}
+.confirm-inline .held-what .sep{color:var(--faint)}
+/* Deferred: another block earlier on the page holds the confirmation state and the one password field. This one
+   shows nothing (.is-quiet) while the confirmation is valid, and a line pointing there when it has expired. */
+.confirm-inline.is-quiet{display:none}
+.confirm-inline.is-deferred .note{font-size:13px;color:var(--dim)}
+/* The pointer is a part of its card like the field it stands for: a dashed rule above it, and room. */
+.confirm-inline.is-deferred:not(.is-quiet){padding-top:12px;border-top:1px dashed var(--rule)}
+.confirm-inline.shared{margin:0 0 12px;scroll-margin-top:16px}
+.confirm-inline.shared label{margin-bottom:0}
+/* A block inside a form card that only points to the page's one password field (Add a member, the template). */
+form.action>.confirm-inline.shared{margin:14px 0 0}
+.card>.confirm-inline.shared.is-needed{margin-top:14px}
+:not(.card)>.confirm-inline.shared{max-width:var(--card);margin-bottom:10px}
+.head+.confirm-inline.shared.is-needed{margin-top:10px}
+:not(.card)>.confirm-inline.shared.is-needed{padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:4px}
+/* Error page inside the signed-in shell. The status code is a dim line of its own under the h1: the callout is
+   the page's one red mark. */
+.error-page{max-width:var(--card)}
+.error-status{margin:-8px 0 14px;color:var(--dim);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+/* Account, while a confirmation is needed: "Change sign-in password" is a closed fold, so the page shows one
+   password field at rest. Its name looks like the card's h3 (.legend); a summary holds no heading. */
+details.fold>summary>.legend.fold-name{width:auto;margin:0 auto 0 0}
+details.password-fold>.inner>form{margin:0}
+/* Error summary of a form that failed validation. The layout prints it under the page head; app.js moves it to the
+   form that was sent, focuses it and links the messages to their fields. Its focus ring is red like the callout. */
+.error-summary{max-width:var(--card);scroll-margin-top:16px}
+.error-summary:focus,.error-summary:focus-visible{outline:2px solid var(--stop);outline-offset:2px}
+.error-summary a{color:var(--ink);text-decoration:underline;text-decoration-color:var(--stop);text-underline-offset:3px}
+.error-summary a:hover{color:var(--stop)}
+.error-summary a:focus-visible{outline-color:var(--stop)}
+form.action>.error-summary,.inner>.error-summary{max-width:none}
+/* The failing field: stop-colour border and, under it, the message (app.js adds .field-error). */
+:is(input,select,textarea)[aria-invalid="true"]:not([type=checkbox]):not([type=radio]){border-color:var(--stop);box-shadow:inset 3px 0 0 var(--stop)}
+:is(input,select,textarea)[aria-invalid="true"]:not([type=checkbox]):not([type=radio]):focus{border-color:var(--stop);box-shadow:inset 3px 0 0 var(--stop),0 0 0 1px var(--stop)}
+:is(input,select,textarea)[aria-invalid="true"]:focus-visible{outline-color:var(--stop)}
+input:is([type=checkbox],[type=radio])[aria-invalid="true"]{outline:2px solid var(--stop);outline-offset:2px}
+.field-error{display:block;grid-column:-2/-1;margin:0;color:var(--stop);font:400 12px/1.4 var(--mono);letter-spacing:0;text-transform:none}
+td>.field-error{margin-top:4px}
+/* The message of a labelled field follows its <label> (never inside it, so the field's name does not change) and
+   starts under the control: the label column is 14em of the label's 13px, plus the gap. */
+form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error{margin:-4px 0 8px calc(13px*14 + 10px)}
+main.login form>.field-error{margin-left:calc(13px*10.5 + 10px)}
+label.stack+.field-error,label.check+.field-error{margin-left:0}
+/* Under the field of a shared block the message is the last thing before the held button: no pull-up, no gap of its own. */
+.confirm-inline.shared>.field-error{margin-top:4px;margin-bottom:0}
+@media (max-width:900px){form>.field-error,fieldset>.field-error,.inner>.field-error,.confirm-inline>.field-error,main.login form>.field-error{margin-left:0}}
+/* A standalone card that is not a form (revealed values, the one-time token) keeps the form card width. */
+.card.solo{max-width:var(--card);margin-bottom:14px}
+.card.danger>.block-label:first-child{margin-bottom:10px}
+/* One-time token card: on phones the expiry is a line of its own under the agent's name. */
+@media (max-width:900px){.token-expiry{display:block}.token-expiry .sep{display:none}}
+/* Entry page: requests waiting for the owner sit right under the title. */
+.waiting-first>.section-head{margin-top:14px}
+/* Destructive actions confirm in place: app.js turns the button into "Confirm <verb>" with a Cancel beside it and
+   the question from data-confirm as the note. The note wraps and never decides a width. */
+.confirm-step{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px 8px;flex-wrap:wrap;max-width:100%}
+.confirm-step .confirm-note{flex:0 1 auto;min-width:0;max-width:34ch;color:var(--ink);font:400 13px/1.4 var(--mono);letter-spacing:0;text-transform:none;
+white-space:normal;overflow-wrap:anywhere;text-align:right}
+.confirm-step :is(button,.btn){flex:none;white-space:nowrap}
+.confirm-step :is(button,.btn).armed{background:var(--stop);border-color:var(--stop);color:var(--on-accent)}
+.confirm-step :is(button,.btn).armed:hover{color:var(--on-accent);box-shadow:0 0 14px var(--stop-glow)}
+/* The header mark asks like the nav links beside it: its armed wording is a button, not the 17 px wordmark. */
+.confirm-step .mark.armed{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:8px 13px;border:1px solid var(--stop);border-radius:3px;
+background:var(--stop);color:var(--on-accent);font:700 12px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.confirm-step .mark.armed:hover{box-shadow:0 0 14px var(--stop-glow)}
+/* The question needs more room than the mark: on wide screens the bar closes its gaps and gives up a little of its
+   right padding, so the account menu stays on the row; on phones the question takes the first row and the two
+   menus the second, in the order of the document. */
+@media (min-width:901px){.top:has(>.confirm-step){gap:12px;padding-right:max(28px,calc(100% - var(--wide) - var(--top-left) - 48px))}}
+@media (max-width:900px){
+.top .confirm-step .mark.armed{min-height:40px;padding:9px 14px}
+.top>.confirm-step{grid-column:1/-1;justify-content:flex-start}
+.top:has(>.confirm-step) .nav{grid-row:3}
+.top:has(>.confirm-step) details.menu.account{grid-column:2/-1}
+}
+/* A guarded link that is no button (a tab, a menu item) keeps its look; the question beside it is the cue. */
+:is(.tabs,.menu-list) .confirm-step{padding:0 6px}
+.menu-list .confirm-step{justify-content:flex-start}.menu-list .confirm-step .confirm-note{text-align:left}
+/* In a table row the question sits above the two buttons and takes their width (width:0 keeps it out of the
+   column's sizing). The column already has room for the armed buttons: app.js adds .confirm-size, an invisible
+   zero-height copy of them, to every such cell. */
+:is(.board,.list) .confirm-step{display:inline-grid;grid-template-columns:auto auto;justify-content:end;white-space:normal;vertical-align:middle}
+:is(.board,.list) .confirm-step .confirm-note{grid-column:1/-1;width:0;min-width:100%;max-width:none}
+.confirm-size{display:flex;flex-wrap:nowrap;justify-content:flex-end;gap:8px;height:0;margin:0!important;overflow:hidden;visibility:hidden;pointer-events:none}
+.confirm-size .btn{flex:none;white-space:nowrap;min-height:0!important;padding-top:0!important;padding-bottom:0!important}
+@media (max-width:900px){
+/* Phone: the armed cell takes a line of its own across the card; the question wraps above the buttons. */
+.confirm-size{display:none}
+.board tr:has(.confirm-step) td:has(.confirm-step){grid-area:auto/1/auto/-1!important;flex:1 1 100%!important;width:100%;max-width:100%;margin-left:0!important;justify-self:stretch!important;text-align:right}
+:is(.board,.list) :is(.controls,form):has(>.confirm-step,>form>.confirm-step){display:flex;flex-wrap:wrap;justify-content:flex-end;width:100%}
+:is(.board,.list) .controls>form:has(>.confirm-step){flex:1 1 100%;justify-content:flex-end}
+:is(.board,.list) .confirm-step{display:flex;width:100%}
+:is(.board,.list) .confirm-step .confirm-note{flex:1 1 100%;width:auto;min-width:0}
+}
+.form-foot>.confirm-step:last-child{margin-left:auto;flex:0 1 auto;max-width:60%}
+@media (max-width:900px){.form-foot>.confirm-step:last-child{align-self:flex-end;max-width:100%}}
+/* Activity: the event in words, then its code as dim small text on the same line. No margin on the code: when it
+   wraps it starts flush left, under the name. */
+.board.activity .event-name{font-weight:600}
+.board.activity .event-code{font-size:12px;color:var(--dim)}
+@media (max-width:900px){
+/* Phone card: what happened with its outcome at the right, then to what, then when and who. The code is for screen
+   readers only. The outcome is off the last line, so the actor has room there and an agent's chip stays on the
+   line of its name. */
+.board.activity td.event{order:0;flex:1 1 0;min-width:0}.board.activity td.outcome{order:1;flex:none;margin-left:auto}
+.board.activity td.subject{order:2;flex-basis:100%}
+.board.activity tr::before{content:"";order:2;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.activity td.when{order:3;flex:none}.board.activity td.actor{order:3;flex:1 1 0;min-width:5em}
+.board.activity td.subject.is-empty{display:none}
+.board.activity .event-code{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+}
+.board .line.expires{color:var(--dim)}
+
+/* Compact phone cards (house rule 6). Add .compact-board to a .board: on phones each row becomes a 2-3 line card,
+   cells flow inline and the column heads are gone, so a value that needs its head carries an inline label:
+   <small class="k">Expires</small> 2026-12-01 <small class="k">UTC</small>. The .k labels show on phones only.
+   Helpers for cells: .full = own line, .end = pushed to the right edge. */
+.board .k,.board td.when small.k,.board td.name small.k{display:none}
+/* .k.keep: a label no column head replaces ("Expires" under Requested, "Expired" under Finished) shows everywhere. */
+.board .k.keep,.board td.when small.k.keep{display:inline;font-size:12px;color:var(--faint)}
+@media (max-width:900px){
+.board.compact-board tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 12px}
+.board.compact-board td{width:auto;min-width:0;max-width:100%;padding:0;overflow-wrap:anywhere}
+.board.compact-board td:first-child,.board.compact-board td:last-child{padding:0}
+.board.compact-board td[data-label]::before{content:none}
+.board.compact-board td:empty{display:none}
+.board.compact-board .when{color:var(--dim)}
+.board.compact-board td[data-label=""]{margin-left:auto}
+.board.compact-board td.full{flex-basis:100%;margin-left:0}
+.board.compact-board td.end{margin-left:auto}
+/* A name is never cut: one too long for the card wraps onto a second line, so two names that differ only at the end
+   stay apart (Requests, Identities, Grants, an entry's Agent access). */
+.board.compact-board td>b.nobreak{white-space:normal;overflow-wrap:anywhere}
+.board .k,.board td.when small.k,.board td.name small.k{display:inline;font-size:12px;color:var(--faint)}
+.board.compact-board .controls{margin-top:4px}
+/* Entry page: versions and agent access */
+.board.compact-board td.act{margin-left:0}
+.board.versions td.act:not(:has(button)){display:none}
+/* Agent access is the grant card of Grants without the entry line and without Revoke: agent and action, the state
+   at the top right; approval; the end date. (Grants states the same card below, for its own breakpoint.) */
+.board.access tr{position:relative;align-items:center}
+.board.access td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
+.board.access td.action{order:0;flex:0 1 auto;max-width:calc(100% - 84px);margin-right:84px}
+.board.access td.state{position:absolute;top:10px;right:12px}
+.board.access td.approval{order:2;flex-basis:100%}
+.board.access td.when{order:4;flex-basis:100%}
+}
+
+/* entries area */
+.entry-search label.grow{flex:1;min-width:0}.entry-search button{width:auto}
+@media (min-width:901px){.toolbar label.grow{min-width:15rem}}
+/* Desktop: the four stats are four equal columns across the strip. */
+@media (min-width:901px){.stats.entry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 24px}}
+/* Entries as a table: every column has its width from the table, not from the rows a filter happens to show, so
+   no column moves between filters. The entry name takes the room that is left. */
+@media (min-width:901px){
+.board.entries{table-layout:fixed}
+.board.entries th:nth-child(2),.board.entries th:nth-child(3){width:14%}
+.board.entries th:nth-child(4){width:18%}
+.board.entries th:nth-child(5){width:124px}
+.board.entries th:nth-child(6){width:168px}
+.board.entries td.name{min-width:0;max-width:none}
+.board.entries td{overflow-wrap:anywhere}
+}
+/* A stat that filters the list (rotation due). */
+.stat-link{display:block;color:inherit;text-decoration:none;border-radius:3px}
+.stat-link:hover{text-decoration:none}
+.stat-link:hover span,.stat-link.is-on span{color:var(--amber)}
+.stat-link:hover span{text-decoration:underline}
+/* The filter that is on: an underline as wide as the label, at every width. */
+.stat-link.is-on>span:first-of-type{display:inline-block;padding-bottom:3px;box-shadow:inset 0 -2px 0 var(--amber)}
+.stat-link.has-due b{color:var(--amber)}
+/* The filter that is on says how to leave it: "Clear ×" on a line of its own under the label, in the link colour
+   and in normal case (the label is uppercase; this is the action). */
+.stat .stat-clear{display:block;margin-top:5px;color:var(--amber);white-space:nowrap;text-transform:none;letter-spacing:0;font-size:13px}
+.stat-link:hover .stat-clear{text-decoration:underline}
+/* Add an entry: the detour to Setup is a quiet disclosure under the Type field, starting where the inputs start
+   (the label column is 14em of the label's 13px, plus the gap). Closed it is the one question, "Missing a type or
+   field?"; open it holds the note with the link, then "Reload types", then what a reload did. On phones it starts
+   at the left edge. */
+details.type-detour{margin:0 0 8px calc(13px*14 + 10px);background:none;border:none;border-radius:0}
+details.type-detour>summary{display:inline-flex;align-items:center;gap:6px;padding:2px 0;font:400 13px/1.4 var(--mono);color:var(--dim)}
+details.type-detour>summary::before,details.type-detour[open]>summary::before{flex:none;content:"\25B8"}
+details.type-detour[open]>summary::before{content:"\25BE"}
+details.type-detour>summary:hover{color:var(--ink)}
+.type-detour-body{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;margin:4px 0 0}
+.type-detour button{flex:none}
+.type-detour .note{margin:0}
+.type-detour .reload-status{flex:1 1 100%}
+.type-detour .reload-status:empty{display:none}
+/* A reload that would drop something typed asks first: its two buttons take the line after the status. */
+.type-detour .reload-ask{flex:1 1 100%}
+/* Phone: the link's tap box is 40 px (10 px past its line); 12 px between the lines keeps it clear of the question
+   above it and of "Reload types". */
+@media (max-width:900px){details.type-detour{margin-left:0}.type-detour-body{gap:12px;margin-top:12px}}
+.field{display:grid;grid-template-columns:minmax(9em,14em) minmax(0,1fr);gap:10px;align-items:center;margin:0 0 8px;color:var(--dim);font-size:13px}
+.field>label{display:block;margin:0}
+/* A field's hint: its description (aria-describedby), outside the label, on a line of its own under the field (the
+   last column: beside the label column on desktop, under the input on phones). */
+.field>.hint{grid-column:-2/-1;color:var(--faint);font-size:12px}
+@media (min-width:901px){.field>.hint{margin-top:-6px}}
+.field-val{color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px}
+.list.import-format td.key,.list.import-format td.key code,.list.import-types td.type-key code{white-space:nowrap;overflow-wrap:normal}
+.list.import-ids td.env-name>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.list.import-ids td.env-id code{white-space:nowrap;overflow-wrap:normal}
+details.import-ref>.inner .note{margin:0}
+details.import-ref>.inner .scroll{margin:0}
+/* Import: the reference folds follow the textarea inside the form card; the example is a block of its own. */
+form.action label+details.import-ref{margin-top:12px}
+form.action details.import-ref{background:var(--panel-2)}
+.import-example{max-width:var(--card);margin:0 0 14px}
+/* The example's long lines wrap and an environment ID may break: no value is clipped and nothing scrolls sideways. */
+.import-example pre.cmd{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+/* Import: the form and the Format reference are two columns of a deck where both fit; each starts with its h2.
+   "Format ↓" in the intro is for the stacked page only: two columns need 1052 px, plus the page padding. */
+.import-deck>section>:last-child{margin-bottom:0}
+/* The intro is followed by the deck at once: the first h2 keeps a normal paragraph gap, not a section break. */
+.import-deck>section:first-child>h2:first-child{margin-top:6px}
+@media (min-width:1108px){
+.format-jump{display:none!important}
+/* The form keeps the room its reference tables need: an environment ID and its Copy ID share one line. */
+.import-deck{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+.import-deck>section>h2:first-child{margin-top:6px}
+}
+/* The ID and its button never part; the table starts and ends at the fold's own padding, and its first head may
+   take two lines before anything scrolls sideways. */
+@media (min-width:901px){
+.list.import-ids td.env-id .controls{flex-wrap:nowrap}.list.import-ids td.env-id button{white-space:nowrap}
+.list.import-ids :is(th,td):first-child{padding-left:0}.list.import-ids :is(th,td):last-child{padding-right:0}
+.list.import-ids th:first-child{white-space:normal}
+}
+@media (max-width:900px){
+.field{grid-template-columns:1fr;gap:4px}
+.field-val{min-height:0}
+/* Entries stats: the two numbers that lead somewhere (active entries, rotation due) stay stats; production and
+   agent use follow as one small summary line, "3 in production · 2 used by agents, 7 days". */
+.stats.entry-stats{display:block}
+.entry-stats>.stat:nth-child(-n+2){display:inline-block;width:calc(50% - 6px);vertical-align:top;margin-bottom:10px}
+/* While the rotation-due filter is on, its stat also says "Clear ×": it takes the wider share, so the label and
+   "Clear ×" stay on one line down to 360 px ("active entries" still fits the narrower one). */
+.entry-stats:has(>.stat-link.is-on)>.stat:first-child{width:calc(42% - 6px)}
+.entry-stats>.stat-link.is-on{width:calc(58% - 6px);white-space:nowrap}
+.entry-stats>.stat-link.is-on>span:first-of-type{margin-right:0}
+/* "rotation due in this view" is too long for one line with "Clear ×": the label wraps, "Clear ×" stays whole. */
+.entry-stats>.stat-link.is-on.is-scoped{white-space:normal}
+.entry-stats>.stat:nth-child(n+3){display:inline;font-size:12px;color:var(--dim)}
+.entry-stats>.stat:nth-child(n+3) b{display:inline;margin-right:.5em;font:700 12px/1.5 var(--mono);color:var(--ink)}
+.entry-stats>.stat:nth-child(n+3) span{letter-spacing:0;text-transform:none}
+.entry-stats>.stat:nth-child(n+3):not(:last-child)::after{content:" \00B7";color:var(--faint)}
+.board.entries tr{column-gap:5px}
+.board.entries td.name{display:contents}
+.board.entries td.name>a{order:0}
+.board.entries td.name>small:not(.entry-tags),.board.entries td.name>.chip{order:0}
+/* "archived" and "rotation due" sit under the name, never beside it, however short the name is. */
+.board.entries td.name>small:not(.entry-tags){flex-basis:100%}
+.board.entries td.name .entry-tags{order:4;flex-basis:100%}
+/* The card has no other control, so the name link covers it: the whole card is the tap target. */
+.board.entries tr{position:relative}
+.board.entries td.name>a::after{content:"";position:absolute;inset:0}
+.board.entries tr::before{content:"";flex-basis:100%;order:1;height:0;margin-bottom:-4px}
+.board.entries td.name small{margin-top:2px}
+.board.entries td.proj{order:2;color:var(--dim)}
+.board.entries td.type{order:3;color:var(--dim)}
+.board.entries td.type .k{display:inline}
+.board.entries td.proj::after{content:" /";color:var(--dim)}
+.board.entries td.env{order:2;align-self:center}
+.board.entries td.updated{order:5;color:var(--dim)}
+.board.entries td:is(.updated,.used){font-size:12px}
+.board.entries td.when small.k{font-size:inherit}
+.board.entries tr::after{content:"";order:3;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.entries td.updated small:not(.k){margin-top:2px}
+.board.entries td.used{order:5;color:var(--dim)}
+.board.entries td.used.is-empty{display:none}
+.list.import-format,.list.import-ids,.list.import-types{display:block;overflow:visible}
+.list.import-format thead,.list.import-ids thead,.list.import-types thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.list.import-format tbody,.list.import-ids tbody,.list.import-types tbody{display:grid;gap:6px}
+.list.import-format tr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:center;padding:8px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:4px}
+.list.import-format td,.list.import-ids td,.list.import-types td{display:block;padding:0;border:none}
+.list.import-format td.key{grid-column:1}
+.list.import-format td.req{grid-column:2;justify-self:end}
+.list.import-format td.desc{grid-column:1/-1;color:var(--dim)}
+.list.import-ids tr,.list.import-types tr{display:grid;gap:4px;padding:8px 12px;background:var(--panel-2);border:1px solid var(--rule);border-radius:4px}
+.list.import-ids tr{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.list.import-ids td.env-id,.list.import-ids td.env-id .controls{display:contents}
+.list.import-ids td.env-id button{grid-area:1/2}
+.list.import-ids td.env-id code{grid-column:1/-1;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.list.import-types tr{grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px}
+.list.import-types td.type-name{color:var(--dim);justify-self:end}
+.list.import-types td.type-fields{grid-column:1/-1}
+}
+
+/* agents area */
+/* The head row of a tabbed area is as tall with a button as without one, so the tabs do not move between tabs. */
+.head:has(+.tabs){min-height:40px}
+.board.grants .when{white-space:normal}
+.board.grants .confirm-size{display:none}
+@media (min-width:1181px){
+/* Grants as a table: a fixed layout. Every column but Entry has a width of its own, so no column moves between the
+   whole list and a filtered one, and Revoke is always inside the board; the entry takes what is left. The first
+   cell keeps the board's left padding, so its text starts where every other board's does. */
+.board.grants{table-layout:fixed}
+/* 12 px between two columns (6 + 6), as on Requests. Agent holds fifteen letters (118 px of text), so a long name
+   breaks after its hyphens ("orchestrator-", "reconciliation-"); End date has 188 px for its text, so "Revoked
+   2026-11-21 23:27" (184 px) ends 16 px before the State chip. The last column is as wide as its Revoke button and
+   no wider: the room goes to the entry, so two long entry names that differ near their end are both whole within
+   two lines. */
+.board.grants th:nth-child(1){width:163px}
+.board.grants th:nth-child(2){width:144px}
+.board.grants th:nth-child(4){width:162px}
+.board.grants th:nth-child(5){width:200px}
+.board.grants th:nth-child(6){width:82px}
+.board.grants th:nth-child(7){width:92px}
+/* The armed two-step does not fit that column and does not have to: it takes a line of its own across the bottom
+   of its row, under a dashed rule, the question at the left of "Confirm revoke" and "Cancel". The row is the
+   containing block; app.js (.below on the step, .is-armed on the row) says how high the line is (--arm-h), and
+   every cell of the row keeps that much room under its content. */
+.board.grants tr.is-armed{position:relative}
+.board.grants tr.is-armed>td{padding-bottom:calc(var(--arm-h,48px) + 20px)}
+.board.grants .confirm-step.below{position:absolute;left:15px;right:12px;bottom:10px;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:8px 12px;max-width:none;padding-top:10px;border-top:1px dashed var(--rule)}
+.board.grants .confirm-step.below .confirm-note{flex:1 1 auto;width:auto;min-width:0;max-width:none;text-align:right}
+.board.grants td{overflow-wrap:anywhere}
+.board.grants :is(th,td):not(:first-child){padding-left:6px}
+.board.grants :is(th,td):not(:last-child){padding-right:6px}
+}
+/* Members columns: name, email, role, actions. */
+.board.grants td.entry small,.board.members td:nth-child(3) small{display:block;margin-top:2px;color:var(--dim)}
+.members .controls{flex-wrap:nowrap}
+.members .controls select{width:auto}
+@media (max-width:900px){
+/* Identities card: the name with its state at the right; the expiry on a line of its own; then the grants link at
+   the left and Revoke at the right, side by side, so the link's 40 px tap box never reaches the button. */
+.board.identities tr{align-items:center}
+.board.identities td.name{order:0;flex:1 1 0}
+.board.identities td.state{order:1;flex:none;margin-left:auto}
+.board.identities td.when{order:2;flex-basis:100%}
+.board.identities td.grants{order:3;flex:1 1 0}
+.board.identities td:last-child{order:3;flex:none;margin-left:auto}
+.board.identities td:last-child .controls{margin-top:0}
+.board.members td:nth-child(1){flex:0 1 auto}
+.board.members td:nth-child(2){flex:1 1 55%;color:var(--dim)}
+.board.members td:nth-child(3){flex:1 1 52%}
+}
+
+/* Requests and Grants need the whole --wide for their columns. Below a 1180 px window (1100 px plus the page
+   padding and a scrollbar) they are compact cards already, so the action column is never behind a sideways scroll.
+   A media query cannot be shared by two widths, so the card layout is stated a second time for these two boards:
+   the first rules below are that copy, one rule per line of the 900 px block (block layout, hidden head, the card,
+   its cells, .k labels, .full/.end, the armed confirmation). Colours and stripes are not repeated (--stripe).
+   Everything after "Requests:" is these boards' own and lives here only. */
+@media (max-width:1180px){
+.board:is(.requests,.grants),.board:is(.requests,.grants) tbody,.board:is(.requests,.grants) tr,.board:is(.requests,.grants) td{display:block;width:100%}
+.board:is(.requests,.grants) thead{display:block;position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.board:is(.requests,.grants) tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:10px;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--stripe);border-radius:4px;overflow:hidden}
+.board:is(.requests,.grants) td,.board:is(.requests,.grants) td:first-child,.board:is(.requests,.grants) td:last-child{width:auto;min-width:0;max-width:100%;padding:0;background:transparent;border:none;border-radius:0;overflow-wrap:anywhere;text-align:left;white-space:normal}
+.board:is(.requests,.grants) td:last-child:not(.decision):has(.controls,>form){width:auto;white-space:normal;text-align:left}
+.board:is(.requests,.grants) td[data-label]::before{content:none}
+.board:is(.requests,.grants) td:empty{display:none}
+.board:is(.requests,.grants) .when{color:var(--dim)}
+.board:is(.requests,.grants) td[data-label=""]{margin-left:auto}
+.board:is(.requests,.grants) td.full{flex-basis:100%;margin-left:0}
+.board:is(.requests,.grants) td.end{margin-left:auto}
+.board:is(.requests,.grants) td>b.nobreak{white-space:normal;overflow-wrap:anywhere}
+.board:is(.requests,.grants) .k,.board:is(.requests,.grants) td.when small.k,.board:is(.requests,.grants) td.name small.k{display:inline;font-size:12px;color:var(--faint)}
+.board:is(.requests,.grants) .controls{margin-top:4px}
+/* On a wide card the MFA field keeps a field's width instead of running across the card. */
+.board.requests form.mfa{max-width:34em}
+.board:is(.requests,.grants) tr:has(.confirm-step) td:has(.confirm-step){grid-area:auto/1/auto/-1!important;flex:1 1 100%!important;width:100%;max-width:100%;margin-left:0!important;justify-self:stretch!important;text-align:right}
+.board:is(.requests,.grants) :is(.controls,form):has(>.confirm-step,>form>.confirm-step){display:flex;flex-wrap:wrap;justify-content:flex-end;width:100%}
+.board:is(.requests,.grants) .confirm-step{display:flex;width:100%}
+.board:is(.requests,.grants) .confirm-step .confirm-note{flex:1 1 100%;width:auto;min-width:0}
+/* Requests: "<agent> requests <action>", then "<entry> · <project> / <environment>", then the request id with the
+   state at the right, the times one per line, and the controls last. The action cell is display:contents, so its
+   parts (the word "requests", the code, the id) are ordered as items of the card. */
+.board.requests td.who{order:0}
+.board.requests td.action{display:contents}
+.board.requests td.action>*{order:1}
+.board.requests td.action>code{min-width:0;max-width:100%;margin-right:auto}
+.board.requests td.entry{order:2;flex-basis:100%}
+/* The line break before the id, also where the card has no entry line (the entry page). */
+.board.requests tr::before{content:"";order:2;flex-basis:100%;height:0;margin-bottom:-4px}
+.board.requests td.action small.rid{order:3;margin:0 auto 0 0;white-space:nowrap}
+.board.requests td.state{order:3;margin-left:auto}
+.board.requests td.when{order:4;flex-basis:100%}
+.board.requests td.decision{order:5;flex-basis:100%}
+.board.requests td.name small{display:inline;margin-left:6px}.board.requests td.action small.k{margin-left:0}
+.board.requests td.decision .inline{flex-direction:row;flex-wrap:wrap}.board.requests td.decision .inline label{flex:1 1 11em}
+/* The grant card, one everywhere (Grants here; an entry's Agent access states it again at 900 px): line 1 the agent
+   and the action together, with the state chip at the top right, where Identities has it; line 2 the entry with
+   its project / environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right.
+   The chip is out of the flow (84 px are kept free for it on the first line), so a long name or action wraps
+   under it and never pushes it down. Every line is a flex line of its own. */
+.board.grants tr{position:relative;align-items:center}
+.board.grants td.who{order:0;flex:0 1 auto;max-width:calc(100% - 84px)}
+.board.grants td.action{order:0;flex:0 1 auto;max-width:calc(100% - 84px);margin-right:84px}
+.board.grants td.state{position:absolute;top:10px;right:12px}
+.board.grants td.entry{order:1;flex-basis:100%}
+.board.grants td.approval{order:2;flex-basis:100%}
+.board.grants td.when{order:4;flex:1 1 0}
+.board.grants td:last-child{order:4;flex:none;margin-left:auto}
+.board.grants td:last-child .controls{margin-top:0}
+.board.grants td.entry small{display:inline}
+}
+
+/* setup area */
+/* The project cards are a .deck: two side by side where --wide has room for them (2 x 520 + 12), one column below. */
+.project-list{max-width:var(--wide)}
+.project-card[id]{scroll-margin-top:16px}
+.card.project-card{border-top-color:var(--rule)}
+.card details.fold.project-edit{background:transparent;border:1px solid transparent;border-bottom-color:var(--rule);border-radius:0;margin:-4px 0 10px}
+.card details.fold.project-edit[open]{border-top:1px solid transparent}
+.card details.fold.project-edit>summary{padding-top:6px;padding-bottom:10px}
+.card details.fold.project-edit>summary .fold-name{font-size:15px}
+.card details.fold .form-foot .controls{flex:0 1 auto;max-width:100%}
+.card details.fold .error-summary,.card details.env-add .error-summary{max-width:none}
+.card details.fold.env:last-of-type{margin-bottom:0}
+.project-card>.note{margin:0 0 4px}
+.card details.env-add{background:transparent;border:none;border-radius:0;margin:8px 0 0}
+/* "+ Add an environment" is a control with an edge, like a fold's Edit (.fold-act.add: the "+" is its marker). Its
+   box starts where the environment rows above it start, and its text where their names do (a fold's border plus
+   its padding). */
+.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0}
+.card details.env-add>summary::before,.card details.env-add[open]>summary::before{content:none}
+.fold-act.add{margin-left:0;padding-left:14px;padding-right:14px}
+.fold-act.add::before,details[open]>summary .fold-act.add::before{content:none}
+.card details.env-add>summary:hover .fold-act{border-color:var(--amber);color:var(--amber)}
+.card details.env-add[open]{background:var(--panel-2);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;margin-top:10px}
+.card details.env-add[open]>summary{display:flex;padding:10px 14px 10px 0}
+@media (min-width:901px){
+details.type-fold .list.edit :is(th,td){padding:7px 6px}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):first-child{padding-left:0}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):last-child{padding-right:0}
+details.type-fold .list.edit td.field-label input{min-width:10em}
+details.type-fold .list.edit td.kind select{min-width:12em}
+details.type-fold .list.edit td.key code{white-space:nowrap;overflow-wrap:normal}
+:is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) label.check{white-space:nowrap}
+.list.edit.env-template td:last-child,.list.edit.type-new td:last-child{width:1%}
+/* The column head says "Production", "Required", "Remove"; the row's own word is for phones, where the head is not shown. */
+.list.edit .phone-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+}
+details.more.field-rules{margin:14px 0 0}
+details.more.field-rules>summary{color:var(--dim);font-weight:400}
+details.more.field-rules>summary:hover{color:var(--ink)}
+details.more.field-rules ul{margin:0;padding-left:20px}
+details.more.field-rules li+li{margin-top:4px}
+/* Form sections inside a card (fieldset + legend): a dashed rule between one section and the next. */
+form.action fieldset+fieldset{margin-top:14px}
+form.action fieldset+fieldset>legend{padding-top:14px;border-top:1px dashed var(--rule)}
+form.action fieldset>:last-child{margin-bottom:0}
+@media (max-width:900px){
+/* Types editor: label, kind and key each take a line; "Required" and "Remove field" close the row side by side, so
+   the remove box belongs to its row and not to the key above it. */
+details.type-fold .list.edit tr{display:flex;flex-wrap:wrap;align-items:center;gap:0 16px}
+details.type-fold .list.edit td{flex:1 1 100%}
+details.type-fold .list.edit td.key{order:1}
+details.type-fold .list.edit td.key::before{display:inline;margin:0 8px 0 0}
+details.type-fold .list.edit td:is(.req,.remove){order:2;flex:0 1 auto;width:auto;padding-bottom:0}
+details.type-fold .list.edit td.remove{margin-left:auto}
+.card details.env-add>summary{min-height:40px}
+.list.edit td[data-label=""]::before{content:none}
+/* A foot with two buttons keeps them on one row, the submit last; a long add label is shortened (.wide-only). */
+.form-foot .controls:has(>[data-add-row]){flex-wrap:nowrap}
+.wide-only{display:none}
+}
+
+/* Phone tap targets: everything that is pressed is at least 40 px high. Links in running text keep their line.
+   A link on a line of its own grows to 40 px (.back, the pager, Clear filters). A link that shares its line with
+   text or other cells (a link in a card, .more-link after a note: "Manage grants", "Edit entry types") gets the
+   height from padding that a negative margin takes back, so it is 40 px to the finger and adds no empty band. */
+@media (max-width:900px){
+.back{display:inline-flex;align-items:center;min-height:40px;margin-bottom:4px}
+.filter-status a,.pager a{display:inline-flex;align-items:center;min-height:40px}
+.board td a:not(.btn),.list td:not(.desc) a:not(.btn),.more-link{display:inline-block;max-width:100%;padding:11px 0;margin:-11px 0}
+/* The entry name on a request or grant card is followed by "·" and the project on the same line: the link stays
+   inline, so a name of two lines ends with the separator instead of sending it to the next line. Its tap height
+   comes from the same padding (an inline box's padding adds no height to its line). */
+.board:is(.requests,.grants) td.entry>a{display:inline;margin:0}
+/* The header mark, and each message of an error summary (a line of its own), are 40 px high. */
+.top .mark{display:inline-flex;align-items:center;min-height:40px}
+main.login .mark{padding:3px 0}
+.error-summary li a{display:inline-flex;align-items:center;min-height:40px}
+.board.entries td.name>a{display:inline;padding:0;margin:0}
+/* A plain list whose rows are links (Account: Workspaces): the rows are tall enough that two tap boxes never overlap.
+   Not a description with a link in its sentence (Import's Format cards): that card is as tall as its neighbours. */
+.list:not(.edit) td:not(.desc):has(>a:only-child){padding-top:11px;padding-bottom:11px}
+label.check{min-height:40px;align-items:center}
+details>summary{min-height:40px}
+details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-detour)>summary{padding-top:11px;padding-bottom:11px}
+}

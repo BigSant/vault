@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 /** Workspace-defined entry types. Only field definitions live here; values stay in OpenBao. */
 final class EntryTypes
 {
-    public const KINDS = ['text' => 'Text', 'secret' => 'Secret (hidden while typing)', 'multiline' => 'Multi-line text'];
+    public const KINDS = ['text' => 'Text', 'secret' => 'Secret (masked)', 'multiline' => 'Multi-line text'];
 
     public const MAX_FIELDS = 20;
 
@@ -43,7 +43,7 @@ final class EntryTypes
     {
         $this->ensure($workspace);
 
-        return DB::table('entry_types')->where('workspace_id', $workspace)->orderBy('name')->get()->map(fn ($t) => $this->decode($t));
+        return DB::table('entry_types')->where('workspace_id', $workspace)->orderByRaw('LOWER(name)')->orderBy('name')->get()->map(fn ($t) => $this->decode($t));
     }
 
     public function find(string $workspace, string $key): ?object
@@ -201,7 +201,7 @@ final class EntryTypes
                 continue;
             }
             if (mb_strlen($label) > 80) {
-                throw ValidationException::withMessages(['fields' => 'A field name is too long (up to 80 characters).']);
+                throw ValidationException::withMessages(['fields' => 'Field label is too long (at most 80 characters).']);
             }
             if ($key === '') {
                 $base = $key = $this->slug($label, 'field');
@@ -267,6 +267,11 @@ final class EntryTypes
     {
         $row->revision = self::revision($row->name, $row->fields);
         $row->fields = json_decode($row->fields, true, flags: JSON_THROW_ON_ERROR);
+
+        foreach ($row->fields as $i => $field) {
+            $row->fields[$i]['generate'] = $field['kind'] === 'secret'
+                && (str_contains($field['key'], 'password') || str_contains($field['key'], 'passphrase'));
+        }
 
         return $row;
     }
