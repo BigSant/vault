@@ -15,6 +15,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 /** The signed-in shell: header navigation, the account page and the password confirmation flow. */
 final class ShellTest extends TestCase
 {
+    private string $connectors;
     private const PASSWORD = 'Synthetic-password-123!';
 
     private string $workspace;
@@ -24,12 +25,25 @@ final class ShellTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Pages that list actions read the operator's connector file. Give every test its own, so the suite does not
+        // depend on /opt/vault existing on the machine that runs it.
+        $this->connectors = tempnam(sys_get_temp_dir(), 'vault-connectors-');
+        file_put_contents($this->connectors, json_encode(['actions' => ['test.http' => ['kind' => 'http', 'url' => 'https://example.invalid/status']]]));
+        config(['vault.connectors' => $this->connectors]);
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
         Artisan::call('migrate', ['--force' => true]);
         Http::preventStrayRequests();
         $this->workspace = (string) Str::uuid();
         $this->base = '/workspaces/'.$this->workspace;
         DB::table('workspaces')->insert(['id' => $this->workspace, 'name' => 'Main space']);
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->connectors) && is_file($this->connectors)) {
+            unlink($this->connectors);
+        }
+        parent::tearDown();
     }
 
     private function signIn(string $role, ?int $confirmedAt = null): User

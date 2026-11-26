@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 
 final class StructureTest extends TestCase
 {
+    private string $connectors;
     private User $owner;
 
     private string $workspace;
@@ -21,6 +22,11 @@ final class StructureTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Pages that list actions read the operator's connector file. Give every test its own, so the suite does not
+        // depend on /opt/vault existing on the machine that runs it.
+        $this->connectors = tempnam(sys_get_temp_dir(), 'vault-connectors-');
+        file_put_contents($this->connectors, json_encode(['actions' => ['test.http' => ['kind' => 'http', 'url' => 'https://example.invalid/status']]]));
+        config(['vault.connectors' => $this->connectors]);
         $this->assertSame('sqlite', config('database.default'));
         $this->assertSame(':memory:', config('database.connections.sqlite.database'));
         Artisan::call('migrate', ['--force' => true]);
@@ -28,6 +34,14 @@ final class StructureTest extends TestCase
         $this->workspace = $this->workspace();
         $this->base = '/workspaces/'.$this->workspace;
         $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $this->owner->credentialRevision()]);
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->connectors) && is_file($this->connectors)) {
+            unlink($this->connectors);
+        }
+        parent::tearDown();
     }
 
     private function workspace(): string
