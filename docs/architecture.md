@@ -30,9 +30,18 @@ LLM → ai-os trusted backend / MCP → Operations → broker
   `onetimesecret.link` (approval, deadline and audit as any request), sent by the application, never by the broker.
 - `Operations` binds the machine, entry, action, version, specific approval and a five-minute deadline. `request_id` ensures idempotency within one identity. The dispatch claim is written before execution: a crash in that interval ends in a safe failure, not a repeated external action.
 - The broker re-checks the grant before getting the value, before the browser's network requests and every second during active work. There is no promise to undo an external action that has already completed. Responses are only server-generated states/booleans.
+- Handoff kinds (`storage_state`, `broker/handoff.py` for the shared directory, lease, release and cleanup) end with a
+  file for an *executor* identity instead of a boolean. After the broker writes `<operation-uuid>.json` (0640, the
+  directory's group, `openat` with `O_CREAT|O_EXCL|O_NOFOLLOW`, directory checked: not a symlink, owned by the
+  broker, no access for others, no group write) it tells the application (`POST /api/internal/operations/{id}/handoff`,
+  broker key); without that record the file is removed at once. The operation stays `running` with
+  `lease_expires_at`; release → `succeeded`, TTL → `expired`, revoked grant/identity/entry version → `revoked` (the
+  reaper's one-second check), broker start removes every file and unknown operations read `failed`. The claim before
+  dispatch extends the deadline to login (180 s) + TTL. Only an executor may hold such a grant and only for the
+  connector's `entry_types`; one live handoff per entry and 60 per executor and hour.
 - The audit records the action, subject, actor, time and outcome. Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.
 
-States: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Browser MFA is supplied by a human in the Vault web UI; the code is never passed to the agent. An operation ID is not a permission – only the machine identity that created the operation gets its state. ai-os additionally signs the handle with the workspace, agent, project and ticket context.
+States: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Browser MFA is supplied by a human in the Vault web UI; the code is never passed to the agent. An operation ID is not a permission – only the machine identity that created the operation gets its state. ai-os additionally signs the handle with the workspace, agent, project and ticket context. A handoff adds the audit events `handoff.written` and `handoff.removed` (outcome `release`, `ttl`, `revoke` or `restart`), never with a value or path. A storageState the executor has already read stays usable at the site until the site ends that session: Vault can remove the file, not take back what was read.
 
 ## Isolation
 

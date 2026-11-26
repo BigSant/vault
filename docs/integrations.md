@@ -26,7 +26,7 @@ A human completes MFA and `pending` approvals in the Vault web UI under "Access"
 
 ## General MCP and CLI
 
-`POST /api/mcp` is a stateless JSON-RPC transport (initialize, ping, tools/list, tools/call); `/api/v1/catalog`, `/execute`, `/operations/{id}`, `/operations/{id}/cancel` are the HTTP interface. Both use the bearer machine identity, reject a browser Origin and apply IP and token limits. No long SSE session is needed. Operations unknown after a broker restart are marked failed and not retried.
+`POST /api/mcp` is a stateless JSON-RPC transport (initialize, ping, tools/list, tools/call); `/api/v1/catalog`, `/execute`, `/operations/{id}`, `/operations/{id}/cancel` and, for an executor, `/operations/{id}/release` (MCP `vault_release`, listed only for executor identities) are the HTTP interface. Both use the bearer machine identity, reject a browser Origin and apply IP and token limits. No long SSE session is needed. Operations unknown after a broker restart are marked failed and not retried.
 
 `clients/vault.py` can run on a trusted host as a CLI or a stdio MCP bridge:
 
@@ -35,6 +35,7 @@ python3 clients/vault.py --config /private/client.json list
 python3 clients/vault.py --config /private/client.json execute <entry-uuid> <action> --request-id <stable-id>
 python3 clients/vault.py --config /private/client.json status <operation-uuid>
 python3 clients/vault.py --config /private/client.json cancel <operation-uuid>
+python3 clients/vault.py --config /private/client.json release <operation-uuid>   # executor: done with the handoff file
 python3 clients/vault.py --config /private/client.json mcp
 ```
 
@@ -117,8 +118,92 @@ The private `data/connectors/connectors.json` (the corresponding environment's d
 
 API/CLI use the entry's `token` field as the Bearer and return success only on a 200. The HTTP body and headers are ignored, CLI stdout/stderr are discarded. This is a fixed recipe, not arbitrary command execution. Browser uses the login `username`/`password`; for an MFA flow add `mfa_selector` and `mfa_submit_selector`. `success_text` is compared exactly, and its text is not returned. The local context is closed; the target server session can live until the TTL it sets.
 
-`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources. Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
+`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources (unless `static_subresources` / `variable_query`, below, cover them). Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
 
 DB connector: `kind=database`, `role=vault-...`, a fixed `host` and `port`. The entry type `dynamic_database` and the secret `role` must match; only SELECT 1 is executed. The DB password need not and cannot be given to the agent. Test provisioning is described in the runbook.
+
+### Browser rules for real sites
+
+Two opt-in rules make a real login page (PrestaShop's front and back office load dozens of theme files) possible
+without opening the browser to the site:
+
+- `"static_subresources": true` — a **GET** that is **not a navigation** and whose type is stylesheet, script, image,
+  font, media, text track, manifest or other is allowed from the registered origins (`url` plus `origins`) without
+  listing it. The same request to any other origin (analytics, a font CDN) is dropped before it leaves, without
+  failing the login. Never covered: documents and navigations, frames, XHR/fetch, EventSource, WebSocket,
+  downloads, popups, and every method but GET; those still need an exact `allowed_requests` entry or fail the
+  operation. A static subresource that redirects is dropped, never followed. Scripts may run, but whatever they send
+  (XHR, POST, navigation) is checked like any other request.
+- `"variable_query": ["rand"]` on one `allowed_requests` rule — the named query parameters may differ, each at most
+  once and only `[A-Za-z0-9_-]{1,64}`; the method, scheme, host, port, path and every other parameter must still be
+  exactly the rule's. It exists for a nonce or a CSRF/session token in a URL the site makes, e.g. PrestaShop's
+  `index.php?rand=<ms>` login XHR and `index.php?controller=AdminDashboard&token=<token>` after it.
+
+Why this is narrow enough: a page can only make requests the broker lets through; static GETs go only to origins the
+operator registered (the site that receives the password anyway); anything that can carry data back to a script or
+change state stays exact. Negative cases are in `tests/test_browser_policy.py` and the integration fixture.
+
+## Executor handoff (`storage_state`)
+
+For a trusted executor on the Vault host (the Server OPS Playwright runner), Vault logs in and leaves only the login
+session. The executor's suites start with `storageState`; they never see the password, and the LLM agent that orders
+a run never sees anything.
+
+```json
+"shop.customer-session": {
+  "kind": "storage_state", "url": "https://shop.example/en/login", "origins": [],
+  "username_selector": "#field-email", "password_selector": "#field-password", "submit_selector": "#submit-login",
+  "static_subresources": true,
+  "allowed_requests": [{"method": "POST", "url": "https://shop.example/en/login?back=my-account"},
+                       {"method": "GET", "url": "https://shop.example/en/my-account"}],
+  "success_selector": "#account-state", "success_text": "connected",
+  "entry_types": ["prestashop_customer"], "ttl_seconds": 900
+},
+"shop.admin-session": {
+  "kind": "storage_state", "url": "https://shop.example/admin123/index.php?controller=AdminLogin",
+  "username_selector": "#email", "password_selector": "#passwd", "submit_selector": "#submit_login",
+  "static_subresources": true,
+  "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": ["rand"]},
+                       {"method": "GET", "url": "https://shop.example/admin123/index.php?controller=AdminDashboard", "variable_query": ["token"]}],
+  "success_selector": "#header_employee_box", "success_text": "...",
+  "entry_types": ["prestashop_admin"], "ttl_seconds": 900
+}
+```
+
+The selectors and success check above are an illustration: take them from the shop's real theme and check them with a
+synthetic account first. The entry uses the `username` and `password` fields; its type must be one of `entry_types`
+(otherwise the grant is refused and a run is 422). `ttl_seconds` is 1–1800 (default 900); `mfa_selector` is not
+allowed (runs are unattended). The file holds `{"cookies": [...], "origins": [...]}` limited to the registered
+origins; the broker refuses to write a state that contains an entry value other than the username (plain, JSON,
+URL-, hex- or base64-encoded), which catches a page that copies the password into a cookie or localStorage.
+
+**Executor identity.** In Access › Agents tick *Executor* when making the identity (it cannot be changed later, and
+an executor does not create one-time links). Only an executor may be granted a `storage_state` action; for any other
+identity the action does not exist (404). Grants may be standing and without approval, since runs happen at night.
+Limits: one live handoff per entry (whoever asks), 60 per executor per hour, and the usual five open operations
+(429 beyond).
+
+**The executor's sequence** (CLI shown; HTTP and MCP are the same calls):
+
+```text
+1. POST /api/v1/execute         {"entry_id": "<uuid>", "action": "shop.customer-session", "request_id": "<8-80 chars>"}
+   → {"id": "<operation-uuid>", "state": "running", "ok": false, "expires_at": "...", "ready": false, "lease_expires_at": null}
+2. GET  /api/v1/operations/<operation-uuid>       every 1-2 s until "ready": true, or a final state (failed, expired, revoked)
+   → {"id": "...", "state": "running", "ok": false, "expires_at": "...", "ready": true, "lease_expires_at": "2026-...Z"}
+3. read  <handoff directory>/<operation-uuid>.json  (e.g. /run/vault-handoff/prod/…) and start the suite with it
+   as Playwright storageState; read it once, keep it only in memory
+4. POST /api/v1/operations/<operation-uuid>/release  {}     (MCP vault_release, CLI release)
+   → {"state": "succeeded", "ready": false, ...}; the file is gone (ENOENT)
+```
+
+The answer never contains the path or a value: the executor derives the path from the fixed directory and its own
+operation ID. The file is complete when `ready` is true (it is written and fsynced before the application records
+it); never read it earlier. Release as soon as the suite has loaded the state; otherwise the TTL removes it (state
+`expired`). Revoking the grant or the identity, or changing the entry, removes it within about a second (`revoked`);
+a broker restart removes every file (`failed`). Use a new `request_id` per run; repeating one returns the same
+operation and never writes a second file. The process needs only read access through the `vault-handoff` group
+(docs/operations.md) and its own client config file.
+
+## Starting a connector
 
 Start a new connector with a synthetic account: check the normal response, secret echo and encoded echo, redirect, a disallowed address, revocation and errors. Only then does a human enter the real credentials in the web UI. The `ssh` type allows storage/viewing but has no execution recipe in this version.

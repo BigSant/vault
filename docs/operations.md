@@ -20,6 +20,66 @@ ones and records `link.read` / `link.previewed` in the activity log as they happ
 destroying what OpenBao still holds for ended links. Removing the account (Setup › Onetime Secret) deletes the token
 with all its versions; a new token replaces the old one the same way.
 
+## Handoff directory (executor, `storage_state`)
+
+The broker writes executor handoff files to `/handoff`, a host directory mounted into the broker only (no other
+container, never the agent sandbox). The executor, a host process of another user, reads it through the
+`vault-handoff` group. Local/test use `data/handoff` and `app/.generated/test/data/handoff`, made by `prepare`
+(mode 0750, or 2750 with the `vault-handoff` group when the current user is in it). On a server use `/run` (cleared
+at boot) from tmpfiles.d. Steps marked **root** need root; the rest run as the Vault operator account (the one whose
+UID the containers use).
+
+1. **root** `groupadd --system vault-handoff` and `usermod -aG vault-handoff <executor account>`. Do not add the Vault
+   account's own human users or any account an LLM agent can drive.
+2. **root** copy `ops/vault-handoff.tmpfiles.conf` to `/etc/tmpfiles.d/vault-handoff.conf`, replace `VAULTUSER`
+   (and `prod` for another environment), run `systemd-tmpfiles --create`. Result: `/run/vault-handoff/prod`
+   `drwxr-s--- VAULTUSER vault-handoff`. tmpfiles runs before Docker at boot, so the bind mount finds it; a
+   directory Docker had to create itself (root-owned) is refused by the broker.
+3. In the private `app/env/prod.env` set `VAULT_HANDOFF_DIRECTORY=/run/vault-handoff/prod` and
+   `VAULT_HANDOFF_GID=<getent group vault-handoff | cut -d: -f3>`, then `VAULT_ENV=prod bin/vault prepare` (it checks
+   the directory) and recreate the broker (`make -C app up ENV=prod`).
+
+The broker refuses to write when the path is a symlink, not owned by it, accessible to others, writable by the group,
+or of another group than `VAULT_HANDOFF_GID`; it never replaces an existing file. Each file is
+`<operation-uuid>.json`, mode 0640. It is removed at release, at the TTL, within a second of a revocation, when the
+broker stops, and at broker start (every file in the directory). Backups never include this directory. A broker that
+is down cannot remove files until it starts again; the tmpfiles age (1 h) is only a daily backstop. The session in a
+file is a credential: anyone in the group, root and anyone with the Docker socket can use it until the site ends it,
+and a state already read cannot be revoked by Vault.
+
+## Unattended timers
+
+`ops/` holds user systemd units: `vault-maintenance` (daily), `vault-links` (10 min) and `vault-backup` (daily 03:30,
+retried every 20 min up to 6 times while operations, e.g. a handoff lease, are active). They read
+`~/.config/vault/units.env`:
+
+```dotenv
+VAULT_ENV=prod
+VAULT_CHECKOUT=/absolute/path/to/vault
+```
+
+Copy the units to `~/.config/systemd/user/`, then `systemctl --user daemon-reload` and `systemctl --user enable --now
+vault-maintenance.timer vault-links.timer vault-backup.timer`. For timers to run without a login session, **root**
+`loginctl enable-linger <vault account>`. Schedule backups outside the executor's night window (a backup refuses while
+operations run and stops PHP and the broker for a moment). Backups accumulate in `backups/`; prune old ones by your
+retention policy, keeping verified ones.
+
+## Unsealing after a reboot
+
+OpenBao starts sealed after every host or container restart; until it is unsealed `health.php` is 503 and every
+action, including unattended runs, fails closed. Auto-unseal is not built in. The operator chooses:
+
+| Option | How | Consequence |
+|---|---|---|
+| A. Manual (current) | after a reboot the operator runs `VAULT_ENV=prod bin/vault initialize`, which unseals with the shares from `~/.config/vault/prod/openbao.json` and prints nothing secret | the shares can live offline and are present only while unsealing; nothing runs until a person acts, so night runs after an unattended reboot fail until morning |
+| B. Host unit at boot | a user (or root) unit `After=docker.service` that runs `bin/vault initialize` with the shares kept on the host (as now, 0600, outside container mounts) | runs resume without a person; but anyone who gets that host account or a disk/backup copy of `~/.config/vault` gets the shares **and** the root token in the same file, i.e. full control of Vault. It removes the separation between "the host is stolen" and "the vault is open" |
+| C. KMS/HSM or transit seal | OpenBao `seal` stanza with an external key service | the key never sits on the host; needs an external service, its availability and its own credentials. Not prepared in this repository |
+
+For B, at least split the material: keep only the unseal shares (not the root token) on the host, in a root-owned
+file readable by that unit only, and keep the root token offline. Today `initialize` also needs the root token (it
+rewrites policies and roles), so B with split material needs a small unseal-only command first. This package
+implements neither B nor C; the operator decides.
+
 ## Backup and full restore
 
 ```bash
@@ -54,7 +114,7 @@ bin/vault rotate-encryption-key
 bin/vault maintenance
 ```
 
-The first command issues new AppRole SecretIDs and revokes the old ones. Existing tokens expire within 5 minutes. The second rotates the OpenBao encryption key while keeping old entries readable. `maintenance` removes expired session and cache state, marks expired operations and runs both rotations every 30 days. To use the example systemd timer in `ops/`, set the absolute checkout path and `VAULT_ENV` in the copy and enable it in the operator's user systemd instance. Cloning the repository leaves the timer disabled.
+The first command issues new AppRole SecretIDs and revokes the old ones. Existing tokens expire within 5 minutes. The second rotates the OpenBao encryption key while keeping old entries readable. `maintenance` removes expired session and cache state, marks expired operations and runs both rotations every 30 days. The timers in `ops/` (see Unattended timers) take `VAULT_ENV` and the checkout path from `~/.config/vault/units.env`. Cloning the repository leaves them disabled.
 
 `VAULT_ENV=test bin/vault database` provisions synthetic dynamic MySQL credentials for `vault-probe` (SELECT only on `vault_probe`, maximum 60 s). These credentials have no read access to the Vault catalog DB. The broker revokes the lease token after the action. If it crashes, the OpenBao TTL applies. An external DB requires an operator-configured OpenBao connection, role and network policy. Keep `vault_lease_admin` privileges off the catalog.
 
