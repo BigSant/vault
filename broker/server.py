@@ -226,7 +226,7 @@ def encodings(secret):
     """The forms a page could store a value in: plain, JSON-escaped, URL-encoded, hex and base64 at every alignment."""
     raw = secret.encode()
     forms = {raw, json.dumps(secret)[1:-1].encode(), quote(secret, safe='').encode(), quote_plus(secret).encode(),
-             quote(secret, safe="-_.!~*'()").encode(), binascii.hexlify(raw)}
+             quote(secret, safe="-_.!~*'()").encode(), binascii.hexlify(raw), ''.join('%%%02X' % byte for byte in raw).encode()}
     for offset in range(3):
         encoded = base64.b64encode(b'\0' * offset + raw)
         first, last = (offset + 2) // 3, (offset + len(raw)) // 3

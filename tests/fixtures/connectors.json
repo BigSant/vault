@@ -278,6 +278,132 @@
       "success_selector": "#account-state",
       "success_text": "connected",
       "allowed_requests": []
+    },
+    "fixture.shop-session": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/login",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "static_subresources": true,
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900
+    },
+    "fixture.shop-ttl": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/login",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "static_subresources": true,
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 3
+    },
+    "fixture.shop-leak": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/leak",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "static_subresources": false,
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900
+    },
+    "fixture.shop-fetch": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/fetch",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "static_subresources": true,
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900
+    },
+    "fixture.admin-session": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/admin/index.php?controller=AdminLogin",
+      "username_selector": "#email",
+      "password_selector": "#passwd",
+      "submit_selector": "#submit_login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "static_subresources": true,
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/admin/index.php",
+          "variable_query": [
+            "rand"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/admin/index.php?controller=AdminDashboard",
+          "variable_query": [
+            "token"
+          ]
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900
     }
   }
 }

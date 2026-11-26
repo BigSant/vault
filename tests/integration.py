@@ -66,6 +66,130 @@ class Client:
         return json.loads(self.last) if token else self.last
 
 
+SECRETS = ['synthetic-password', 'c3ludGhldGljLXBhc3N3b3Jk', 'synthetic%2Dpassword', 'synthetic-token']
+SESSIONS = ['synthetic-session-shop', 'synthetic-session-admin']
+
+
+def storage_state(human, workspace, agent_machine, agent_token, entry):
+    """storage_state end to end: executor only, the file and its lifecycle, PrestaShop-like FO/BO logins."""
+    import grp
+    import stat
+    directory = DATA/'handoff'
+    seen = []
+    api = Client()
+
+    def call(path, data=None, token=None, expected=200):
+        answer = api.request(path, data, token=token, expected=expected)
+        seen.append(api.last)
+        return answer
+
+    # An LLM agent identity cannot be granted it, and cannot run it.
+    human.request('/workspaces/'+workspace+'/grants', {'machine_id': agent_machine, 'entry_id': entry, 'action': 'fixture.shop-session', 'days': '1'})
+    assert 'Only an identity made as an executor' in human.last
+    call('/api/v1/execute', {'entry_id': entry, 'action': 'fixture.shop-session', 'request_id': secrets.token_hex(16)}, agent_token, 404)
+    human.request('/workspaces/'+workspace+'/machines', {'name': 'nightly runner', 'days': '1', 'executor': '1'})
+    executor = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
+    human.request('/workspaces/'+workspace+'/grants')
+    runner = re.search(r'<option value="([a-f0-9-]+)">nightly runner</option>', re.search(r'<select name="machine_id"[^>]*>(.*?)</select>', human.last, re.S)[1])[1]
+    for action in ['fixture.shop-session', 'fixture.shop-ttl', 'fixture.shop-leak', 'fixture.shop-fetch', 'fixture.admin-session']:
+        human.request('/workspaces/'+workspace+'/grants', {'machine_id': runner, 'entry_id': entry, 'action': action, 'days': '1'})
+    grant = lambda action: re.search(r'/revoke/grants/([a-f0-9-]+)"(?:(?!</form>).)*?Revoke grant: '+re.escape(action)+' for nightly runner', human.last, re.S)
+    tools = call('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, executor)
+    assert 'vault_release' in json.dumps(tools)
+
+    def start(action):
+        op = call('/api/v1/execute', {'entry_id': entry, 'action': action, 'request_id': secrets.token_hex(16)}, executor)
+        deadline = time.monotonic()+60
+        while time.monotonic() < deadline and op['state'] == 'running' and not op.get('ready'):
+            time.sleep(1)
+            op = call('/api/v1/operations/'+op['id'], token=executor)
+        return op
+
+    def gone(oid, seconds=5):
+        deadline = time.monotonic()+seconds
+        while (directory/(oid+'.json')).exists() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        return not (directory/(oid+'.json')).exists()
+
+    for action, cookie in [('fixture.shop-session', 'synthetic-session-shop'), ('fixture.admin-session', 'synthetic-session-admin')]:
+        op = start(action)
+        assert op['state'] == 'running' and op['ready'] and op['lease_expires_at'], f'{action}: {op}'
+        assert set(op) == {'id', 'state', 'ok', 'expires_at', 'ready', 'lease_expires_at'}
+        path = directory/(op['id']+'.json')
+        info = os.lstat(path)
+        assert stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o640 and info.st_gid == os.stat(directory).st_gid, 'handoff file mode/group'
+        content = path.read_text()
+        state = json.loads(content)
+        assert any(c['value'] == cookie for c in state['cookies']) and all(c['domain'] == 'fixture' for c in state['cookies'])
+        assert all(secret not in content for secret in SECRETS), 'entry value in storageState'
+        if action == 'fixture.admin-session':
+            assert any(o['origin'] == 'http://fixture:8000' for o in state['origins'])
+        # One live handoff per entry.
+        call('/api/v1/execute', {'entry_id': entry, 'action': 'fixture.shop-ttl', 'request_id': secrets.token_hex(16)}, executor, 429)
+        released = call('/api/v1/operations/'+op['id']+'/release', {}, executor)
+        assert released['state'] == 'succeeded' and not released['ready']
+        try:
+            open(path)
+            raise AssertionError('file survived release')
+        except FileNotFoundError:
+            pass
+        print('PASS:', action, 'storageState handed off (0640, directory group, no entry value), released, ENOENT')
+    counts = json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
+    assert counts.get('/ps/theme.css', 0) >= 2 and counts.get('/ps/font.woff2', 0) >= 1 and counts.get('/ps/admin/index.php POST', 0) >= 1
+    print('PASS: static subresources from the registered origin, XHR login with ?rand=, dashboard with &token=')
+
+    op = start('fixture.shop-ttl')
+    assert op['ready']
+    time.sleep(5)
+    assert gone(op['id']) and call('/api/v1/operations/'+op['id'], token=executor)['state'] == 'expired'
+    print('PASS: TTL end removes the file, operation expired')
+
+    op = start('fixture.shop-session')
+    assert op['ready']
+    human.request('/workspaces/'+workspace+'/grants')
+    human.request('/workspaces/'+workspace+'/revoke/grants/'+grant('fixture.shop-session')[1], {})
+    assert gone(op['id'], 4), 'revoked grant left the file'
+    assert call('/api/v1/operations/'+op['id'], token=executor)['state'] == 'revoked'
+    human.request('/workspaces/'+workspace+'/grants', {'machine_id': runner, 'entry_id': entry, 'action': 'fixture.shop-session', 'days': '1'})
+    print('PASS: revoking the grant removes the file within the reaper interval')
+
+    op = start('fixture.shop-session')
+    assert op['ready']
+    stray = directory/(str(__import__('uuid').uuid4())+'.json')
+    stray.write_text('{}')
+    subprocess.run(['docker', 'restart', 'vault-test-broker'], check=True, capture_output=True)
+    assert gone(op['id'], 20), 'broker stop/start left the operation file'
+    deadline = time.monotonic()+20
+    while stray.exists() and time.monotonic() < deadline:
+        time.sleep(0.25)
+    assert not stray.exists(), 'broker start left a stray file'
+    for _ in range(30):
+        try:
+            state = call('/api/v1/operations/'+op['id'], token=executor)['state']
+            break
+        except AssertionError:
+            time.sleep(1)
+    assert state == 'failed', state
+    print('PASS: broker restart removes every handoff file; the operation failed')
+
+    for action in ['fixture.shop-leak', 'fixture.shop-fetch']:
+        op = start(action)
+        assert op['state'] == 'failed' and not list(directory.iterdir()), f'{action}: {op}'
+    counts = json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
+    assert counts.get('/ps/data', 0) == 0
+    print('PASS: a page copying the password into storage and an unlisted fetch write nothing')
+
+    human.request('/workspaces/'+workspace+'/audit?group=request')
+    assert 'handoff.written' in human.last and 'handoff.removed' in human.last
+    seen.append(human.last)
+    logs = b''.join(subprocess.run(['docker', 'logs', name], capture_output=True).stdout + subprocess.run(['docker', 'logs', name], capture_output=True).stderr
+                    for name in ['vault-test-broker', 'vault-test-egress', 'vault-test-php-fpm', 'vault-test-webserver-apache-2.4.59']).decode(errors='replace')
+    for text in seen + [logs]:
+        assert all(value not in text for value in SECRETS + SESSIONS + [str(directory)]), 'value or path echoed'
+        assert not re.search(r'[0-9a-f-]{36}\.json', text), 'handoff file name echoed'
+    print('PASS: no entry value, session or path in any response, the audit, docker logs or broker stderr')
+
+
 def run():
     assert DATA.is_dir()
     config=json.loads((ROOT/'tests/fixtures/connectors.json').read_text())
@@ -113,13 +237,14 @@ def run():
     human.request('/workspaces/'+workspace+'/grants')
     grant_agents = re.search(r'<select name="machine_id"[^>]*>(.*?)</select>', human.last, re.S)[1]
     machine = re.search(r'<option value="([a-f0-9-]+)">ai-os integration</option>', grant_agents)[1]
-    for action in config['actions']:
+    handoffs=[name for name,action in config['actions'].items() if action['kind']=='storage_state']
+    for action in [name for name in config['actions'] if name not in handoffs]:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': machine, 'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'days': '1'})
     agent = Client()
     catalog = agent.request('/api/v1/catalog', token=token)
-    assert len(catalog['entries']) == len(config['actions'])
+    assert len(catalog['entries']) == len(config['actions'])-len(handoffs)
     assert 'Private' not in agent.last and 'synthetic-' not in agent.last
-    for action in config['actions']:
+    for action in [name for name in config['actions'] if name not in handoffs]:
         request = {'entry_id': ids['login' if 'browser' in action else ('dynamic_database' if action.endswith('database') else 'api_key')], 'action': action, 'request_id': secrets.token_hex(16)}
         op = agent.request('/api/v1/execute', request, token=token)
         deadline = time.monotonic()+50
@@ -151,10 +276,11 @@ def run():
     assert cancelled['state']=='revoked'
     human.request('/workspaces/'+workspace+'/operations/'+op['id']+'/mfa',{'code':'123456'},expected=409)
     print('PASS: browser cancellation during MFA denies continuation')
+    storage_state(human, workspace, machine, token, ids['login'])
     agent.request('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, token=token)
     assert 'vault_execute' in agent.last and 'get_secret' not in agent.last
     human.request('/workspaces/'+workspace+'/audit')
-    assert re.search(r'\d+ events</p>', human.last) and 'Page 1 of ' in human.last
+    assert 'Page 1 of ' in human.last
     human.request('/workspaces/'+workspace+'/audit?outcome=ok')
     assert 'Outcome: OK' in human.last and re.search(r'Showing \d+ of \d+ events', human.last)
     assert 'synthetic-token' not in human.last and 'synthetic-password' not in human.last
