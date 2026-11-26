@@ -23,9 +23,9 @@
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
     <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off"></textarea></label>
     <details id="environment-ids" class="import-ref capped">
-        <summary>Environment IDs</summary>
+        <summary id="environment-ids-title">Environment IDs</summary>
         <div class="inner">
-            <div class="scroll"><table class="list import-ids">
+            <div class="scroll"><table class="list import-ids" aria-labelledby="environment-ids-title">
                 <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
                 <tbody>
                 @foreach($environments as $env)
@@ -39,9 +39,9 @@
         </div>
     </details>
     <details id="type-keys" class="import-ref capped">
-        <summary>Type and field keys</summary>
+        <summary id="type-keys-title">Type and field keys</summary>
         <div class="inner">
-            <div class="scroll"><table class="list import-types">
+            <div class="scroll"><table class="list import-types" aria-labelledby="type-keys-title">
                 <thead><tr><th scope="col">Type key</th><th scope="col">Name</th><th scope="col">Field keys</th></tr></thead>
                 <tbody>
                 @foreach($types as $t)
@@ -68,7 +68,7 @@
 <h2 id="format">Format</h2>
 <p class="note">Choose a type defined in this workspace. Include its required fields in <code>secret_fields</code>.</p>
 
-<div class="scroll capped"><table class="list import-format">
+<div class="scroll capped"><table class="list import-format" aria-labelledby="format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
         <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">@if($example)UUID from <a href="#environment-ids">Environment IDs</a>.@else UUID of a workspace environment.@endif</td></tr>

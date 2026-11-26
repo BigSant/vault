@@ -31,7 +31,8 @@
 <div class="entry-page">
 <a class="back" href="{{ $backUrl }}">← Entries</a>
 <div class="head">
-    <div>
+    {{-- .title-block: on phones the h1 takes the whole row and "Edit entry" stands at the right of the meta line. --}}
+    <div class="title-block">
         <div class="title-row">
             <h1 class="name">{{ $entry->name }}</h1>
             @if($canEdit)<a class="btn" href="/entries/new?workspace={{ $entry->workspace_id }}&entry={{ $entry->id }}">Edit entry</a>@endif
@@ -69,7 +70,7 @@
 @endif
 
 <h2 id="details">Details</h2>
-<table class="facts">
+<table class="facts" aria-labelledby="details">
     <tr><th scope="row">Agent alias</th><td><code>{{ $entry->alias }}</code> <span class="muted nobreak">— the name agents see</span></td></tr>
     <tr><th scope="row">Tags</th><td>@if($entry->tags){{ $entry->tags }}@else<span class="muted">not set</span>@endif</td></tr>
     <tr><th scope="row">Updated (UTC)</th><td>{{ substr((string) $entry->updated_at, 0, 16) }}</td></tr>
@@ -212,7 +213,7 @@
         {{-- The controller sets state, effective_expires_at (the earlier of the grant's and the agent's end), expiry_reason
              (why it is not the grant's own date) and expires_at (the grant's own date). Shown by the end-date partial, as on Grants. --}}
         @php $gState = $grant->state; @endphp
-        <tr class="{{ $gState === 'active' ? 'is-ok' : 'is-idle' }}">
+        <tr class="{{ $gState === 'active' ? (\App\Vault\Access::endsSoon($grant->effective_revoked_at ?? null, $grant->effective_expires_at) ? 'is-wait' : 'is-ok') : 'is-idle' }}">
             <td class="who" data-label="Agent"><b>{{ $grant->machine }}</b></td>
             <td class="action" data-label="Action"><code>{{ $grant->action }}</code></td>
             <td class="approval" data-label="Approval">{{ $gState === 'active' ? ($grant->approval ? 'asks every time' : 'runs without asking') : ($grant->approval ? 'previously asked every time' : 'previously ran without asking') }}</td>

@@ -136,11 +136,19 @@ legend,.legend{display:block;width:100%;padding:0;margin:0 0 12px;font:700 14px/
 h3 small{display:block;margin-top:3px;color:var(--faint);font:400 12px/1.4 var(--mono);overflow-wrap:anywhere;text-transform:none;letter-spacing:0}
 .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin:0 0 4px}
 .head h1{margin-bottom:6px}
-/* Title row: the name and its one action share a line on every screen size. */
+/* Title row: the name and its one action share a line on wide screens. On phones the h1 takes the whole row and
+   the action stands at the right of the meta line under it (.title-block). */
 .head>div:only-child{flex:1;min-width:0}
 .title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .title-row h1{min-width:0}
 .title-row .btn{flex:none;white-space:nowrap}
+@media (max-width:900px){
+.title-block{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:0 12px}
+.title-block>.title-row{display:contents}
+.title-block h1{grid-column:1/-1}
+.title-block .btn{grid-area:2/2}
+.title-block>.sub{grid-area:2/1;min-height:40px}
+}
 .head .sub{color:var(--dim);font-size:13px;margin:0 0 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .back{display:inline-block;margin:0 0 12px;font-size:13px}
 .note{color:var(--dim);font-size:13px}
@@ -507,7 +515,9 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 .board.requests form.mfa button{flex:none;white-space:nowrap}
 .board.requests .state{white-space:nowrap}
 .board.requests .state .chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
-/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). */
+/* A waiting request shows how long it still waits (app.js fills .left from data-expires; the UTC time stays). The
+   deadline and the time left open the Decision cell, above the controls they limit, at every width. */
+.board.requests td.decision .line.expires{margin-bottom:6px}
 .board.requests .left{font-weight:700;color:var(--amber);white-space:nowrap}
 /* Allow once and Deny: full-size buttons with room between them, so the wrong one is not hit. */
 @media (min-width:901px){
@@ -526,27 +536,28 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),textarea,select{
 /* Table. "Requests waiting for you" and "Recent requests" are two boards with the same leading columns, in a fixed
    layout: Agent, Action, Entry, State and Requested have one width each, so a column starts at the same place in
    both and no data moves it, and the last column (Decision or Finished) takes what is left, always inside the
-   board. The widths are what the usual cell needs: a sixteen-letter action and entry name, "waiting for approval"
-   with its lamp, "Expires" with its date. The Agent column holds thirteen letters (102 px of text, as on Grants):
+   board. The widths are what the usual cell needs: a sixteen-letter action, "Payment gateway API" as an entry name,
+   "waiting for approval" with its lamp, and one date under Requested (the deadline stands in the Decision cell). The Agent column holds thirteen letters (102 px of text, as on Grants):
    "ci-runner" is one line, and a long name breaks after its hyphens ("deployment-", "orchestrator-"), inside a
    word only when one part is longer than that or the name has no hyphen. Longer codes wrap in their cell. */
 .board.requests{table-layout:fixed}
 .board.requests th.c-who{width:123px}
 .board.requests th.c-action{width:144px}
-.board.requests th.c-entry{width:149px}
+.board.requests th.c-entry{width:193px}
 .board.requests th.c-state{width:200px}
-.board.requests th.c-when{width:196px}
+.board.requests th.c-when{width:152px}
 /* Without the Entry column (an entry page) its width goes to Agent and Action, so a long agent name and a long
    action code break at their hyphens; State, Requested and the last column start where they do on Requests. */
-.board.requests.no-entry th.c-who{width:160px}
-.board.requests.no-entry th.c-action{width:256px}
+.board.requests.no-entry th.c-who{width:176px}
+.board.requests.no-entry th.c-action{width:284px}
 .board.requests td{overflow-wrap:anywhere}
 /* Six columns fit --wide: 12 px between two columns (6 + 6); the last one keeps the board's normal right padding
    (12 px), so "Continue sign-in" does not sit on the edge. */
 .board.requests :is(th,td):not(:first-child){padding-left:6px}
 .board.requests :is(th,td):not(:last-child){padding-right:6px}
-.board.requests td.when .line{white-space:nowrap}
-/* The time left is a line of its own under the deadline. */
+.board.requests td.decision .line.expires{white-space:nowrap}
+/* The time left is a line of its own under the deadline: the cell is as high in a request's last minute ("under 1
+   min left") as before it. */
 .board.requests .left{display:block;margin-top:3px}
 /* Allow once and Deny share one row. The MFA field needs eight digits and no more (8ch plus its padding; its label
    may run on above the button), and has one width wherever the board is a table: on Requests, and on an entry
@@ -691,7 +702,9 @@ details.fold:is(.env,.password-fold)>summary:has(.fold-act) .fold-name{flex:1 1 
 /* A project's head: name, count, Edit on one line while they fit. A long name takes the line and wraps in it; the
    count then drops under the name, with Edit at the right of that second line (.fold-tail holds the two). */
 details.fold.project-edit>summary{gap:6px 10px}
-details.fold.project-edit>summary:has(.fold-act) .fold-name{flex:0 1 auto;min-width:0}
+/* The name takes the free room of a shared line, so the count stands beside Edit there, as on an environment row;
+   alone on the second line the tail is as wide as the card: the count at the left, Edit at the right. */
+details.fold.project-edit>summary:has(.fold-act) .fold-name{flex:9999 1 auto;min-width:0}
 details.fold.project-edit>summary>.fold-tail{display:flex;flex:1 0 auto;align-items:center;justify-content:space-between;gap:10px}}
 /* Wide screens: the count and Edit are one group at the right that never wraps; a long project name wraps in the
    room at the left of it. */
@@ -1011,6 +1024,7 @@ form.action details.import-ref{background:var(--panel-2)}
 /* The head row of a tabbed area is as tall with a button as without one, so the tabs do not move between tabs. */
 .head:has(+.tabs){min-height:40px}
 .board.grants .when{white-space:normal}
+.board.grants .confirm-size{display:none}
 @media (min-width:1181px){
 /* Grants as a table: a fixed layout. Every column but Entry has a width of its own, so no column moves between the
    whole list and a filtered one, and Revoke is always inside the board; the entry takes what is left. The first
@@ -1018,13 +1032,23 @@ form.action details.import-ref{background:var(--panel-2)}
 .board.grants{table-layout:fixed}
 /* 12 px between two columns (6 + 6), as on Requests. Agent holds fifteen letters (118 px of text), so a long name
    breaks after its hyphens ("orchestrator-", "reconciliation-"); End date has 188 px for its text, so "Revoked
-   2026-11-21 23:27" (184 px) ends 16 px before the State chip; the entry keeps a sixteen-letter name on one line. */
-.board.grants th:nth-child(1){width:139px}
+   2026-11-21 23:27" (184 px) ends 16 px before the State chip. The last column is as wide as its Revoke button and
+   no wider: the room goes to the entry, so two long entry names that differ near their end are both whole within
+   two lines. */
+.board.grants th:nth-child(1){width:163px}
 .board.grants th:nth-child(2){width:144px}
 .board.grants th:nth-child(4){width:162px}
 .board.grants th:nth-child(5){width:200px}
 .board.grants th:nth-child(6){width:82px}
-.board.grants th:nth-child(7){width:225px}
+.board.grants th:nth-child(7){width:92px}
+/* The armed two-step does not fit that column and does not have to: it takes a line of its own across the bottom
+   of its row, under a dashed rule, the question at the left of "Confirm revoke" and "Cancel". The row is the
+   containing block; app.js (.below on the step, .is-armed on the row) says how high the line is (--arm-h), and
+   every cell of the row keeps that much room under its content. */
+.board.grants tr.is-armed{position:relative}
+.board.grants tr.is-armed>td{padding-bottom:calc(var(--arm-h,48px) + 20px)}
+.board.grants .confirm-step.below{position:absolute;left:15px;right:12px;bottom:10px;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:8px 12px;max-width:none;padding-top:10px;border-top:1px dashed var(--rule)}
+.board.grants .confirm-step.below .confirm-note{flex:1 1 auto;width:auto;min-width:0;max-width:none;text-align:right}
 .board.grants td{overflow-wrap:anywhere}
 .board.grants :is(th,td):not(:first-child){padding-left:6px}
 .board.grants :is(th,td):not(:last-child){padding-right:6px}
@@ -1069,7 +1093,6 @@ form.action details.import-ref{background:var(--panel-2)}
 .board:is(.requests,.grants) td>b.nobreak{white-space:normal;overflow-wrap:anywhere}
 .board:is(.requests,.grants) .k,.board:is(.requests,.grants) td.when small.k,.board:is(.requests,.grants) td.name small.k{display:inline;font-size:12px;color:var(--faint)}
 .board:is(.requests,.grants) .controls{margin-top:4px}
-.board:is(.requests,.grants) .confirm-size{display:none}
 /* On a wide card the MFA field keeps a field's width instead of running across the card. */
 .board.requests form.mfa{max-width:34em}
 .board:is(.requests,.grants) tr:has(.confirm-step) td:has(.confirm-step){grid-area:auto/1/auto/-1!important;flex:1 1 100%!important;width:100%;max-width:100%;margin-left:0!important;justify-self:stretch!important;text-align:right}
@@ -1123,13 +1146,16 @@ form.action details.import-ref{background:var(--panel-2)}
 .card details.fold.env:last-of-type{margin-bottom:0}
 .project-card>.note{margin:0 0 4px}
 .card details.env-add{background:transparent;border:none;border-radius:0;margin:8px 0 0}
-/* The closed link starts where the environment names above it start (a fold's border plus its padding). */
-.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0 4px 15px;font:600 13px/1.4 var(--mono);color:var(--amber)}
+/* "+ Add an environment" is a control with an edge, like a fold's Edit (.fold-act.add: the "+" is its marker). Its
+   box starts where the environment rows above it start, and its text where their names do (a fold's border plus
+   its padding). */
+.card details.env-add>summary{display:inline-flex;align-items:center;min-height:36px;padding:4px 0}
 .card details.env-add>summary::before,.card details.env-add[open]>summary::before{content:none}
-.card details.env-add>summary:hover{text-decoration:underline}
+.fold-act.add{margin-left:0;padding-left:14px;padding-right:14px}
+.fold-act.add::before,details[open]>summary .fold-act.add::before{content:none}
+.card details.env-add>summary:hover .fold-act{border-color:var(--amber);color:var(--amber)}
 .card details.env-add[open]{background:var(--panel-2);border:1px solid var(--rule);border-top:2px solid var(--amber);border-radius:4px;margin-top:10px}
-.card details.env-add[open]>summary{display:flex;padding:10px 14px;color:var(--ink)}
-.card details.env-add[open]>summary:hover{text-decoration:none;color:var(--amber)}
+.card details.env-add[open]>summary{display:flex;padding:10px 14px 10px 0}
 @media (min-width:901px){
 details.type-fold .list.edit :is(th,td){padding:7px 6px}
 :is(details.type-fold .list.edit,.list.edit.env-template,.list.edit.type-new) :is(th,td):first-child{padding-left:0}

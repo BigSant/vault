@@ -3,8 +3,8 @@
 @section('content')
 {{-- Sign out is no section of the page: one plain button in the head row, beside the h1. The row is as wide as
      the cards under it (.capped), so the button ends where they end. --}}
-<div class="head capped"><h1>Account</h1><form method="post" action="/logout">@csrf<button aria-label="Sign out of this session">Sign out</button></form></div>
-<table class="facts">
+<div class="head capped"><h1 id="page-title">Account</h1><form method="post" action="/logout">@csrf<button aria-label="Sign out of this session">Sign out</button></form></div>
+<table class="facts" aria-labelledby="page-title">
     <tr><th scope="row">Name</th><td>{{ $user->name }}</td></tr>
     <tr><th scope="row">Email</th><td>{{ $user->email }}</td></tr>
     <tr><th scope="row">Password confirmation</th><td>
@@ -51,11 +51,11 @@
     @endunless
 </div>
 
-<h2 class="capped">Workspaces</h2>
+<h2 id="workspaces" class="capped">Workspaces</h2>
 @if($navSpaces->isEmpty())
     <div class="empty capped">You are in no workspace yet. <a class="more-link" href="/workspaces/new">Add a workspace</a>.</div>
 @else
-<div class="scroll capped"><table class="list">
+<div class="scroll capped"><table class="list" aria-labelledby="workspaces">
     <thead><tr><th scope="col">Workspace</th><th scope="col">Your role</th></tr></thead>
     <tbody>
     @foreach($navSpaces as $s)

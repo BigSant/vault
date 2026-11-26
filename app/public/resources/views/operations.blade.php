@@ -36,7 +36,8 @@
      is glued to what comes before it, so a wrapped line never starts with one.
      Columns: Agent · Action · Entry. Card (below 1180 px): "<agent> requests <action>" ("requested" in the history), then "<entry> · <project> /
      <environment>", then the short request id ("Request 1a2b3c4d") with the state at the right, then "Requested …",
-     "Expires …" or "Finished …" each on a line of its own, and the controls last. The id belongs to the request's
+     "Expires …" or "Finished …" each on a line of its own, and the controls last. A waiting row's "Expires … · N min
+     left" line is the first thing in its Decision cell, at every width. The id belongs to the request's
      identity: it comes after what is asked for and before the decision controls at every width (in the table it
      sits under the action), and it ends each decision control's accessible name, so two requests that are
      otherwise the same can be told apart.
@@ -103,11 +104,13 @@
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><span class="k" aria-hidden="true">&nbsp;·</span><small>{{ $o->project }}&nbsp;/ @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
-            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> <span class="nobreak">{{ $time($o->created_at) }} <small class="k">UTC</small></span>@else<span class="muted">request time unknown</span>@endif @unless($finished)<span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden></span></span>@endunless</td>
+            <td class="when" data-label="Requested (UTC)">@if($o->created_at ?? null)<small class="k">Requested</small> <span class="nobreak">{{ $time($o->created_at) }} <small class="k">UTC</small></span>@else<span class="muted">request time unknown</span>@endif</td>
             @if($finished)
             <td class="when" data-label="Finished (UTC)">@if($state === 'expired' && ($o->expires_at ?? null))<small class="k keep">Expired</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span>@elseif(in_array($state, ['approved', 'running'], true) || ! ($o->updated_at ?? null))<span class="muted">not finished yet</span>@else<small class="k">Finished</small> <span class="nobreak">{{ $time($o->updated_at) }} <small class="k">UTC</small></span>@endif</td>
             @else
             <td class="decision" data-label="Decision">
+                {{-- The deadline belongs to the decision: it stands above the controls, so Requested is one date wide. --}}
+                <span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden></span></span>
                 {{-- What a held decision is about: app.js shows it beside the held button in the password block. --}}
                 <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
                 @if($o->state === 'pending')

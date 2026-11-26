@@ -1,1 +1,1 @@
-@php $signClass = !empty($production) ? 'prod' : (mb_strtolower($name) === 'stage' ? 'stage' : ''); @endphp<span class="sign {{ $signClass }}">{{ $name }}@if(!empty($production) && mb_strtolower($name) !== 'production')<span class="sr-only"> (production)</span>@endif</span>
+@php $signClass = !empty($production) ? 'prod' : (str_starts_with(mb_strtolower($name), 'stag') ? 'stage' : ''); @endphp<span class="sign {{ $signClass }}">{{ $name }}@if(!empty($production) && mb_strtolower($name) !== 'production')<span class="sr-only"> (production)</span>@endif</span>

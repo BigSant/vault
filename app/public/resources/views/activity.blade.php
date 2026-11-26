@@ -31,8 +31,8 @@
 <div class="scroll"><table class="board compact-board activity"@isset($labelledby) aria-labelledby="{{ $labelledby }}"@endisset>
     <thead><tr><th scope="col">When (UTC)</th><th scope="col">Actor</th><th scope="col">Event</th>@empty($hideSubject)<th scope="col">Subject</th>@endempty<th scope="col">Outcome</th></tr></thead>
     <tbody>@foreach($events as $event)
+        {{-- Nearly every row succeeded: those are is-idle, like their muted chip, so what went wrong stands out. --}}
         @php $stripe = match ($event->outcome) {
-            'ok', 'succeeded', 'approved', 'active' => 'is-ok',
             'denied', 'failed', 'rejected', 'error', 'refused', 'invalid' => 'is-bad',
             default => 'is-idle',
         }; @endphp

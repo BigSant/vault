@@ -15,7 +15,7 @@
     <tbody>
     @foreach($machines as $m)
         @php $mState = $m->revoked_at ? 'revoked' : (strtotime($m->expires_at) <= time() ? 'expired' : 'active'); @endphp
-        <tr id="agent-{{ $m->id }}" class="{{ $mState === 'active' ? 'is-ok' : 'is-idle' }}">
+        <tr id="agent-{{ $m->id }}" class="{{ $mState === 'active' ? (\App\Vault\Access::endsSoon($m->revoked_at, $m->expires_at) ? 'is-wait' : 'is-ok') : 'is-idle' }}">
             <td class="name" data-label="Agent"><b>{{ $m->name }}</b></td>
             <td class="when" data-label="End date (UTC)">@include('end-date', ['revoked' => $m->revoked_at, 'ends' => $m->expires_at, 'reason' => null, 'own' => null])</td>
             <td class="grants" data-label="Active grants">@if($m->active_grants)<a href="/workspaces/{{ $space->id }}/grants?agent={{ $m->id }}">{{ $m->active_grants }} {{ Str::plural('grant', $m->active_grants) }} →</a>@else<span class="muted">no grants</span>@endif</td>

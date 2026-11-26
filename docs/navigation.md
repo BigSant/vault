@@ -38,8 +38,13 @@ Use these words in every UI text. Code names may differ.
 - End dates of agents and grants read **Expires**, **Expired** or **Revoked**, then the date and UTC, then the
   reason on a line of its own. One partial (`end-date`) prints them on Identities, Grants and an entry's Agent access.
   The Identities column head reads "End date (UTC)", because its rows hold all three; each row keeps its own label.
+  **Expiring soon.** An agent or grant that is still active and ends within 3 days carries a `chip warn` "expires
+  soon" after its date (the same partial), and its row the `is-wait` stripe instead of `is-ok`, on all three boards
+  (`Access::endsSoon`, one rule for the chip and the stripe).
 - A request that ended without an owner's decision reads **cancelled**, never "revoked" (the `outcome` partial maps it).
 - Roles are shown as neutral `chip role`, never with state colours.
+- An environment sign is amber when its name starts with "stag" ("stage", "staging", "staging-eu-west-1"), hazard
+  red when the environment is production, and plain otherwise (the `sign` partial).
 - A tabbed area keeps the area name as its h1 (Agents, Setup) with the tabs right below it. A page with an add
   form further down puts one quiet "+ Add a/an X" button in the head row beside the h1, jumping to the form's h2.
 
@@ -115,7 +120,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   "All environments" is never cut at rest: the Environment select keeps 13em and Project keeps the 146 px of "All
   projects"; Type and State give way first. The bar is one row down to 901 px, and from 1000 px up every select
   shows its resting option whole.
-- `/entries/{id}` — one entry, in this order: title, jump links, requests waiting for a decision (owners, only when any
+- `/entries/{id}` — one entry, in this order: title (at 900 px and below the h1 takes the whole row and "Edit entry"
+  stands at the right of the meta line under it), jump links, requests waiting for a decision (owners, only when any
   wait), details (the facts table; a viewer gets the note "Viewers see entry details and version history, not values." under it and no Secret
   values section), secret values (reveal; while values are on screen a plain "Hide values" button
   conceals every revealed field at once, switches their Copy off, says so and moves the focus to "Reveal again"
@@ -149,7 +155,8 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   and "Cancel" (the focus goes to Cancel; Escape cancels; the reload button is off while the question is open).
   Cancel changes nothing; after a discard the status says which fields were discarded and that the rest was kept.
   **Required markers (decided).** Every required field a person can edit in Details carries the same marker,
-  `<small>required</small>` under its label: Name, Agent alias, Project / environment and Type (the last two only
+  `<small aria-hidden="true">required</small>` under its label (the field's own `required` is what a screen reader
+  says, once): Name, Agent alias, Project / environment and Type (the last two only
   on the add form; on the update form they are fixed text). Tags and the rotation reminder carry none. In Secret
   values the marker is the other way round: every field is required unless it says `optional`.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
@@ -164,7 +171,9 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 - `/workspaces/{w}/requests` — agent requests. "Waiting for you" first (approval or a site MFA code), each row
   saying which agent asks to run which action on which entry and environment, then recent history. This is where
-  Allow once / Deny / Continue sign-in live. Each waiting row shows the time left. While the page is visible
+  Allow once / Deny / Continue sign-in live. Each waiting row shows its deadline and the time left at the
+  top of its Decision cell, above the controls they limit: one line on a card ("Expires 2026-11-26 00:09 UTC · 2
+  min left"), the time left under the deadline in the table, so the cell is as high in the last minute as before. While the page is visible
   (also while nothing waits; a hidden tab pauses), app.js re-fetches it every 30 s and swaps only the
   `[data-refresh]` regions (the request sections, the waiting heading and the header nav count). A request board is
   merged row by row (rows match by `data-request`): only the row that holds the focus or a started input is left
@@ -202,7 +211,9 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   warning stays. An armed header mark is a button like the armed nav links, not the wordmark.
 - `/workspaces/{w}/grants` — what each agent may do: the grant list (filter `?agent=` and `?entry=`), Revoke,
   and the "Add a grant" form (pre-selected from the filter; its checkbox reads "Require owner approval for every
-  run"). The shared password block (`confirm-grants`) stands above the filter bar, so the bar, its status line and
+  run"; once an action is chosen the form's note names the fields it reads: "shop.admin-login reads the fields
+  username and password. The entry's type must have them."). The empty state under the filter bar is as wide as
+  the bar; the one that replaces the form is capped. The shared password block (`confirm-grants`) stands above the filter bar, so the bar, its status line and
   the board stay together. A held "Add grant" keeps its context like a held request decision: beside the button
   the block says "<agent> may run <action> · <entry> · <project> / <environment> · valid for N days · asks every
   time" (the form's own `<template data-held-summary>`, filled from its fields by app.js and following them while
@@ -230,7 +241,9 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   too); on phone an environment row is one line (sign, count, Edit; a long sign wraps inside itself), and a
   project's head is one line while it fits: a long project name takes the line and the count drops under it, with
   Edit at the right of that second line (`.fold-tail`). On desktop the count and Edit are one group at the right
-  that never wraps (`.fold-tail`), and a long project name wraps in the room at its left. One shared password block (`confirm-setup`) above the cards serves every form of the page.
+  that never wraps (`.fold-tail`), and a long project name wraps in the room at its left. On phones a project's
+  count stands beside Edit while the head is one line, like an environment row's. "+ Add an environment" is a
+  control with an edge (`.fold-act.add`), its text starting where the environment names start. One shared password block (`confirm-setup`) above the cards serves every form of the page.
 - `/workspaces/{w}/types` — the entry types as folds under the tabs, listed by name whatever the case (so are
   the Type options everywhere), then the h2 section "Add an entry type".
   One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
@@ -328,7 +341,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    and that summary is the button's description (`aria-describedby`, set only while the summary holds something).
    A held Reveal names the entry in its own case ("Reveal current: Shop admin panel"). While an action is held,
    the held button is the page's only solid button: every other solid button or link in `main` is plain until
-   the hold ends. A password entered first gets the visible line "Now choose an
+   the hold ends. One prompt at a time: when a two-step action that was just confirmed ("Confirm revoke") is held
+   for the password, its armed step is withdrawn; the held button is the next press. A held name never ends in an
+   empty choice ("Add grant", not "Add grant: Choose an action"). `aria-describedby` is edited one id at a time
+   (`describe` in app.js), so a field's hint or error stays when another description comes or goes. A password entered first gets the visible line "Now choose an
    action below." The waiting requests' block asks "Enter your current password, then choose a request action
    below."; on the entry page, where it also serves Reveal, Restore and Archive, "…then choose a request action,
    or reveal, restore or archive below." A password that is not right is a validation error on `confirm_password` (303 back to the page, never
@@ -362,8 +378,12 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    **Long data never widens a board (decided).** As tables, Requests, Grants and an entry's Agent access have a
    fixed layout (like Entries): every column has its width from the table, so the last column (Decision, Finished,
    Revoke, State) always ends inside the board and no column moves between the whole list and a filtered one.
-   Grants: Agent 139 px, Action 144, Approval 162, End date 200, State 82, the Revoke column 225 (room for its armed
-   two-step), and the entry takes the rest (148); 12 px between two columns; the first cell keeps the board's left
+   Grants: Agent 163 px, Action 144, Approval 162, End date 200, State 82, the Revoke column 92 (its button and no
+   more), and the entry takes the rest (257), so two long entry names that differ near their end are whole within
+   two lines; 12 px between two columns. **The armed Revoke takes a line of its own** across the bottom of its row,
+   under a dashed rule: the question, then "Confirm revoke" and "Cancel" at the right edge (app.js marks the row
+   and measures the line; the row keeps that room, so nothing overlaps and no column moves). As a card the armed
+   step is a line of the card, as before; the first cell keeps the board's left
    padding, so its text starts where every other board's does. End date has 188 px for its text: "Revoked
    2026-11-21 23:27" (184 px) ends 16 px before the State chip. Agent access: 15 / 21 / 27 / 25 % and State the rest. An agent name, an action
    code, an entry name and an environment sign wrap in their cell or card, inside a word when they must; agent
@@ -386,11 +406,12 @@ Every page follows these, so the same kind of thing looks and behaves the same e
   environment (Grants only); line 3 the approval; line 4 the end date, with Revoke at the right (Grants only). The
   chip is out of the flow, so a long name or action wraps under it and never moves it.
   **Requests columns:** as tables, "Requests waiting for you" and "Recent requests" share the widths of their
-  leading columns (Agent 123 px, Action 144, Entry 149, State 200, Requested 196; 12 px between two columns), so
+  leading columns (Agent 123 px, Action 144, Entry 193, State 200, Requested 152; 12 px between two columns), so
   each column starts at the same place in both, with any data; the last column (Decision or Finished) takes the
-  rest (288). State is exactly its widest content, the lamp and "waiting for approval" (187 px), so Agent's room
-  comes from the gaps and from Entry, which still holds "Shop admin panel" on one line. On an entry page the
-  boards have no Entry column (`.no-entry`): its width goes to Agent (160) and Action (256), so a long agent name
+  rest (288). State is exactly its widest content, the lamp and "waiting for approval" (187 px). Requested holds
+  one date: a waiting row's deadline is in its Decision cell, and that width went to Entry, which holds "Payment
+  gateway API" on one line. On an entry page the
+  boards have no Entry column (`.no-entry`): its width goes to Agent (176) and Action (284), so a long agent name
   and a long action code ("storefront.administrator-console-signin") break at their hyphens, and State, Requested
   and the last column start where they do on Requests. The site MFA field is 9em wide to make that room. In app.css every property of these boards is set once: shared rules first, then one
   block for the card (below 1181 px) and one for the table; nothing is set in one and overridden in the other.
@@ -401,7 +422,8 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    email is `--dim`, so the name leads.
 7. **Row stripes** come from state: `is-ok`, `is-bad`, `is-idle` (finished or inactive) and `is-wait` (waiting
    for a decision or still running). A row whose thing has no state (a person on Members) is `is-plain`: no
-   stripe colour. Every row carries one of the five.
+   stripe colour. Every row carries one of the five. An active agent or grant that ends within 3 days is `is-wait`.
+   In the Activity log a row that went well is `is-idle`, like its muted "ok" chip: only `is-bad` has a colour there.
 8. **Repeated buttons** get an `aria-label` naming their item.
 9. **Words**: "Reveal" for anything that shows a secret value; names are never uppercased.
    Booleans are `label.check` checkboxes everywhere; array rows use explicit indices (`env_production[3]`).
@@ -445,6 +467,7 @@ validates the date. An import that fails names the item by its place in the arra
 ## Known gaps
 
 - A workspace cannot be renamed or deleted from the web UI yet.
+- Agents cannot be renewed; add a new agent and its grants before the old one expires.
 - Account changes only the sign-in password. A person's name and email, and re-enrolment of the authenticator
   (a lost or replaced device), are not in Account: they are operator recovery only.
 
@@ -454,7 +477,9 @@ validates the date. An import that fails names the item by its place in the arra
   one (Account, Add a workspace, the sign-in pages) stay "Account · Vault". The confirm page and the error pages
   stand in for another page and never name the workspace, also when a stopped action renders them at a workspace
   address: `<title>Password confirmation · Vault</title>` (the layout checks the `quiet-nav` section, not the path).
-- **Table names.** Every board has `aria-labelledby`: its section h2 where it has one (the request boards, and
+- **Table names.** Every `.facts` and `.list` table has `aria-labelledby` too: its section h2 (Details, Workspaces,
+  Format, Environment template, Add an entry type), the h1 where it has no section (Account), or the summary or
+  fold name it sits under (Import's two folds, an entry type). Every board has `aria-labelledby`: its section h2 where it has one (the request boards, and
   Versions, Agent access and Activity on an entry page), else the current tab (`id="tab-current"`: Identities,
   Grants) or the page h1 (`id="page-title"`: Entries, Members, Activity).
 - **Field hints** sit under the field, never in the label column: `.field > label, input, small.hint`

@@ -74,12 +74,12 @@
         $nextEditIdx = count($editRows);
     @endphp
     <details class="fold type-fold capped" id="type-{{ $type->key }}"@if($oldTypeEdit || $oldTypeDelete) open @endif>
-        <summary><span class="fold-name">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> entry type {{ $type->name }}</span></span></summary>
+        <summary><span class="fold-name" id="type-name-{{ $type->key }}">{{ $type->name }} <code>{{ $type->key }}</code></span> <span class="fold-meta">{{ $plural(count($type->fields), 'field', 'fields') }} · {{ $plural($used, 'entry', 'entries') }}</span> <span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span><span class="sr-only"> entry type {{ $type->name }}</span></span></summary>
         <div class="inner">
             <form method="post" action="{{ $typePath }}" data-confirm-from="confirm-types">@csrf
                 @isset($type->revision)<input type="hidden" name="revision" value="{{ $type->revision }}">@endisset
                 <label><span>Type name <small>key <code>{{ $type->key }}</code></small></span><input name="name" value="{{ $oldTypeEdit && is_string(old('name')) ? old('name') : $type->name }}" required maxlength="80"></label>
-                <div class="scroll"><table class="list edit">
+                <div class="scroll"><table class="list edit" aria-labelledby="type-name-{{ $type->key }}">
                     <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th><th scope="col">Key</th><th scope="col">Remove</th></tr></thead>
                     <tbody id="rows-{{ $type->key }}">
                     @foreach($editRows as $i => $f)
@@ -127,7 +127,7 @@
     <form class="action" method="post" action="{{ $addTypePath }}"@unless($types->isEmpty()) data-confirm-from="confirm-types"@endunless>@csrf
         <label><span>Type name</span><input name="name" value="{{ $oldAddType && is_string(old('name')) ? old('name') : '' }}" required maxlength="80" placeholder="e.g. FTP server"></label>
         @php $nextNewIdx = count($newRows); @endphp
-        <table class="list edit type-new">
+        <table class="list edit type-new" aria-labelledby="add-type">
             <thead><tr><th scope="col">Field label</th><th scope="col">Kind</th><th scope="col">Required</th></tr></thead>
             <tbody id="rows-new">
             @foreach($newRows as $i => $f)

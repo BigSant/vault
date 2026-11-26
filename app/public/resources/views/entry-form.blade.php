@@ -17,9 +17,9 @@
 <form class="action" data-editing="{{ $entry ? '1' : '0' }}" method="post" action="{{ $entry ? '/entries/'.$entry->id : '/entries' }}">@csrf
     <fieldset>
         <legend>Details</legend>
-        <label><span>Name <small>required</small></span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
+        <label><span>Name <small aria-hidden="true">required</small></span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
         {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
-        <div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias</small></div>
+        <div class="field"><label for="entry-alias"><span>Agent alias <small aria-hidden="true">required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias.</small></div>
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
@@ -42,13 +42,13 @@
             <details class="type-detour" data-reload-types-row><summary>Missing a field?</summary><div class="type-detour-body"><span class="note"><a class="more-link" href="/workspaces/{{ $workspace }}/types#type-{{ $entry->type }}" target="_blank" rel="noopener">Edit entry types in a new tab</a>. <span data-script-text="After editing the entry type, return here and choose Reload fields.">After editing the entry type, load this page again. What you typed here is not kept.</span></span> <button type="button" data-reload-types hidden>Reload fields</button> <span class="note reload-status" data-reload-status></span></div></details>
         @else
             @php $selectedEnv = old('environment_id'); @endphp
-            <label><span>Project / environment <small>required</small></span><select name="environment_id" required>
+            <label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>
                 <option value="">Choose an environment</option>
                 @foreach($environments as $e)
                     <option value="{{ $e->id }}" @selected($selectedEnv === $e->id)>{{ $e->project }} / {{ $e->name }}{{ $e->production ? ' (production)' : '' }}</option>
                 @endforeach
             </select></label>
-            <label><span>Type <small>required</small></span><select name="type" id="entry-type" required>
+            <label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>
                 <option value="">Choose a type</option>
                 @foreach($types as $t)<option value="{{ $t->key }}" @selected($initialType === $t->key)>{{ $t->name }}</option>@endforeach
             </select></label>

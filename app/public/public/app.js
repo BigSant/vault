@@ -108,14 +108,41 @@ const fieldName = input => input.closest('.field, label')?.querySelector('label 
 // Two-step confirmation in place. The first press turns the button into its armed wording with a Cancel beside it and
 // the question as the note; go() runs on the second press. Returns the controls of one button's step.
 const armedText = text => 'Confirm ' + text.charAt(0).toLowerCase() + text.slice(1);
+// The step of each form that asks first (data-confirm), so that a hold for the password can withdraw the question.
+const confirmSteps = new WeakMap();
+// aria-describedby holds several ids: one is added or taken away, the others stay.
+const describe = (el, id, on) => {
+  if (!el || !id) return;
+  const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter(token => token && token !== id);
+  if (on) ids.push(id);
+  if (ids.length) el.setAttribute('aria-describedby', ids.join(' ')); else el.removeAttribute('aria-describedby');
+};
+// Grants as a table: the Revoke column is as wide as its button, so the armed step takes a line of its own across
+// the bottom of its row (.below, positioned by app.css). The row keeps room for it: --arm-h is the line's height,
+// measured here and again when the window changes. As a card (below 1181 px) the step is in the flow and none of
+// this applies.
+const spanRow = box => {
+  const row = box.closest('table.board.grants tr');
+  if (!row) return () => {};
+  const fit = () => {
+    const table = getComputedStyle(row).display === 'table-row';
+    row.classList.toggle('is-armed', table);
+    box.classList.toggle('below', table);
+    if (table) row.style.setProperty('--arm-h', box.offsetHeight + 'px'); else row.style.removeProperty('--arm-h');
+  };
+  fit();
+  addEventListener('resize', fit);
+  return () => { removeEventListener('resize', fit); row.classList.remove('is-armed'); row.style.removeProperty('--arm-h'); };
+};
 // armedName: the armed control's accessible name, from what it was called before ("Leave this page: Members").
 const twoStep = (question, armed = armedText, armedName = name => 'Confirm: ' + name) => {
   let step = null;
   let armedAt = 0;
   const disarm = focus => {
     if (!step) return;
-    const { box, button, nodes, label } = step;
+    const { box, button, nodes, label, undo } = step;
     step = null;
+    undo();
     box.before(button);
     box.remove();
     button.replaceChildren(...nodes);
@@ -143,7 +170,7 @@ const twoStep = (question, armed = armedText, armedName = name => 'Confirm: ' + 
     button.textContent = armed(text);
     button.setAttribute('aria-label', armedName(label || text));
     button.classList.add('armed');
-    step = { box, button, nodes, label };
+    step = { box, button, nodes, label, undo: spanRow(box) };
     armedAt = Date.now();
     button.focus();
     say(question + ' Press Confirm to go on, or Cancel.');
@@ -538,7 +565,7 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
     heldWhat.replaceChildren(...(content ? [content] : []));
     heldWhat.hidden = !source;
     // The summary is the held button's description only while it says something.
-    if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');
+    describe(heldButton, heldWhat.id, Boolean(source));
   };
   const solid = on => {
     if (on) document.querySelectorAll('main :is(button, .btn).go:not([data-held])').forEach(button => { button.classList.remove('go'); button.dataset.heldGo = '1'; });
@@ -564,8 +591,11 @@ document.querySelectorAll('.confirm-inline[data-confirmed-until]').forEach(box =
   };
   const heldName = (form, button) => {
     const field = button?.dataset.heldField ? form.elements[button.dataset.heldField] : null;
-    const chosen = field?.selectedOptions ? field.selectedOptions[0]?.textContent.trim() : field?.value;
-    return (button?.dataset.heldName || button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action') + (chosen || '');
+    // A select's empty option ("Choose an action") is no choice: it never becomes part of the name.
+    const option = field?.selectedOptions ? field.selectedOptions[0] : null;
+    const chosen = field?.selectedOptions ? (option?.value ? (option.dataset.text || option.textContent).trim() : '') : field?.value;
+    const name = button?.dataset.heldName || button?.getAttribute('aria-label') || button?.textContent.trim() || 'the action';
+    return chosen ? name + chosen : name.replace(/:\s*$/, '');
   };
   // why: what is said instead of "…has expired" (a password that was not right holds the action again).
   state.hold = (form, button, why = 'Your password confirmation has expired. Enter your current password') => {
@@ -635,6 +665,9 @@ document.addEventListener('submit', event => {
   if (!state.check()) return;
   if (!state.input.value) {
     event.preventDefault();
+    // One prompt at a time: a question that was just confirmed ("Confirm revoke") is withdrawn, the held button
+    // under the password field is what is pressed next, and it does not ask again.
+    confirmSteps.get(form)?.disarm(false);
     state.hold(form, event.submitter instanceof HTMLButtonElement ? event.submitter : submitters(form)[0]);
     return;
   }
@@ -727,6 +760,7 @@ document.querySelectorAll(':is(table.board, table.list) td:has(form[data-confirm
 });
 document.querySelectorAll('form[data-confirm]').forEach(form => {
   const step = twoStep(form.dataset.confirm);
+  confirmSteps.set(form, step);
   form.addEventListener('submit', event => {
     if (event.defaultPrevented || form.dataset.heldSend) return;
     if (step.armed()) {
@@ -777,10 +811,26 @@ document.querySelectorAll('select[name=entry_id]').forEach(entrySelect => {
     }
     const none = picked && !valid.length;
     if (submit) submit.disabled = none;
-    if (none) actionSelect.setAttribute('aria-describedby', note.id); else actionSelect.removeAttribute('aria-describedby');
+    describe(actionSelect, note.id, none);
     if (none && note.hidden) say(note.textContent);
     note.hidden = !none;
+    reads();
   };
+  // The form's note names the fields the chosen action reads; with no action chosen it says the rule.
+  const rule = form.querySelector('[data-action-note]');
+  const ruleText = rule?.textContent;
+  const reads = () => {
+    if (!rule) return;
+    const action = actionSelect.selectedOptions[0];
+    const keys = action?.value ? list(action.dataset.fields) : [];
+    if (!keys.length) { rule.textContent = ruleText; return; }
+    const names = keys.map(key => { const code = document.createElement('code'); code.textContent = key; return code; });
+    const parts = names.flatMap((code, i) => i === 0 ? [code] : [i === names.length - 1 ? ' and ' : ', ', code]);
+    const what = document.createElement('code');
+    what.textContent = action.value;
+    rule.replaceChildren(what, keys.length === 1 ? ' reads the field ' : ' reads the fields ', ...parts, '. The entry\'s type must have ' + (keys.length === 1 ? 'it.' : 'them.'));
+  };
+  actionSelect.addEventListener('change', reads);
   entrySelect.addEventListener('change', sync);
   addEventListener('pageshow', sync);
   sync();

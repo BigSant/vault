@@ -11,6 +11,17 @@ use Illuminate\Validation\ValidationException;
 
 final class Access
 {
+    /** Days before its end from which an active agent or grant reads "expires soon". */
+    public const SOON_DAYS = 3;
+
+    /** Still active (not revoked, not past its end) and ending within SOON_DAYS: the end-date chip and the row stripe. */
+    public static function endsSoon(mixed $revoked, mixed $ends): bool
+    {
+        $at = strtotime((string) $ends);
+
+        return ! $revoked && $at !== false && $at > time() && $at <= time() + self::SOON_DAYS * 86400;
+    }
+
     public function workspace(string $id, array $roles = ['owner', 'editor', 'viewer']): object
     {
         $row = DB::table('members')->join('workspaces', 'workspaces.id', '=', 'members.workspace_id')

@@ -335,7 +335,7 @@ final class ShellTest extends TestCase
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString("button?.dataset.heldName || button?.getAttribute('aria-label')", $script);
         // The summary is the held button's description only while it holds something.
-        $this->assertStringContainsString("if (source && heldWhat.id) heldButton?.setAttribute('aria-describedby', heldWhat.id); else heldButton?.removeAttribute('aria-describedby');", $script);
+        $this->assertStringContainsString("describe(heldButton, heldWhat.id, Boolean(source));", $script);
         $this->assertStringContainsString("'Now choose an action below.'", $script);
         // An expired confirmation with the password in the same POST decides at once: no confirm page.
         $this->post($this->base.'/operations/'.$id.'/decision', ['decision' => 'deny', 'confirm_password' => self::PASSWORD])->assertRedirect();
@@ -699,15 +699,15 @@ final class ShellTest extends TestCase
         }
         // Requests: the two boards share the widths of their leading columns.
         $this->assertStringContainsString('<th scope="col" class="c-who">Agent</th><th scope="col" class="c-action">Action</th>@empty($hideEntry)<th scope="col" class="c-entry">Entry</th>@endempty<th scope="col" class="c-state">State</th><th scope="col" class="c-when">Requested (UTC)</th>', $view('operations'));
-        foreach (['c-who{width:123px}', 'c-action{width:144px}', 'c-entry{width:149px}', 'c-state{width:200px}', 'c-when{width:196px}'] as $rule) {
+        foreach (['c-who{width:123px}', 'c-action{width:144px}', 'c-entry{width:193px}', 'c-state{width:200px}', 'c-when{width:152px}'] as $rule) {
             $this->assertStringContainsString('.board.requests th.'.$rule, $css);
         }
-        // Without the Entry column (an entry page) Agent and Action share its width: 160 + 256 = 123 + 144 + 149,
+        // Without the Entry column (an entry page) Agent and Action share its width: 176 + 284 = 123 + 144 + 193,
         // so State starts where it does on Requests.
-        $this->assertStringContainsString('.board.requests.no-entry th.c-who{width:160px}', $css);
-        $this->assertStringContainsString('.board.requests.no-entry th.c-action{width:256px}', $css);
-        // Grants: the widths with a column of their own leave the entry 148 px of the 1100.
-        foreach ([1 => 139, 2 => 144, 4 => 162, 5 => 200, 6 => 82, 7 => 225] as $n => $width) {
+        $this->assertStringContainsString('.board.requests.no-entry th.c-who{width:176px}', $css);
+        $this->assertStringContainsString('.board.requests.no-entry th.c-action{width:284px}', $css);
+        // Grants: the widths with a column of their own leave the entry 257 px of the 1100; the Revoke column is its button.
+        foreach ([1 => 163, 2 => 144, 4 => 162, 5 => 200, 6 => 82, 7 => 92] as $n => $width) {
             $this->assertStringContainsString('.board.grants th:nth-child('.$n.'){width:'.$width.'px}', $css);
         }
         // Long data never moves a column or pushes the last one out of the board: Requests, Grants and an entry's
@@ -823,7 +823,7 @@ final class ShellTest extends TestCase
             // Changing the password is no destructive action: the plain button, like Sign out.
             ->assertSee('<button>Change password and sign out</button>', false)
             // Sign out is no section: one plain button in the head row beside the h1.
-            ->assertSee('<div class="head capped"><h1>Account</h1><form method="post" action="/logout">', false)->assertDontSee('<h2>Sign out</h2>', false)
+            ->assertSee('<div class="head capped"><h1 id="page-title">Account</h1><form method="post" action="/logout">', false)->assertDontSee('<h2>Sign out</h2>', false)
             ->assertDontSee('class="foot"', false)->assertDontSee('class="lamp', false);
         // The footer line belongs to the Entries pages and the Agents area only.
         $foot = '<p class="foot">Secret values stay in the vault. Agents only get action results.</p>';
@@ -896,7 +896,7 @@ final class ShellTest extends TestCase
             ->assertSeeInOrder(['<h2 id="security" class="capped">Security</h2>', '<form class="action" id="confirm" method="post" action="/confirm">', '<details class="fold password-fold">',
                 // The toggle reads "Edit" like every other fold; the section headings end where the cards end (.capped).
                 '<summary><span class="fold-name legend">Change sign-in password</span><span class="fold-act"><span class="when-closed">Edit</span><span class="when-open">Close</span></span></summary>',
-                '<form method="post" action="/password">', '</details>', '<h2 class="capped">Workspaces</h2>'], false);
+                '<form method="post" action="/password">', '</details>', '<h2 id="workspaces" class="capped">Workspaces</h2>'], false);
         // A field error follows the label and is the field's description, never part of its name; Requests and Grants are cards below 1180 px.
         $script = (string) file_get_contents(public_path('app.js'));
         $this->assertStringContainsString('anchor.after(note)', $script);
@@ -1012,11 +1012,11 @@ final class ShellTest extends TestCase
             ->assertSeeInOrder(['<details class="type-detour" data-reload-types-row><summary>Missing a type or field?</summary><div class="type-detour-body"><span class="note"><a class="more-link"', 'Edit entry types in a new tab</a>', '<button type="button" data-reload-types hidden>Reload types</button>', 'data-reload-status></span></div></details>'], false)
             ->assertSeeInOrder(['id="entry-type"', '<fieldset id="type-fields">', '<legend>Tags and rotation</legend>'], false)
             // Every required field of Details carries the same marker.
-            ->assertSee('<label><span>Name <small>required</small></span><input name="name"', false)
-            ->assertSee('<label><span>Project / environment <small>required</small></span><select name="environment_id" required>', false)
-            ->assertSee('<label><span>Type <small>required</small></span><select name="type" id="entry-type" required>', false)
+            ->assertSee('<label><span>Name <small aria-hidden="true">required</small></span><input name="name"', false)
+            ->assertSee('<label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>', false)
+            ->assertSee('<label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>', false)
             // The alias hint is the field's description, not part of its name.
-            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias <small>required</small></span></label><input id="entry-alias"', false)
+            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias <small aria-hidden="true">required</small></span></label><input id="entry-alias"', false)
             ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">', false)
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
@@ -1126,5 +1126,50 @@ final class ShellTest extends TestCase
         $structure = (string) file_get_contents(app_path('Vault/Structure.php'));
         $this->assertStringNotContainsString('Remove all entries', $structure);
         $this->assertStringContainsString('Archive and destroy all entries in this project before removing it.', $structure);
+    }
+
+    public function test_expiring_soon_width_budget_and_round_19_nits(): void
+    {
+        // An active agent or grant that ends within 3 days says so; one that is revoked, expired or further off does not.
+        $soon = (string) $this->view('end-date', ['revoked' => null, 'ends' => now()->addDays(2)->format('Y-m-d H:i:s')]);
+        $this->assertStringContainsString('<small class="k">UTC</small></span> <span class="chip warn">expires soon</span>', $soon);
+        foreach ([['revoked' => null, 'ends' => now()->addDays(4)->format('Y-m-d H:i:s')], ['revoked' => null, 'ends' => now()->subDay()->format('Y-m-d H:i:s')],
+            ['revoked' => now()->subHour()->format('Y-m-d H:i:s'), 'ends' => now()->addDay()->format('Y-m-d H:i:s')]] as $data) {
+            $this->assertStringNotContainsString('expires soon', (string) $this->view('end-date', $data));
+        }
+        $this->assertTrue(\App\Vault\Access::endsSoon(null, now()->addDays(3)->subMinute()));
+        $this->assertFalse(\App\Vault\Access::endsSoon(null, now()->addDays(3)->addMinute()));
+        $this->assertFalse(\App\Vault\Access::endsSoon(null, now()->subMinute()));
+        $this->assertFalse(\App\Vault\Access::endsSoon(now(), now()->addDay()));
+        // The row of such an agent or grant carries the waiting stripe on all three boards.
+        foreach (['agents', 'grants', 'entry'] as $view) {
+            $this->assertStringContainsString("\\App\\Vault\\Access::endsSoon(", (string) file_get_contents(resource_path('views/'.$view.'.blade.php')));
+        }
+        $this->signIn('owner');
+        $machine = (string) Str::uuid();
+        DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $this->workspace, 'name' => 'short-lived', 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
+        $this->get($this->base.'/agents')->assertOk()->assertSee('<tr id="agent-'.$machine.'" class="is-wait">', false)->assertSee('<span class="chip warn">expires soon</span>', false);
+        // Environment signs: "staging" is amber like "stage"; anything else is plain.
+        $this->assertStringContainsString('class="sign stage"', (string) $this->view('sign', ['name' => 'Staging-eu-west-1', 'production' => false]));
+        $this->assertStringContainsString('class="sign stage"', (string) $this->view('sign', ['name' => 'stage', 'production' => false]));
+        $this->assertStringContainsString('class="sign "', (string) $this->view('sign', ['name' => 'qa', 'production' => false]));
+        $this->assertStringContainsString('class="sign prod"', (string) $this->view('sign', ['name' => 'staging', 'production' => true]));
+        // A waiting request's deadline stands in its Decision cell, not under Requested.
+        $operations = (string) file_get_contents(resource_path('views/operations.blade.php'));
+        $this->assertMatchesRegularExpression('/<td class="decision" data-label="Decision">\s*\{\{--.*?--\}\}\s*<span class="line expires">/s', $operations);
+        $this->assertStringNotContainsString('@unless($finished)<span class="line expires">', $operations);
+        $css = (string) file_get_contents(public_path('app.css'));
+        $this->assertStringContainsString('.board.grants th:nth-child(7){width:92px}', $css);
+        $this->assertStringContainsString('.board.requests th.c-when{width:152px}', $css);
+        $script = (string) file_get_contents(public_path('app.js'));
+        $this->assertStringContainsString('confirmSteps.get(form)?.disarm(false);', $script);
+        $this->assertStringNotContainsString("removeAttribute('aria-describedby');\n    if (none", $script);
+        // The Grants empty state under the filter bar is as wide as the bar; the one that replaces the form is capped.
+        $grants = (string) file_get_contents(resource_path('views/grants.blade.php'));
+        $this->assertStringContainsString("<div class=\"empty\">{{ \$filterCount ? 'No matching grants.' : 'No grants yet.' }}", $grants);
+        $this->assertSame(1, substr_count($grants, '<div class="empty capped">'));
+        // Activity: a row that went well is idle, so denied and failed stand out.
+        $this->assertStringNotContainsString("=> 'is-ok'", (string) file_get_contents(resource_path('views/activity.blade.php')));
+        $this->get('/account')->assertOk()->assertSee('<table class="facts" aria-labelledby="page-title">', false);
     }
 }

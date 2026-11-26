@@ -99,7 +99,7 @@
             <p class="note">No environments yet. Add one to store entries in this project.</p>
         @endforelse
         <details class="env-add"@if($oldAddEnv) open @endif>
-            <summary>+ Add an environment<span class="sr-only"> to project {{ $project->name }}</span></summary>
+            <summary><span class="fold-act add">+ Add an environment</span><span class="sr-only"> to project {{ $project->name }}</span></summary>
             <div class="inner">
                 <form method="post" action="/workspaces/{{ $space->id }}/environments" data-confirm-from="confirm-setup">@csrf
                     <input type="hidden" name="project_id" value="{{ $project->id }}"><input type="hidden" name="back" value="structure">
@@ -125,7 +125,7 @@
 <h2 id="template">Environment template</h2>
 <p class="note">The environments each project starts with. Existing projects keep theirs.</p>
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/template" data-confirm-from="confirm-setup">@csrf
-    <table class="list edit env-template">
+    <table class="list edit env-template" aria-labelledby="template">
         <thead><tr><th scope="col">Environment</th><th scope="col">Production</th></tr></thead>
         <tbody id="template-rows">
         @foreach($templateRows as $i => $env)
