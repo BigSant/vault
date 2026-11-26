@@ -7,8 +7,11 @@ from collections import Counter
 COUNTS=Counter()
 SHOP_COOKIE='PrestaShop-synthetic=synthetic-session-shop; Path=/; HttpOnly; SameSite=Lax'
 ADMIN_COOKIE='PrestaShop-admin=synthetic-session-admin; Path=/; HttpOnly; SameSite=Lax'
-STATIC='<link rel="stylesheet" href="/ps/theme.css?v=8"><script src="/ps/core.js"></script><img src="/ps/logo.png" alt="">'\
-    '<img src="http://offsite.invalid:8000/pixel.gif" alt="">'
+# A theme as PrestaShop serves it: files under /themes/, /js/, /img/ with a ?v= version, one image that redirects,
+# an off-site pixel, and a state-changing back-office URL dressed as an image (never sent).
+STATIC='<link rel="stylesheet" href="/ps/themes/theme.css?v=8.1"><script src="/ps/js/core.js"></script><img src="/ps/img/logo.png" alt="">'\
+    '<img src="/ps/img/moved.png" alt=""><img src="http://offsite.invalid:8000/pixel.gif" alt="">'\
+    '<img src="/ps/admin/index.php?controller=AdminEmployees&amp;deleteemployee=1&amp;token=0123456789abcdef0123456789abcdef" alt="">'
 # PrestaShop 1.7/8 back office: the form is posted by XHR to index.php?rand=<ms>; the answer names the dashboard with a token.
 ADMIN_JS=('document.querySelector("#submit_login").onclick=()=>{const x=new XMLHttpRequest();'
     'x.open("POST","/ps/admin/index.php?rand="+Date.now());x.setRequestHeader("Content-Type","application/x-www-form-urlencoded");'
@@ -18,8 +21,9 @@ ADMIN_JS=('document.querySelector("#submit_login").onclick=()=>{const x=new XMLH
 
 
 class Target(BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
+    # Request lines go to stderr (docker logs vault-test-fixture): the integration test checks that no entry value
+    # ever reached the target in a URL.
+    pass
 
     def respond(self, status, body, cookie=None):
         self.send_response(status)
@@ -34,18 +38,38 @@ class Target(BaseHTTPRequestHandler):
 
     def shop_get(self):
         path=urlsplit(self.path).path;cookie=self.headers.get('Cookie','')
-        if path=='/ps/theme.css':return self.static('text/css',b'@font-face{font-family:s;src:url(/ps/font.woff2)}body{font-family:s;background:url(/ps/bg.png)}')
-        if path=='/ps/core.js':return self.static('text/javascript',b'window.prestashop={};')
-        if path in ('/ps/logo.png','/ps/bg.png','/ps/font.woff2'):return self.static('application/octet-stream',b'\x00')
+        if 'deleteemployee' in self.path:COUNTS['deleteemployee']+=1
+        if path.startswith(('/ps/themes/','/ps/js/','/ps/img/')):
+            # A static file is fetched without the session or any credential.
+            if cookie or self.headers.get('Authorization'):COUNTS['static-credentials']+=1
+            if 'c3ludGhldGlj' in path or 'synthetic' in path:COUNTS['static-leak']+=1
+        if path=='/ps/themes/theme.css':return self.static('text/css',b'@font-face{font-family:s;src:url(/ps/themes/font.woff2)}body{font-family:s;background:url(/ps/img/bg.png)}')
+        if path=='/ps/js/core.js':
+            # Tries to set a cookie from a static response: dropped.
+            self.send_response(200);self.send_header('Content-Type','text/javascript');self.send_header('Set-Cookie','static-set=1; Path=/; HttpOnly');self.end_headers()
+            self.wfile.write(b'window.prestashop={};');return
+        if path=='/ps/img/moved.png':
+            self.send_response(302);self.send_header('Location','/ps/img/redirected.png');self.end_headers();return
+        if path in ('/ps/img/logo.png','/ps/img/bg.png','/ps/themes/font.woff2','/ps/img/redirected.png'):return self.static('application/octet-stream',b'\x00')
         if path=='/ps/en/login':
             return self.respond(200,'<html><head>'+STATIC+'</head><body><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email">'
                 '<input name="password" id="field-password" type="password"><button id="submit-login">Sign in</button></form></body></html>')
         if path=='/ps/en/my-account':
-            return self.respond(200,'<div id="account-state">'+('connected' if 'synthetic-session-shop' in cookie else 'guest')+'</div>')
+            return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-shop' in cookie else 'guest')+'</div>')
         if path=='/ps/en/leak':
             # A hostile page: copies the password into localStorage (base64) before posting.
             return self.respond(200,'<form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
                 '<button id="submit-login" onclick="localStorage.setItem(\'p\',btoa(document.querySelector(\'#field-password\').value))">Sign in</button></form>')
+        if path=='/ps/en/leak-cookie':
+            # A page script copies the password into a (script-readable) cookie: never exported.
+            return self.respond(200,'<html><head>'+STATIC+'</head><body><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
+                '<button id="submit-login" onclick="document.cookie=\'p=\'+btoa(document.querySelector(\'#field-password\').value)+\'; path=/\'">Sign in</button></form></body></html>')
+        if path=='/ps/en/leak-path':
+            # A page script puts the password into a static path on the registered origin: denied before it leaves.
+            return self.respond(200,'<form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
+                '<button id="submit-login" onclick="new Image().src=\'/ps/img/\'+btoa(document.querySelector(\'#field-password\').value)+\'.png\'">Sign in</button></form>')
+        if path=='/ps/en/login-echo':
+            return self.respond(200,'<form method="post" action="/ps/en/login-echo"><input name="email" id="field-email"><input name="password" id="field-password" type="password"><button id="submit-login">Sign in</button></form>')
         if path=='/ps/en/fetch':
             return self.respond(200,STATIC+'<script>fetch("/ps/data")</script><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email">'
                 '<input name="password" id="field-password"><button id="submit-login">Sign in</button></form>')
@@ -54,12 +78,19 @@ class Target(BaseHTTPRequestHandler):
             if query.get('controller')==['AdminLogin']:
                 return self.respond(200,'<html><head>'+STATIC+'</head><body><input id="email"><input id="passwd" type="password"><button id="submit_login">Log in</button><script>'+ADMIN_JS+'</script></body></html>')
             if query.get('controller')==['AdminDashboard'] and query.get('token'):
-                return self.respond(200,'<div id="account-state">'+('connected' if 'synthetic-session-admin' in cookie else 'guest')+'</div><script>localStorage.setItem("nav","collapsed")</script>')
+                # Logged in: the theme loads again (now with a session in the jar) and the page keeps UI state.
+                return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-admin' in cookie else 'guest')+'</div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x")</script>')
         return self.respond(404,'not found')
 
     def shop_post(self, data):
         path=urlsplit(self.path).path
         credentials=data.get('email')==['synthetic-user-sensitive'] and data.get('password' if path=='/ps/en/login' else 'passwd')==['synthetic-password']
+        if path=='/ps/en/login-echo':
+            # A hostile site: its own HttpOnly cookie carries the password (base64). The broker refuses the state.
+            if not credentials and not (data.get('email')==['synthetic-user-sensitive'] and data.get('password')==['synthetic-password']):return self.respond(401,'denied')
+            import base64
+            self.send_response(302);self.send_header('Location','/ps/en/my-account');self.send_header('Set-Cookie',SHOP_COOKIE)
+            self.send_header('Set-Cookie','echo='+base64.b64encode(data['password'][0].encode()).decode()+'; Path=/; HttpOnly');self.end_headers();return
         if path=='/ps/en/login' and urlsplit(self.path).query=='back=my-account':
             if not credentials:return self.respond(401,'denied')
             self.send_response(302);self.send_header('Location','/ps/en/my-account');self.send_header('Set-Cookie',SHOP_COOKIE);self.end_headers();return

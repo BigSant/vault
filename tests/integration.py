@@ -12,6 +12,9 @@ import re
 import secrets
 import struct
 import subprocess
+import sys
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -58,7 +61,8 @@ class Client:
             response = error
         self.last = response.read().decode()
         self.url = response.geturl()
-        assert response.status == expected, f'{path}: expected {expected}, got {response.status}'
+        self.status = response.status
+        assert expected is None or response.status == expected, f'{path}: expected {expected}, got {response.status}'
         assert 'no-store' in response.headers.get('Cache-Control', ''), path
         found = re.search(r'name="_token" value="([^"]+)"', self.last)
         if found:
@@ -91,7 +95,9 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     executor = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
     human.request('/workspaces/'+workspace+'/grants')
     runner = re.search(r'<option value="([a-f0-9-]+)">nightly runner</option>', re.search(r'<select name="machine_id"[^>]*>(.*?)</select>', human.last, re.S)[1])[1]
-    for action in ['fixture.shop-session', 'fixture.shop-ttl', 'fixture.shop-leak', 'fixture.shop-fetch', 'fixture.admin-session']:
+    handoff_actions = ['fixture.shop-session', 'fixture.shop-ttl', 'fixture.shop-leak', 'fixture.shop-fetch', 'fixture.admin-session',
+                       'fixture.shop-leak-cookie', 'fixture.shop-leak-path', 'fixture.shop-login-echo']
+    for action in handoff_actions:
         human.request('/workspaces/'+workspace+'/grants', {'machine_id': runner, 'entry_id': entry, 'action': action, 'days': '1'})
     grant = lambda action: re.search(r'/revoke/grants/([a-f0-9-]+)"(?:(?!</form>).)*?Revoke grant: '+re.escape(action)+' for nightly runner', human.last, re.S)
     tools = call('/api/mcp', {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'}, executor)
@@ -104,6 +110,15 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
             time.sleep(1)
             op = call('/api/v1/operations/'+op['id'], token=executor)
         return op
+
+    def files():
+        return [p for p in directory.iterdir() if p.name != '.vault-handoff']
+
+    def fixture_counts():
+        return json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
+
+    # The directory: search only for the group (2710) or private (0700), never listable by anyone else.
+    assert os.stat(directory).st_mode & 0o067 == 0 and (directory/'.vault-handoff').is_file(), 'handoff directory mode/marker'
 
     def gone(oid, seconds=5):
         deadline = time.monotonic()+seconds
@@ -122,8 +137,12 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
         state = json.loads(content)
         assert any(c['value'] == cookie for c in state['cookies']) and all(c['domain'] == 'fixture' for c in state['cookies'])
         assert all(secret not in content for secret in SECRETS), 'entry value in storageState'
+        assert all(not c['domain'].startswith('.') for c in state['cookies']) and not any(c['name'] == 'static-set' for c in state['cookies'])
         if action == 'fixture.admin-session':
-            assert any(o['origin'] == 'http://fixture:8000' for o in state['origins'])
+            # Only the connector's storage_keys: "nav", not "draft".
+            assert state['origins'] == [{'origin': 'http://fixture:8000', 'localStorage': [{'name': 'nav', 'value': 'collapsed'}]}], state['origins']
+        else:
+            assert state['origins'] == []
         # One live handoff per entry.
         call('/api/v1/execute', {'entry_id': entry, 'action': 'fixture.shop-ttl', 'request_id': secrets.token_hex(16)}, executor, 429)
         released = call('/api/v1/operations/'+op['id']+'/release', {}, executor)
@@ -134,9 +153,65 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
         except FileNotFoundError:
             pass
         print('PASS:', action, 'storageState handed off (0640, directory group, no entry value), released, ENOENT')
-    counts = json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
-    assert counts.get('/ps/theme.css', 0) >= 2 and counts.get('/ps/font.woff2', 0) >= 1 and counts.get('/ps/admin/index.php POST', 0) >= 1
-    print('PASS: static subresources from the registered origin, XHR login with ?rand=, dashboard with &token=')
+    counts = fixture_counts()
+    assert counts.get('/ps/themes/theme.css', 0) >= 2 and counts.get('/ps/themes/font.woff2', 0) >= 1 and counts.get('/ps/admin/index.php POST', 0) >= 1
+    assert counts.get('/ps/img/moved.png', 0) >= 1 and counts.get('/ps/img/redirected.png', 0) == 0, 'static redirect followed'
+    assert counts.get('deleteemployee', 0) == 0, 'state-changing GET as an image left the broker'
+    assert counts.get('static-credentials', 0) == 0, 'static request carried the session'
+    print('PASS: static files under static_paths without cookies, 3xx not followed, a back-office GET as an image dropped, XHR login with ?rand=, dashboard with &token=')
+
+    # The CLI's release answer is checked for values like every other response.
+    op = start('fixture.shop-session')
+    assert op['ready']
+    config = Path(tempfile.mkdtemp())/'client.json'
+    config.write_text(json.dumps({'url': BASE, 'token': executor}))
+    config.chmod(0o600)
+    released = subprocess.run([sys.executable, str(ROOT/'clients/vault.py'), '--config', str(config), 'release', op['id']], capture_output=True, text=True)
+    config.unlink()
+    config.parent.rmdir()
+    seen.append(released.stdout + released.stderr)
+    assert released.returncode == 0 and json.loads(released.stdout)['state'] == 'succeeded' and gone(op['id']), released.stdout
+    print('PASS: clients/vault.py release removes the file')
+
+    # Two executors at the same moment: one live handoff per entry also under MySQL REPEATABLE READ. A third session
+    # holds the entry's row lock while both requests take their snapshots, so both wait for it with a snapshot
+    # taken before the other committed.
+    human.request('/workspaces/'+workspace+'/machines', {'name': 'nightly runner two', 'days': '1', 'executor': '1'})
+    second = re.search(r'id="agent-token">([^<]+)</pre>', human.last)[1]
+    human.request('/workspaces/'+workspace+'/grants')
+    runner2 = re.search(r'<option value="([a-f0-9-]+)">nightly runner two</option>', re.search(r'<select name="machine_id"[^>]*>(.*?)</select>', human.last, re.S)[1])[1]
+    human.request('/workspaces/'+workspace+'/grants', {'machine_id': runner2, 'entry_id': entry, 'action': 'fixture.shop-session', 'days': '1'})
+    holder = subprocess.Popen(['docker', 'exec', '-i', 'vault-test-mysql-8.4', 'sh', '-c', 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root "$MYSQL_DATABASE"'],
+                              stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    holder.stdin.write(("BEGIN; SELECT id FROM entries WHERE id='"+entry+"' FOR UPDATE; SELECT SLEEP(4); COMMIT;\n").encode())
+    holder.stdin.close()
+    time.sleep(1)
+    answers = {}
+
+    def race(name, token):
+        client = Client()
+        try:
+            answers[name] = (client.request('/api/v1/execute', {'entry_id': entry, 'action': 'fixture.shop-session', 'request_id': secrets.token_hex(16)}, token=token, expected=None), client.status)
+        except Exception as error:
+            answers[name] = (None, repr(error))
+        seen.append(client.last)
+    threads = [threading.Thread(target=race, args=(name, token)) for name, token in (('first', executor), ('second', second))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(60)
+    holder.wait(30)
+    statuses = sorted(status for _, status in answers.values())
+    assert statuses == [200, 429], answers
+    winner = next(answer for answer, status in answers.values() if status == 200)
+    token = executor if answers['first'][1] == 200 else second
+    deadline = time.monotonic()+60
+    while time.monotonic() < deadline and not winner.get('ready') and winner['state'] == 'running':
+        time.sleep(1)
+        winner = call('/api/v1/operations/'+winner['id'], token=token)
+    call('/api/v1/operations/'+winner['id']+'/release', {}, token)
+    assert gone(winner['id'])
+    print('PASS: two executors at once under a held entry lock: one handoff, the other 429')
 
     op = start('fixture.shop-ttl')
     assert op['ready']
@@ -148,7 +223,7 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert op['ready']
     human.request('/workspaces/'+workspace+'/grants')
     human.request('/workspaces/'+workspace+'/revoke/grants/'+grant('fixture.shop-session')[1], {})
-    assert gone(op['id'], 4), 'revoked grant left the file'
+    assert gone(op['id'], 8), 'revoked grant left the file'
     assert call('/api/v1/operations/'+op['id'], token=executor)['state'] == 'revoked'
     human.request('/workspaces/'+workspace+'/grants', {'machine_id': runner, 'entry_id': entry, 'action': 'fixture.shop-session', 'days': '1'})
     print('PASS: revoking the grant removes the file within the reaper interval')
@@ -157,12 +232,16 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert op['ready']
     stray = directory/(str(__import__('uuid').uuid4())+'.json')
     stray.write_text('{}')
+    foreign = directory/'keep.txt'
+    foreign.write_text('not a handoff file')
     subprocess.run(['docker', 'restart', 'vault-test-broker'], check=True, capture_output=True)
     assert gone(op['id'], 20), 'broker stop/start left the operation file'
     deadline = time.monotonic()+20
     while stray.exists() and time.monotonic() < deadline:
         time.sleep(0.25)
     assert not stray.exists(), 'broker start left a stray file'
+    assert foreign.exists(), 'broker start removed a file that is not an operation file'
+    foreign.unlink()
     for _ in range(30):
         try:
             state = call('/api/v1/operations/'+op['id'], token=executor)['state']
@@ -172,18 +251,26 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert state == 'failed', state
     print('PASS: broker restart removes every handoff file; the operation failed')
 
-    for action in ['fixture.shop-leak', 'fixture.shop-fetch']:
+    for action in ['fixture.shop-leak', 'fixture.shop-fetch', 'fixture.shop-leak-path', 'fixture.shop-login-echo']:
         op = start(action)
-        assert op['state'] == 'failed' and not list(directory.iterdir()), f'{action}: {op}'
-    counts = json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
-    assert counts.get('/ps/data', 0) == 0
-    print('PASS: a page copying the password into storage and an unlisted fetch write nothing')
+        assert op['state'] == 'failed' and not files(), f'{action}: {op}'
+    counts = fixture_counts()
+    assert counts.get('/ps/data', 0) == 0 and counts.get('static-leak', 0) == 0
+    print('PASS: localStorage copy, an unlisted fetch, the password in a static path, and a server cookie with the password write nothing')
+    op = start('fixture.shop-leak-cookie')
+    assert op['ready'], op
+    state = json.loads((directory/(op['id']+'.json')).read_text())
+    assert [c['name'] for c in state['cookies']] == ['PrestaShop-synthetic'], [c['name'] for c in state['cookies']]
+    call('/api/v1/operations/'+op['id']+'/release', {}, executor)
+    assert gone(op['id'])
+    print('PASS: a cookie a page script wrote (the password) is never exported; only the HttpOnly session')
 
     human.request('/workspaces/'+workspace+'/audit?group=request')
     assert 'handoff.written' in human.last and 'handoff.removed' in human.last
     seen.append(human.last)
     logs = b''.join(subprocess.run(['docker', 'logs', name], capture_output=True).stdout + subprocess.run(['docker', 'logs', name], capture_output=True).stderr
-                    for name in ['vault-test-broker', 'vault-test-egress', 'vault-test-php-fpm', 'vault-test-webserver-apache-2.4.59']).decode(errors='replace')
+                    for name in ['vault-test-broker', 'vault-test-egress', 'vault-test-php-fpm', 'vault-test-webserver-apache-2.4.59', 'vault-test-fixture']).decode(errors='replace')
+    assert '/ps/en/my-account' in logs, 'target log is off'
     for text in seen + [logs]:
         assert all(value not in text for value in SECRETS + SESSIONS + [str(directory)]), 'value or path echoed'
         assert not re.search(r'[0-9a-f-]{36}\.json', text), 'handoff file name echoed'
