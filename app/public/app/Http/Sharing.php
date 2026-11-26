@@ -68,7 +68,10 @@ final class Sharing
         }
         $entry = $link->entry_id ? DB::table('entries')->where('id', $link->entry_id)->first() : null;
 
-        return response()->view('link-created', ['space' => $space, 'link' => $link, 'url' => $url, 'entry' => $entry])->header('Cache-Control', 'no-store');
+        // The passphrase the person typed or generated is shown once beside the link, so a generated one is not lost.
+        $passphrase = is_string($input['passphrase'] ?? null) && $input['passphrase'] !== '' ? $input['passphrase'] : null;
+
+        return response()->view('link-created', ['space' => $space, 'link' => $link, 'url' => $url, 'entry' => $entry, 'passphrase' => $passphrase])->header('Cache-Control', 'no-store');
     }
 
     public function check(string $workspace)

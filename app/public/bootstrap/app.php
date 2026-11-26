@@ -23,7 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $m) {
         $m->append(SecurityHeaders::class);
         $m->alias(['vault.auth' => OwnerSession::class, 'vault.machine' => MachineAuth::class]);
-        $m->trimStrings(except: ['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields.*', 'import', 'code', 'bootstrap_code', 'text', 'passphrase', 'token']);
+        $m->trimStrings(except: ['password', 'password_confirmation', 'current_password', 'confirm_password', 'secret', 'secret_fields.*', 'import', 'code', 'bootstrap_code', 'text', 'passphrase', 'token', 'params.arguments.text', 'params.arguments.passphrase']);
         $m->redirectGuestsTo('/login');
     })
     ->withExceptions(function (Exceptions $e) {

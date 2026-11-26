@@ -39,6 +39,9 @@ final class Links
     /** Seconds between two receipt checks of the same link. */
     private const CHECK_EVERY = 30;
 
+    /** Set by deliver() once the receipt of a sent link is kept: a later failure must not end that link. */
+    private bool $kept = false;
+
     public function __construct(private Secrets $secrets, private Access $access, private OneTimeSecret $ots, private EntryTypes $types) {}
 
     // ---- Settings ------------------------------------------------------------------------------------------------
@@ -70,6 +73,23 @@ final class Links
             throw ValidationException::withMessages(['default_lifetime' => 'The default lifetime cannot be longer than the longest lifetime.']);
         }
         $d['token'] = isset($d['token']) ? trim($d['token']) : null;
+        // Under the settings row's lock, which every new link takes too: no link starts in the old account while the
+        // account changes, and the count below is the final one.
+        DB::transaction(function () use ($workspace, $d, $input) {
+            $settings = $this->lockSettings($workspace);
+            $this->writeSettings($workspace, $settings, $d, $input);
+        });
+        $this->access->audit($workspace, 'links.settings', $workspace);
+    }
+
+    /** The settings row, locked until the end of the transaction (null before the first save). */
+    private function lockSettings(string $workspace): ?object
+    {
+        return DB::table('link_settings')->where('workspace_id', $workspace)->lockForUpdate()->first();
+    }
+
+    private function writeSettings(string $workspace, ?object $settings, array $d, array $input): void
+    {
         // Links made in the current account can be checked and burned only while it stays: moving to another region or
         // email with links still open needs an explicit "Change anyway".
         $open = $settings ? $this->openIn($settings) : 0;
@@ -88,7 +108,15 @@ final class Links
             'max_lifetime' => (int) $d['max_lifetime'], 'token_saved_at' => ! empty($d['token']) ? now() : $settings?->token_saved_at,
             'created_at' => $settings?->created_at ?? now(), 'updated_at' => now(),
         ]);
-        $this->access->audit($workspace, 'links.settings', $workspace);
+    }
+
+    /** Under the settings lock: the account as it is now, which a new link is made in. Aborts when it was removed. */
+    private function accountNow(string $workspace): object
+    {
+        $settings = $this->lockSettings($workspace);
+        abort_unless($settings && $settings->token_saved_at, 409);
+
+        return $settings;
     }
 
     /** Links of this account that can still be opened or are on their way. */
@@ -245,9 +273,14 @@ final class Links
         $content = $this->render($entry, $entry ? (int) $entry->version : null, $d['text'], $workspace);
         $id = (string) Str::uuid();
         // The row comes first ("sending"), so a link that reached Onetime Secret is never unknown to Vault.
-        DB::table('links')->insert(['id' => $id, 'workspace_id' => $workspace, 'entry_id' => $entry?->id, 'version' => $entry ? (int) $entry->version : null,
-            'user_id' => $user, 'note' => $d['note'], 'fields' => json_encode($fields), 'lifetime' => $lifetime, 'passphrase' => $d['passphrase'] !== null,
-            'state' => 'sending', 'region' => $settings->region, 'account' => $settings->email, 'created_at' => now(), 'updated_at' => now()]);
+        $settings = DB::transaction(function () use ($id, $workspace, $entry, $user, $d, $fields, $lifetime) {
+            $settings = $this->accountNow($workspace);
+            DB::table('links')->insert(['id' => $id, 'workspace_id' => $workspace, 'entry_id' => $entry?->id, 'version' => $entry ? (int) $entry->version : null,
+                'user_id' => $user, 'note' => $d['note'], 'fields' => json_encode($fields), 'lifetime' => $lifetime, 'passphrase' => $d['passphrase'] !== null,
+                'state' => 'sending', 'region' => $settings->region, 'account' => $settings->email, 'created_at' => now(), 'updated_at' => now()]);
+
+            return $settings;
+        });
         try {
             $sent = $this->deliver(DB::table('links')->where('id', $id)->first(), $settings, $content, $d['passphrase']);
         } catch (OneTimeSecretError $e) {
@@ -268,6 +301,7 @@ final class Links
      */
     private function deliver(object $link, object $settings, #[\SensitiveParameter] string $content, #[\SensitiveParameter] ?string $passphrase): array
     {
+        $this->kept = false;
         try {
             $token = $this->token($link->workspace_id);
             $sent = $this->ots->conceal($settings, $token, $content, (int) $link->lifetime, $passphrase);
@@ -275,6 +309,7 @@ final class Links
             $this->end($link, 'failed');
             throw $e instanceof OneTimeSecretError ? $e : new OneTimeSecretError(0);
         }
+        $this->kept = false;
         try {
             // A person sees the link once, on the page that made it; only an agent's link is kept, to answer its status.
             $this->secrets->put('links/'.$link->id, ['receipt' => $sent['receipt'], 'passphrase' => $passphrase] + ($link->machine_id ? ['url' => $sent['url']] : []));
@@ -288,6 +323,8 @@ final class Links
             $this->end($link, 'failed');
             throw new OneTimeSecretError(0);
         }
+        // From here the receipt is kept: whatever fails now, the link stays "sending" and recover() follows it.
+        $this->kept = true;
         $taken = DB::table('links')->where('id', $link->id)->where('state', 'sending')->update(['state' => 'active', 'lifetime' => $sent['ttl'],
             'expires_at' => now()->addSeconds($sent['ttl']), 'checked_at' => now(), 'updated_at' => now()]);
         if (! $taken && in_array(DB::table('links')->where('id', $link->id)->value('state'), self::ENDED, true)) {
@@ -692,9 +729,14 @@ final class Links
         // Under the agent's lock: its permission now, its limits, and the request_id taken before anything is sent or
         // stored. A concurrent retry finds this row; a Stop at the same moment comes before or after as a whole.
         try {
-            DB::transaction(function () use ($machine, $id, $requestId, $digest, $d, $lifetime, $settings, $entryId, $fields, $template) {
+            $settings = DB::transaction(function () use ($machine, $id, $requestId, $digest, $d, $lifetime, $entryId, $fields, $template) {
                 $current = DB::table('machines')->where('id', $machine->id)->lockForUpdate()->first();
                 abort_unless($current && $current->links, 403);
+                // A concurrent retry that got here first: answered below, before any limit applies.
+                if (DB::table('links')->where('machine_id', $machine->id)->where('request_id', $requestId)->exists()) {
+                    return null;
+                }
+                $settings = $this->accountNow($machine->workspace_id);
                 $mine = DB::table('links')->where('machine_id', $machine->id);
                 abort_if((clone $mine)->whereIn('state', ['reserved', 'pending', 'sending', 'active', 'previewed'])->count() >= self::AGENT_OPEN
                     || (clone $mine)->where('created_at', '>', now()->subHour())->count() >= self::AGENT_HOURLY, 429);
@@ -703,8 +745,13 @@ final class Links
                     'region' => $settings->region, 'account' => $settings->email, 'entry_id' => $entryId, 'fields' => json_encode($fields),
                     'sealed' => $template === null ? null : self::seal($template, $d['passphrase']),
                     'state' => $entryId === null ? 'sending' : 'reserved', 'created_at' => now(), 'updated_at' => now()]);
+
+                return $settings;
             });
         } catch (QueryException) {
+            $settings = null;
+        }
+        if (! $settings) {
             return $this->retry($machine, $requestId, $digest) ?? abort(409);
         }
         if ($entryId === null) {
@@ -729,10 +776,14 @@ final class Links
                 abort_unless(DB::table('links')->where('id', $id)->where('state', 'reserved')->update(['version' => $op->version, 'operation_id' => $op->id,
                     'state' => 'pending', 'updated_at' => now()]), 409);
             });
-            // The request_id had already opened a request that is not this link's.
-            abort_unless(DB::table('links')->where('id', $id)->where('state', 'pending')->exists(), 409);
+            // The request_id had already opened a request that is not this link's. (An owner may already have allowed
+            // and sent it: the link is tied to its request, whatever its state now.)
+            abort_unless(DB::table('links')->where('id', $id)->whereNotNull('operation_id')->exists(), 409);
         } catch (\Throwable $e) {
-            $this->end(DB::table('links')->where('id', $id)->first(), 'failed');
+            $row = DB::table('links')->where('id', $id)->first();
+            if ($row && ! $row->operation_id) {
+                $this->end($row, 'failed');
+            }
             throw $e;
         }
 
@@ -767,15 +818,30 @@ final class Links
 
             return 'failed';
         }
-        // Sent now: in the account and within the longest lifetime the workspace has now.
-        $lifetime = min((int) $link->lifetime, (int) $settings->max_lifetime);
-        DB::table('links')->where('id', $link->id)->update(['region' => $settings->region, 'account' => $settings->email, 'lifetime' => $lifetime]);
+        // Sent now: in the account and within the longest lifetime the workspace has now, read under the settings lock.
+        try {
+            $settings = DB::transaction(function () use ($link) {
+                $settings = $this->accountNow($link->workspace_id);
+                DB::table('links')->where('id', $link->id)->update(['region' => $settings->region, 'account' => $settings->email,
+                    'lifetime' => min((int) $link->lifetime, (int) $settings->max_lifetime)]);
+
+                return $settings;
+            });
+        } catch (\Throwable) {
+            $this->end($link, 'failed');
+
+            return 'failed';
+        }
         $link = DB::table('links')->where('id', $link->id)->first();
         try {
             $entry = DB::table('entries')->where('id', $link->entry_id)->where('state', 'active')->first();
             $content = $this->render($entry ?? throw new OneTimeSecretError(0), (int) $op->version, $stored['text'], $link->workspace_id);
             $this->deliver($link, $settings, $content, $stored['passphrase'] ?? null);
         } catch (\Throwable) {
+            if ($this->kept) {
+                // Sent and its receipt kept: the link is out; settle() makes it active from that receipt.
+                return 'succeeded';
+            }
             $this->end($link, 'failed');
 
             return 'failed';

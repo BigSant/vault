@@ -76,8 +76,10 @@ only with the draft that was approved: the final template (every field when no t
 are sealed with an HMAC when the request is made, and a draft that does not match is never sent. The link is handed
 to the agent only while it is allowed one-time links and, for an entry's values, still holds the grant. The
 request_id, the agent's limits and its permission are checked under the agent's row lock, the same lock Stop takes.
-A send that crashed after Onetime Secret answered is recovered from its kept receipt and followed; one that crashed
-before is failed. A link whose lifetime is over is asked about once more (read, burned or expired); while Onetime
+A new link, an account change and a send all take the workspace's settings row lock, so no link starts in an account
+that is being replaced. A send that crashed after Onetime Secret answered is recovered from its kept receipt and
+followed (a failure after the receipt was kept never ends the link); one that crashed before is failed. MCP keeps
+`text` and `passphrase` exactly as sent (no trimming). A link whose lifetime is over is asked about once more (read, burned or expired); while Onetime
 Secret does not answer its receipt is kept, for up to a week. Onetime Secret's "previewed" also covers a visit it
 counts without a state change (`view_count`, `first_access`). A plan limit (`EntitlementRequired`) is reported as a
 lifetime the plan does not allow (422 for an agent). Each link keeps the region and account it was made in:

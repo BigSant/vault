@@ -657,4 +657,15 @@ final class LinksTest extends TestCase
         $this->followingRedirects()->post($this->base.'/revoke/grants/'.$grant)
             ->assertSeeText('Grant revoked. 1 one-time link it made can still be opened: burn it on Links if needed.');
     }
+
+    public function test_the_passphrase_is_shown_once_and_mcp_keeps_spaces(): void
+    {
+        $this->setUpAccount();
+        $this->post($this->base.'/links', ['text' => 'synthetic', 'passphrase' => 'generated-phrase-1'])->assertOk()
+            ->assertSee('id="link-passphrase">generated-phrase-1</pre>', false);
+        [, $token] = $this->agent();
+        $this->withToken($token)->postJson('/api/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+            'params' => ['name' => 'vault_link_create', 'arguments' => ['text' => '  sample  ', 'passphrase' => '  phrase  ', 'request_id' => 'mcp-spaces-1']]])->assertOk();
+        $this->assertSame(['secret' => '  sample  ', 'ttl' => 86400, 'passphrase' => '  phrase  '], end($this->ots)[2]['secret']);
+    }
 }

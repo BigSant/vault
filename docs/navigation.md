@@ -201,7 +201,7 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   fails comes back in the same response (422) with the content and the note, never the passphrase (the summary says
   so), and the error summary is the usual one (`session()->now`).
 - **Link added** (the POST's response, like an agent's token): the link once, "Copy link", "I've saved it", the
-  passphrase reminder, "Do not open the link yourself: opening it uses it up.", and "Back to Links". Leaving asks
+  passphrase once with "Copy passphrase" when one was set (a generated one would otherwise be lost), "Do not open the link yourself: opening it uses it up.", and "Back to Links". Leaving asks
   "Link copied?" until it was copied.
 
 ### Agents (owner)
