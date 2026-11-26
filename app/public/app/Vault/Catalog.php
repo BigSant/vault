@@ -20,6 +20,10 @@ final class Catalog
         if (! isset($input['secret']) && isset($input['secret_fields']) && is_array($input['secret_fields'])) {
             $input['secret'] = json_encode(array_filter($input['secret_fields'], fn ($v) => is_string($v) && $v !== ''), JSON_THROW_ON_ERROR);
         }
+        // No alias given: it is made from the name (as the add form shows while typing).
+        if ((! isset($input['alias']) || (is_string($input['alias']) && trim($input['alias']) === '')) && is_string($input['name'] ?? null)) {
+            $input['alias'] = self::aliasFor($input['name']);
+        }
         $data = Validator::make($input, [
             'environment_id' => 'required|uuid', 'name' => 'required|string|max:160', 'alias' => 'required|string|max:100|regex:/^[a-zA-Z0-9_. -]+$/',
             // Type keys are lowercase only: a case-insensitive collation must never match a differently-cased key.
@@ -39,6 +43,14 @@ final class Catalog
         unset($data['secret']);
 
         return $data;
+    }
+
+    /** An alias from a name: lowercase ASCII words joined by "-" ("Šlapias Admin" → "slapias-admin"); "entry" when nothing is left. */
+    public static function aliasFor(string $name): string
+    {
+        $slug = trim(substr(\Illuminate\Support\Str::slug($name), 0, 100), '-');
+
+        return $slug === '' ? 'entry' : $slug;
     }
 
     /** The type must exist in the entry's workspace and every required field must have a value. */

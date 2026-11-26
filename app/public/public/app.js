@@ -10,6 +10,20 @@ const isoField = field => { if (field?.matches?.('input[placeholder="YYYY-MM-DD"
 // Enter in the field: the value is put right before the browser checks the pattern.
 document.addEventListener('keydown', event => { if (event.key === 'Enter') isoField(event.target); }, true);
 document.addEventListener('submit', event => event.target.querySelectorAll?.('input[placeholder="YYYY-MM-DD"]').forEach(isoField), true);
+// Add an entry: the agent alias follows the name, as lowercase ASCII words joined by "-" (the server's Catalog::aliasFor),
+// until it is changed by hand; emptied again, it follows the name again.
+const aliasSlug = value => String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100).replace(/-+$/, '');
+{
+  const alias = document.querySelector('[data-alias-from-name]');
+  const name = alias?.form?.elements.namedItem('name');
+  if (alias && name) {
+    let follows = alias.value === '' || alias.value === aliasSlug(name.value);
+    const follow = () => { if (follows) alias.value = aliasSlug(name.value); };
+    name.addEventListener('input', follow);
+    alias.addEventListener('input', () => { follows = alias.value === '' || alias.value === aliasSlug(name.value); });
+    follow();
+  }
+}
 // The buttons that send a form. form.elements, not a query inside the form: a submit button may stand outside its
 // form (form="…": Save project in a form foot).
 const submitters = form => [...form.elements].filter(el => el.matches('button:not([type=button])'));

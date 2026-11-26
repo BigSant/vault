@@ -1135,4 +1135,13 @@ final class VaultTest extends TestCase
         $this->app['auth']->logout();
         $this->withSession(['pending_user' => $this->owner->id, 'pending_at' => time(), 'pending_revision' => $this->owner->credentialRevision()])->post('/mfa',['code' => $totp->now()])->assertUnauthorized();
     }
+
+    public function test_an_entry_without_alias_gets_one_from_its_name(): void
+    {
+        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Žalias Admin — Shop (prod)', 'alias' => '', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
+        $this->assertSame('zalias-admin-shop-prod', DB::table('entries')->where('id', $id)->value('alias'));
+        $id = app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Own alias', 'alias' => 'my-own', 'type' => 'api_key', 'secret' => json_encode(['token' => 'synthetic'])]);
+        $this->assertSame('my-own', DB::table('entries')->where('id', $id)->value('alias'));
+        $this->assertSame('entry', Catalog::aliasFor('—'));
+    }
 }

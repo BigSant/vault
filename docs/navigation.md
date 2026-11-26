@@ -162,8 +162,11 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   Cancel changes nothing; after a discard the status says which fields were discarded and that the rest was kept.
   **Required markers (decided).** Every required field a person can edit in Details carries the same marker,
   `<small aria-hidden="true">required</small>` under its label (the field's own `required` is what a screen reader
-  says, once): Name, Agent alias, Project / environment and Type (the last two only
-  on the add form; on the update form they are fixed text). Tags and the rotation reminder carry none. In Secret
+  says, once): Name, Agent alias (update form only), Project / environment and Type (the last two only
+  on the add form; on the update form they are fixed text). **Agent alias on the add form** follows the name as
+  lowercase ASCII words joined by "-" ("Žalias Admin" → "zalias-admin"; app.js while typing, `Catalog::aliasFor` on
+  the server when it comes empty) until it is changed by hand; emptied again, it follows the name again. So it is not
+  required there, and its hint says "It follows the name until you change it." Tags and the rotation reminder carry none. In Secret
   values the marker is the other way round: every field is required unless it says `optional`.
 - `/workspaces/{w}/import` — paste a JSON import (editor+). Where two columns fit `--wide` the form and the Format
   reference (field table, example; the example's long lines wrap and an environment ID may break, so no value is clipped) stand side by side; below that they stack and "Format ↓" in the intro jumps

@@ -1029,9 +1029,9 @@ final class ShellTest extends TestCase
             ->assertSee('<label><span>Name <small aria-hidden="true">required</small></span><input name="name"', false)
             ->assertSee('<label><span>Project / environment <small aria-hidden="true">required</small></span><select name="environment_id" required>', false)
             ->assertSee('<label><span>Type <small aria-hidden="true">required</small></span><select name="type" id="entry-type" required>', false)
-            // The alias hint is the field's description, not part of its name.
-            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias <small aria-hidden="true">required</small></span></label><input id="entry-alias"', false)
-            ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">', false)
+            // The alias hint is the field's description, not part of its name. Adding, the alias follows the name and is not required.
+            ->assertSee('<div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias"', false)
+            ->assertSee('placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint" data-alias-from-name><small class="hint" id="entry-alias-hint">', false)
             ->assertSee('<input type="text" pattern="\d{4}-\d{2}-\d{2}" placeholder="YYYY-MM-DD"', false)->assertDontSee('type="date"', false)
             // No number pad: it may have no "-". app.js turns 20261109, 2026/11/09 and 2026.11.09 into 2026-11-09.
             ->assertDontSee('inputmode="numeric" pattern="\d{4}', false);

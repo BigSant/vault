@@ -19,7 +19,13 @@
         <legend>Details</legend>
         <label><span>Name <small aria-hidden="true">required</small></span><input name="name" value="{{ old('name', $entry?->name) }}" required maxlength="160"></label>
         {{-- The hint is the field's description (aria-describedby), not part of its name; it sits under the field. --}}
+        {{-- Adding: the alias is made from the name (app.js while typing, the server when it comes empty) until it is
+             changed by hand, so it is not required here. Updating: it is the entry's own and stays required. --}}
+        @if($entry)
         <div class="field"><label for="entry-alias"><span>Agent alias <small aria-hidden="true">required</small></span></label><input id="entry-alias" name="alias" value="{{ old('alias', $entry?->alias) }}" required maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint"><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias.</small></div>
+        @else
+        <div class="field"><label for="entry-alias"><span>Agent alias</span></label><input id="entry-alias" name="alias" value="{{ old('alias') }}" maxlength="100" placeholder="e.g. shop-stage-admin" aria-describedby="entry-alias-hint" data-alias-from-name><small class="hint" id="entry-alias-hint">Agents refer to this entry by its alias. It follows the name until you change it.</small></div>
+        @endif
         @if($entry)
             @php
                 $currentEnv = $environments->firstWhere('id', $entry->environment_id);
