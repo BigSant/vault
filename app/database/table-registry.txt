@@ -15,3 +15,7 @@ migrations               vault empty skip
 sessions                 vault empty skip
 cache                    vault empty skip
 cache_locks              vault empty skip
+entry_types              vault empty skip
+entry_changes            vault empty skip
+link_settings            vault empty skip
+links                    vault empty skip

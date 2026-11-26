@@ -10,7 +10,7 @@ final class Secrets
 {
     private ?string $token = null;
 
-    private function call(string $method, string $path, array $data = []): array
+    private function call(string $method, string $path, array $data = [], bool $missingOk = false): ?array
     {
         try {
             $client = Http::baseUrl(config('vault.bao_url').'/v1/')->timeout(5)->connectTimeout(2)->withoutRedirecting();
@@ -26,6 +26,9 @@ final class Secrets
             if ($response->status() === 400 && $method === 'POST') {
                 abort(409);
             }
+            if ($missingOk && $response->status() === 404) {
+                return null;
+            }
             if (! $response->successful()) {
                 abort(503);
             }
@@ -40,7 +43,7 @@ final class Secrets
 
     private function path(string $path): string
     {
-        abort_unless(preg_match('/^(entries|auth)\/[0-9a-f-]{36}$/D', $path), 422);
+        abort_unless(preg_match('/^(entries|auth|links|settings)\/[0-9a-f-]{36}$/D', $path), 422);
 
         return $path;
     }
@@ -67,6 +70,29 @@ final class Secrets
         }
 
         return is_array($versions) ? array_combine(array_map('intval', array_keys($versions)), array_values($versions)) : null;
+    }
+
+    /** The latest version's data, or null when nothing is stored at the path (never written, or destroyed). */
+    public function find(string $path): ?array
+    {
+        $result = $this->call('GET', 'secret/data/'.$this->path($path), missingOk: true);
+
+        return $result === null ? null : ($result['data']['data'] ?? null);
+    }
+
+    /** Writes a new version over whatever is there, still with CAS: a concurrent writer makes this fail (409). */
+    public function put(string $path, #[\SensitiveParameter] array $data): void
+    {
+        $meta = $this->call('GET', 'secret/metadata/'.$this->path($path), missingOk: true);
+        $this->write($path, $data, (int) ($meta['data']['current_version'] ?? 0));
+    }
+
+    /** Destroys the given versions of a path for good (KV v2 destroy): an older token must not stay readable. */
+    public function destroyVersions(string $path, array $versions): void
+    {
+        if ($versions) {
+            $this->call('POST', 'secret/destroy/'.$this->path($path), ['versions' => array_values(array_map('intval', $versions))]);
+        }
     }
 
     public function resetMfa(string $userId, #[\SensitiveParameter] string $seed): void

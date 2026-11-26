@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Vault\Access;
 use App\Vault\Catalog;
 use App\Vault\EntryTypes;
+use App\Vault\Links;
 use App\Vault\Operations;
 use App\Vault\Secrets;
 use App\Vault\Structure;
@@ -274,7 +275,9 @@ final class Workspace
 
         $backUrl = $this->catalogBackUrl($space->id, request()->input('from'));
 
-        return view('entry', compact('backUrl', 'entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
+        $linksReady = $role !== 'viewer' && app(Links::class)->ready($space->id);
+
+        return view('entry', compact('linksReady', 'backUrl', 'entry', 'role', 'secret', 'grants', 'events', 'operations', 'waitingCount', 'type', 'labels', 'environment', 'history', 'historyOlder', 'historyPage', 'historyHasMore', 'shownVersion', 'differs', 'space'));
     }
 
     public function reveal(Request $r, string $id)
@@ -294,7 +297,7 @@ final class Workspace
         $entry = $this->access->entry($id);
         $this->catalog->archive($id);
 
-        return redirect('/?workspace='.$entry->workspace_id);
+        return redirect('/?workspace='.$entry->workspace_id)->with('notice', self::openLinksNotice($id, 'Entry archived.'));
     }
 
     public function restoreVersion(Request $r, string $id)
@@ -319,9 +322,18 @@ final class Workspace
         $this->access->recent($r);
         $d = $r->validate(['confirmation' => 'required|in:DELETE']);
         $entry = $this->access->entry($id);
+        $open = self::openLinksNotice($id, 'Entry destroyed.');
         $this->catalog->destroy($id);
 
-        return redirect('/?workspace='.$entry->workspace_id);
+        return redirect('/?workspace='.$entry->workspace_id)->with('notice', $open);
+    }
+
+    /** One-time links that hold this entry's values are not taken back by archiving or destroying it: say so. */
+    private static function openLinksNotice(string $entry, string $done): ?string
+    {
+        $open = Links::openForEntry($entry);
+
+        return $open ? $done.' '.$open.' one-time '.Str::plural('link', $open).' with its values can still be opened: burn '.($open === 1 ? 'it' : 'them').' on Links if needed.' : null;
     }
 
     private function workspaceEnvironments(string $workspace)
@@ -382,7 +394,10 @@ final class Workspace
             ->join('environments', 'environments.id', '=', 'entries.environment_id')
             ->join('projects', 'projects.id', '=', 'environments.project_id')
             ->where('machines.workspace_id', $workspace)->where('projects.workspace_id', $workspace)
-            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project')
+            // A one-time link request also says what the link would hold: field names, lifetime, passphrase (no values).
+            ->leftJoin('links', 'links.operation_id', '=', 'operations.id')
+            ->select('operations.*', 'machines.name as agent', 'entries.name as entry', 'environments.name as environment', 'environments.production', 'projects.name as project',
+                'links.fields as link_fields', 'links.lifetime as link_lifetime', 'links.passphrase as link_passphrase')
             ->orderByDesc('operations.created_at')->orderByDesc('operations.id');
     }
 
@@ -419,13 +434,15 @@ final class Workspace
     public function agents(string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
-        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at')
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at', 'links')
             ->selectSub(DB::table('grants')->selectRaw('COUNT(*)')->whereColumn('machine_id', 'machines.id')
                 ->whereNull('grants.revoked_at')->where('grants.expires_at', '>', now())
                 ->whereNull('machines.revoked_at')->where('machines.expires_at', '>', now()), 'active_grants')
             ->orderBy('name')->get();
 
-        return view('agents', compact('space', 'machines'));
+        $linksReady = (bool) app(Links::class)->ready($workspace);
+
+        return view('agents', compact('space', 'machines', 'linksReady'));
     }
 
     private function grantStatus(object $grant): void
@@ -461,6 +478,9 @@ final class Workspace
             ->orderByRaw('CASE WHEN grants.revoked_at IS NULL AND machines.revoked_at IS NULL AND grants.expires_at > ? AND machines.expires_at > ? THEN 0 ELSE 1 END', [now(), now()])
             ->orderBy('machines.name')->orderBy('grants.action')->orderBy('grants.id')->get()->each(fn ($grant) => $this->grantStatus($grant));
         $actions = $this->ops->definitions();
+        if (! app(Links::class)->ready($workspace)) {
+            unset($actions[Links::ACTION]);
+        }
         $types = $this->types->all($workspace);
         $typeNames = $types->pluck('name', 'key');
         $typeFields = $types->mapWithKeys(fn ($type) => [$type->key => array_column(array_filter($type->fields, fn ($field) => $field['required']), 'key')]);
@@ -519,13 +539,17 @@ final class Workspace
     {
         $space = $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
-        $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30']);
+        $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30', 'links' => 'nullable|in:1']);
         $token = bin2hex(random_bytes(32));
         $id = (string) Str::uuid();
         $expiresAt = now()->addDays((int) $d['days']);
         DB::transaction(function () use ($id, $workspace, $d, $token, $expiresAt) {
-            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => $expiresAt, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => $expiresAt,
+                'links' => isset($d['links']), 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($workspace, 'machine.create', $id);
+            if (isset($d['links'])) {
+                $this->access->audit($workspace, 'machine.links_allow', $id);
+            }
         });
 
         return view('token', ['token' => $token, 'id' => $id, 'space' => $space, 'name' => $d['name'], 'expiresAt' => $expiresAt]);
@@ -540,8 +564,15 @@ final class Workspace
         abort_unless($entry->workspace_id === $workspace, 404);
         abort_unless(DB::table('machines')->where('id', $d['machine_id'])->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->exists(), 404);
         $definition = $this->ops->definitions()[$d['action']] ?? null;
-        if (! $definition) {
+        if (! $definition || ($d['action'] === Links::ACTION && ! app(Links::class)->ready($workspace))) {
             throw ValidationException::withMessages(['action' => 'Choose an available action.']);
+        }
+        if ($d['action'] === Links::ACTION && ! DB::table('machines')->where('id', $d['machine_id'])->value('links')) {
+            throw ValidationException::withMessages(['action' => 'This agent may not create one-time links. Allow them on Identities first.']);
+        }
+        // A link with an entry's values can be opened by the agent itself: an owner approves every one.
+        if ($d['action'] === Links::ACTION && ! isset($d['approval'])) {
+            throw ValidationException::withMessages(['approval' => 'onetimesecret.link puts the entry\'s values in a link the agent receives, so it always asks for approval. Tick Require owner approval for every run.']);
         }
         // The action reads these fields from the secret, so the entry's type must require them.
         $type = $this->types->find($workspace, $entry->type);
@@ -584,7 +615,14 @@ final class Workspace
         });
 
         // The broker rechecks authorization before network requests and every second while waiting.
-        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'));
+        // Links already out are not taken back by a revoke: the notice names them, Links burns them.
+        $open = $kind === 'machines' ? Links::openOf($id)
+            : ($row->action === Links::ACTION ? DB::table('links')->where('machine_id', $row->machine_id)->where('entry_id', $row->entry_id)->whereIn('state', ['sending', 'active', 'previewed'])->count() : 0);
+        $what = $kind === 'machines' ? 'Agent '.$machine->name.' revoked. '.$open.' of its one-time links' : 'Grant revoked. '.$open.' one-time '.Str::plural('link', $open).' it made';
+        $what = $open === 1 && $kind === 'machines' ? 'Agent '.$machine->name.' revoked. 1 of its one-time links' : $what;
+
+        return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'))
+            ->with('notice', $open ? $what.($open === 1 ? ' can still be opened: burn it on Links if needed.' : ' can still be opened: burn them on Links if needed.') : null);
     }
 
     public function decision(Request $r, string $workspace, string $id)
@@ -603,6 +641,11 @@ final class Workspace
             }
             $this->access->audit($workspace, 'operation.'.$d['decision'], $id);
         });
+        // A one-time link is sent as soon as it is allowed, so the agent finds it ready on its next check.
+        $op = DB::table('operations')->where('id', $id)->first();
+        if ($op->action === Links::ACTION && $op->state === 'approved') {
+            $this->ops->status(DB::table('machines')->where('id', $op->machine_id)->first(), $id);
+        }
 
         return $this->afterDecision($r, $workspace);
     }
@@ -670,6 +713,9 @@ final class Workspace
         $types = DB::table('entry_types')->where('workspace_id', $workspace)
             ->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('key', $ids))->get(['id', 'key', 'name']);
         $typeNames = $types->pluck('name', 'id')->union($types->pluck('name', 'key'));
+        // A one-time link is named by its note, else its entry; it leads to Links.
+        $links = DB::table('links')->leftJoin('entries', 'entries.id', '=', 'links.entry_id')->where('links.workspace_id', $workspace)
+            ->whereIn('links.id', $ids)->get(['links.id', 'links.note', 'entries.name'])->mapWithKeys(fn ($l) => [$l->id => $l->note ?? $l->name ?? 'One-time link']);
         foreach ($events as $event) {
             $event->actor_kind = match (Str::before($event->actor, ':')) {
                 'machine' => 'agent', 'user' => 'user', default => 'system',
@@ -677,9 +723,11 @@ final class Workspace
             $event->actor_label = $names[$event->actor] ?? $event->actor_kind;
             $entry = $related[$event->subject] ?? $event->subject;
             $event->subject_label = $entryNames->get($entry) ?? $agents->get($event->subject)
-                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null);
+                ?? $subjects->get($event->subject) ?? (str_starts_with($event->event, 'type.') ? $typeNames->get($event->subject) : null)
+                ?? $links->get($event->subject) ?? ($event->event === 'links.settings' ? 'Onetime Secret account' : null);
             $event->subject_url = $entryNames->has($entry) ? '/entries/'.$entry
-                : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject : null);
+                : ($agents->has($event->subject) ? '/workspaces/'.$workspace.'/agents#agent-'.$event->subject
+                : ($links->has($event->subject) ? '/workspaces/'.$workspace.'/links' : null));
         }
     }
 
@@ -688,7 +736,8 @@ final class Workspace
         return $query->where(function ($subjects) use ($id) {
             $subjects->where('subject', $id)
                 ->orWhereIn('subject', DB::table('operations')->select('id')->where('entry_id', $id))
-                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id));
+                ->orWhereIn('subject', DB::table('grants')->select('id')->where('entry_id', $id))
+                ->orWhereIn('subject', DB::table('links')->select('id')->where('entry_id', $id));
         });
     }
 
@@ -700,7 +749,7 @@ final class Workspace
         $names = $this->actorNames($workspace, $actors);
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
-            'request' => ['operation'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+            'request' => ['operation'], 'link' => ['link', 'links'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
         $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'];
         $rules = ['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)),
             'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:'.implode(',', array_keys($outcomeLabels)),

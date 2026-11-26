@@ -96,11 +96,15 @@
                 $state = $state === 'revoked' ? 'cancelled' : $state;
             }
             $rid = substr($o->id, 0, 8);
-            $what = $o->agent.' runs '.$o->action.' on '.$o->entry.' — '.$o->project.' / '.$o->environment.', request '.$rid;
+            // A one-time link: which fields it would hold, how long it lives and whether a passphrase guards it.
+            $linkParts = ($o->link_lifetime ?? null) !== null ? ['fields '.(implode(', ', json_decode((string) $o->link_fields, true) ?: []) ?: 'none'),
+                \App\Vault\OneTimeSecret::LIFETIMES[$o->link_lifetime] ?? $o->link_lifetime.' s', $o->link_passphrase ? 'passphrase' : 'no passphrase'] : null;
+            $linkWhat = $linkParts ? implode(' · ', $linkParts) : null;
+            $what = $o->agent.' runs '.$o->action.' on '.$o->entry.' — '.$o->project.' / '.$o->environment.($linkWhat ? ' ('.$linkWhat.')' : '').', request '.$rid;
         @endphp
         <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-what="{{ $o->action }} on {{ $o->entry }} (request {{ $rid }})" data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
             <td class="who" data-label="Agent"><b>{{ $o->agent }}</b></td>
-            <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{{ $o->action }}</code><small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
+            <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{!! str_replace('.', '.<wbr>', e($o->action)) !!}</code>@if($linkParts)<span class="link-what">{{ $linkParts[0] }} · <span class="nobreak">{{ $linkParts[1] }}</span> · <span class="nobreak">{{ $linkParts[2] }}</span></span>@endif<small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><span class="k" aria-hidden="true">&nbsp;·</span><small>{{ $o->project }}&nbsp;/ @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>
@@ -112,7 +116,7 @@
                 {{-- The deadline belongs to the decision: it stands above the controls, so Requested is one date wide. --}}
                 <span class="line expires"><small class="k keep">Expires</small> <span class="nobreak">{{ $time($o->expires_at) }} <small class="k">UTC</small></span> <span class="left" hidden></span></span>
                 {{-- What a held decision is about: app.js shows it beside the held button in the password block. --}}
-                <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
+                <template data-held-summary><b class="name">{{ $o->agent }}</b> requests <code>{{ $o->action }}</code>@if($linkWhat) ({{ $linkWhat }})@endif&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="name">{{ $o->entry }}</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">{{ $o->project }} / @include('sign', ['production' => $o->production, 'name' => $o->environment])</span>&nbsp;<span class="sep" aria-hidden="true">·</span> <span class="nobreak">Request {{ $rid }}</span></template>
                 @if($o->state === 'pending')
                     <form class="controls" method="post" action="/workspaces/{{ $workspace }}/operations/{{ $o->id }}/decision" data-confirm-from="confirm-decide">@csrf @isset($back)<input type="hidden" name="back" value="{{ $back }}">@endisset<button class="ok" name="decision" value="approve" aria-label="Allow once: {{ $what }}" data-held-name="Allow once: {{ $o->action }}, request {{ $rid }}">Allow once</button><button class="stop" name="decision" value="deny" aria-label="Deny: {{ $what }}" data-held-name="Deny: {{ $o->action }}, request {{ $rid }}">Deny</button></form>
                 @else

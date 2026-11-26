@@ -82,7 +82,13 @@ def initialize():
     policies = {
         'app': 'path "secret/data/entries/*" { capabilities=["create","read","update"] }\n'
                'path "secret/metadata/entries/*" { capabilities=["read","delete"] }\n'
-               'path "secret/data/auth/*" { capabilities=["create","read","update"] }\n',
+               'path "secret/data/auth/*" { capabilities=["create","read","update"] }\n'
+               # One-time links (content until sent, receipt, passphrase) and the Onetime Secret API token.
+               'path "secret/data/links/*" { capabilities=["create","read","update"] }\n'
+               'path "secret/metadata/links/*" { capabilities=["read","delete"] }\n'
+               'path "secret/data/settings/*" { capabilities=["create","read","update"] }\n'
+               'path "secret/metadata/settings/*" { capabilities=["read","delete"] }\n'
+               'path "secret/destroy/settings/*" { capabilities=["update"] }\n',
         'broker': 'path "secret/data/entries/*" { capabilities=["read"] }\n'
                   'path "database/creds/vault-*" { capabilities=["read"] }\n'
                   'path "auth/token/revoke-self" { capabilities=["update"] }\n',
@@ -163,6 +169,8 @@ def main():
         path=RECOVERY/'recovered-user.json'
         save(path,json.dumps({'email':sys.argv[2],'password':password}))
         print('Temporary credentials saved privately at',path,'; enroll MFA in WEB, then delete this file.')
+    elif command == 'links':
+        subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','vault:links'],check=True)
     elif command == 'maintenance':
         import time
         subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','vault:maintenance'],check=True)

@@ -36,6 +36,7 @@
     </div>
     @endif
 </div>
+@include('notice')
 @if($space)
 @unless($archived)
 <div class="stats entry-stats">

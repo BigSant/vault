@@ -2,6 +2,7 @@
 
 use App\Http\Account;
 use App\Http\Identity;
+use App\Http\Sharing;
 use App\Http\Workspace;
 use App\Vault\Operations;
 use Illuminate\Http\Request;
@@ -29,6 +30,11 @@ Route::get('/internal/operations/{id}', function (Request $r, string $id, Operat
     abort_unless(hash_equals(trim(file_get_contents(config('vault.broker_key'))), (string) $r->bearerToken()), 401);
     $op = $ops->authorized($id);
 
+    // A one-time link is sent by the app itself: the broker never reads an entry for it.
+    if ($op && $op->action === \App\Vault\Links::ACTION) {
+        $op = null;
+    }
+
     return $op ? ['allowed' => true, 'entry_id' => $op->entry_id, 'version' => (int) $op->version, 'action' => $op->action] : ['allowed' => false];
 })->whereUuid('id');
 Route::middleware('vault.auth')->group(function () {
@@ -46,6 +52,15 @@ Route::middleware('vault.auth')->group(function () {
     Route::get('/workspaces/{workspace}/agents', [Workspace::class, 'agents'])->whereUuid('workspace');
     Route::get('/workspaces/{workspace}/grants', [Workspace::class, 'grants'])->whereUuid('workspace');
     Route::get('/workspaces/{workspace}/members', [Workspace::class, 'members'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/links', [Sharing::class, 'index'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/links', [Sharing::class, 'store'])->whereUuid('workspace')->middleware('throttle:sensitive');
+    Route::post('/workspaces/{workspace}/links/check', [Sharing::class, 'check'])->whereUuid('workspace')->middleware('throttle:sensitive');
+    Route::post('/workspaces/{workspace}/links/{id}/burn', [Sharing::class, 'burn'])->whereUuid(['workspace', 'id']);
+    Route::get('/workspaces/{workspace}/onetimesecret', [Sharing::class, 'settings'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/onetimesecret', [Sharing::class, 'saveSettings'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/onetimesecret/remove', [Sharing::class, 'removeSettings'])->whereUuid('workspace');
+    Route::post('/workspaces/{workspace}/onetimesecret/check', [Sharing::class, 'checkSettings'])->whereUuid('workspace')->middleware('throttle:sensitive');
+    Route::post('/workspaces/{workspace}/machines/{id}/links', [Sharing::class, 'machine'])->whereUuid(['workspace', 'id']);
     Route::post('/workspaces/{workspace}/projects', [Workspace::class, 'project']);
     Route::post('/workspaces/{workspace}/environments', [Workspace::class, 'environment']);
     Route::get('/workspaces/{workspace}/structure', [Workspace::class, 'structurePage'])->whereUuid('workspace');

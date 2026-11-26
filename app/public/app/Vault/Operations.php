@@ -19,7 +19,14 @@ final class Operations
             abort(503);
         }
 
-        return $config['actions'] ?? [];
+        // onetimesecret.link is Vault's own action (Links): it never reaches the broker and needs no connector.
+        return array_diff_key($config['actions'] ?? [], [Links::ACTION => true]) + [Links::ACTION => ['kind' => 'onetimesecret']];
+    }
+
+    /** Active grants of this agent on active entries of its workspace. */
+    public function grantRows(object $machine)
+    {
+        return $this->grantQuery()->where('machines.id', $machine->id);
     }
 
     private function grantQuery()
@@ -84,8 +91,22 @@ final class Operations
 
     public function execute(object $machine, string $entry, string $action, string $requestId): array
     {
+        // A one-time link carries content: it is asked for with vault_link_create, never with execute.
+        abort_if($action === Links::ACTION, 422);
+        $op = $this->open($machine, $entry, $action, $requestId);
+
+        return $this->status($machine, $op->id);
+    }
+
+    /**
+     * Opens a request (or returns the one this request_id already opened). $created runs inside the same transaction
+     * with the new row, so whatever belongs to the request is written together with it.
+     */
+    public function open(object $machine, string $entry, string $action, string $requestId, ?\Closure $created = null): object
+    {
         abort_unless(preg_match('/^[A-Za-z0-9_-]{8,80}$/D', $requestId), 422);
-        $op = DB::transaction(function () use ($machine, $entry, $action, $requestId) {
+
+        return DB::transaction(function () use ($machine, $entry, $action, $requestId, $created) {
             DB::table('machines')->where('id', $machine->id)->lockForUpdate()->first();
             $prior = DB::table('operations')->where('machine_id', $machine->id)->where('request_id', $requestId)->first();
             if ($prior) {
@@ -99,14 +120,17 @@ final class Operations
             abort_if(DB::table('operations')->where('machine_id', $machine->id)->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '>', now())->count() >= 5, 429);
             $id = (string) Str::uuid();
             DB::table('operations')->insert(['id' => $id, 'machine_id' => $machine->id, 'grant_id' => $grant->id, 'entry_id' => $entry, 'action' => $action,
-                'version' => $grant->version, 'state' => $grant->approval ? 'pending' : 'approved', 'request_id' => $requestId,
+                // A one-time link with an entry's values is approved by an owner every time, whatever the grant says.
+                'version' => $grant->version, 'state' => $grant->approval || $action === Links::ACTION ? 'pending' : 'approved', 'request_id' => $requestId,
                 'expires_at' => now()->addMinutes(5), 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($machine->workspace_id, 'operation.request', $id, 'ok', 'machine:'.$machine->id);
+            $op = DB::table('operations')->where('id', $id)->first();
+            if ($created) {
+                $created($op);
+            }
 
-            return DB::table('operations')->where('id', $id)->first();
+            return $op;
         });
-
-        return $this->status($machine, $op->id);
     }
 
     public function status(object $machine, string $id): array
@@ -121,8 +145,16 @@ final class Operations
             } elseif ($op->state === 'approved') {
                 // Claim once before dispatch. A crash in this window fails closed rather than replaying side effects.
                 $claimed = DB::table('operations')->where('id', $id)->where('state', 'approved')->update(['state' => 'running', 'updated_at' => now()]);
-                if ($claimed) {
+                if ($claimed && $op->action === Links::ACTION) {
+                    $this->terminal($op, app(Links::class)->send($op), $machine);
+                } elseif ($claimed) {
                     $this->broker('POST', '/operations', ['id' => $id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
+                }
+            } elseif ($op->action === Links::ACTION && $op->state === 'running') {
+                // Sending a link takes seconds and happens inside the claim. Still running long after: that claim
+                // crashed. Fail closed; the content is never sent twice.
+                if (strtotime($op->updated_at) <= time() - 60) {
+                    $this->terminal($op, 'failed', $machine);
                 }
             } elseif (in_array($op->state, ['running', 'requires_user_action'])) {
                 $result = $this->broker('GET', '/operations/'.$id);
@@ -148,7 +180,7 @@ final class Operations
                 $this->access->audit($machine->workspace_id, 'operation.finish', $op->id, $state, 'machine:'.$machine->id);
             }
         });
-        if (in_array($state, ['revoked', 'expired'])) {
+        if (in_array($state, ['revoked', 'expired']) && $op->action !== Links::ACTION) {
             $this->broker('POST', '/operations/'.$op->id.'/cancel');
         }
     }

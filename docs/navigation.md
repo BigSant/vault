@@ -25,6 +25,10 @@ Use these words in every UI text. Code names may differ.
 - **Agent** — a machine identity with a bearer token. The tab listing agents is **Identities**; its rows and its
   empty state still say "agent" ("No agents yet.").
 - **Grant** — one agent may run one action with one entry. Not "permission".
+- **One-time link** — a link made with the workspace's Onetime Secret account that opens once. Its list is
+  **Links**; removing an unread one early is **Burn** ("Burned one-time link"). Its states read "waiting for
+  approval", "not opened", "previewed", "read", "burned", "expired", "cancelled", "failed". The service is named
+  **Onetime Secret** (two words), as it names itself.
 - **Request** — an agent asking to run a granted action (an `operations` row). Not "operation".
   States read "waiting for approval" (`pending`) and "needs MFA code" (`requires_user_action`).
 - **Password confirmation** — the one name for the 5-minute confirmation before sensitive actions (Account row,
@@ -51,7 +55,7 @@ Use these words in every UI text. Code names may differ.
 ## Header (every signed-in page)
 
 ```
-VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity        [name ▾]
+VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · Activity        [name ▾]
 ```
 
 - **Workspace switcher** (`<details>` menu): the user's workspaces with their role, the current one marked, and
@@ -64,13 +68,15 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   | Item | Pages it is active on | Roles |
   |---|---|---|
   | Entries | `/`, `/entries/*`, `/workspaces/{w}/import` | all |
+  | Links   | `/workspaces/{w}/links` | owner, editor |
   | Agents  | `/workspaces/{w}/requests`, `/agents`, `/grants` | owner |
   | Members | `/workspaces/{w}/members` | owner |
-  | Setup   | `/workspaces/{w}/structure`, `/types` | owner, editor |
+  | Setup   | `/workspaces/{w}/structure`, `/types`, `/onetimesecret` (owner) | owner, editor |
   | Activity | `/workspaces/{w}/audit` | owner |
 
   The Agents item carries a count chip when requests wait for a decision or an MFA code. A role with a single
-  nav item (viewer) gets no nav row. The count stays current without a reload on every page of an owner: the pages
+  nav item (viewer) gets no nav row. On phones (600 px and below) an owner's six items are two even rows of three
+  (a grid), never five and one left over. The count stays current without a reload on every page of an owner: the pages
   that refresh their requests swap the nav with them; every other page asks `GET /workspaces/{w}/waiting`
   (`{"waiting": N}`, owners only, 404 otherwise) once a minute while it is visible, changes only the chip, never
   while the focus is in the nav, and stops after 15 minutes without a key or pointer press so an unattended page
@@ -165,6 +171,39 @@ VAULT  [workspace ▾]   Entries · Agents (2) · Members · Setup · Activity  
   line. The form's Environment IDs and Type keys folds open from the links in the Format table, also
   on a second press after one was closed by hand.
 
+### Links (owner, editor)
+
+- `/workspaces/{w}/links` — one-time links made with the workspace's Onetime Secret account, by people and by
+  agents. Head row "+ Add a link"; one sentence on what a link is; then "Check now" (asks Onetime Secret for the state
+  of up to 50 open links; the page itself never calls the service) with the note that explains "previewed" and
+  "read"; the board; "Add a link". Without an account the page says "Onetime Secret is not set up." and links an
+  owner to Setup (an editor reads "An owner sets up the account in Setup."). Board columns: Link (the note, else the
+  entry as a link, else "Text only"; under it the entry when the note took the first line, the field names the
+  content used, and a `passphrase` chip), Made by (a person, or an agent with the `agent` chip), Made (UTC), End
+  date (UTC) ("Expires …" while it can be opened, "Expired …", "Ended …" once read or burned; a link waiting for
+  approval reads "1 day once allowed", one being sent "1 day once sent"), State, and Burn (Cancel while waiting for
+  approval). "Check now" says how many it checked, and when Onetime Secret did not answer for some, that their states
+  are as last checked. Burn records what Onetime Secret confirms ("burned", or "read" when the recipient was first);
+  without the receipt, or for a link made in an earlier account, it says so and changes nothing; a row that ended
+  while the page was open says "This link had already ended (…)" instead of an error. "read" is a muted chip, except
+  for an agent's link that held an entry's values: there it is amber, because that is the news. A link made in an
+  earlier account carries an "earlier account" chip and no Burn (Vault can no longer reach it); "Check now" counts
+  those apart. A Burn that could not be done says why in a red callout above the list (`session('alert')`), never in
+  the form error summary. Archiving or destroying an entry, revoking an agent or a `onetimesecret.link` grant, and
+  Stop say in their notice how many links holding values can still be opened. An owner burns any link,
+  an editor the ones they made. Open links come first, then the newest. As a card: the link with its state at the
+  right, who and when, then the end date with Burn at the right.
+- **Add a link.** Content (a textarea; required without an entry), Lifetime (the workspace's choices up to its
+  longest), Passphrase (optional, with Generate and Reveal; "send it another way than the link"), Note (optional,
+  "never put a secret here"), the form's own password block. From an entry ("Share as a one-time link →" under its
+  Secret values, editors) the form names the entry, offers "Text only instead", and starts with one line per field,
+  "Label: {{key}}"; the hint lists the entry's field keys. **The content is never put in the session:** a form that
+  fails comes back in the same response (422) with the content and the note, never the passphrase (the summary says
+  so), and the error summary is the usual one (`session()->now`).
+- **Link added** (the POST's response, like an agent's token): the link once, "Copy link", "I've saved it", the
+  passphrase once with "Copy passphrase" when one was set (a generated one would otherwise be lost), "Do not open the link yourself: opening it uses it up.", and "Back to Links". Leaving asks
+  "Link copied?" until it was copied.
+
 ### Agents (owner)
 
 Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
@@ -201,7 +240,13 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   possible. A manual check that leaves a row in use as it is names it: "Request 5cda3b60 will update when you
   leave this row."
 - `/workspaces/{w}/agents` — agent identities: state, expiry, how many active grants each has (links to Grants
-  filtered by that agent), Revoke; the "Add an agent" form. Creating an agent shows the one-time token page.
+  filtered by that agent), whether it may create one-time links (column "One-time links": "allowed" / "not allowed"
+  with Allow / Stop, only once Onetime Secret is set up; held like Revoke, "Allow one-time links: <agent>"), Revoke;
+  the "Add an agent" form (with "May create one-time links" once set up, its hint saying what it allows). Under the
+  board one note says what the permission allows. Stop and Revoke say, in the page's notice, how many of the agent's
+  links can still be opened. While any agent holds an active `onetimesecret.link` grant, the footer line reads
+  "Secret values stay in the vault. Agents get action results, and one-time links with values only after your
+  approval." Creating an agent shows the one-time token page.
   Its next steps are "Add a grant" (Grants for that agent) and "Back to Identities". Until the token is
   copied, every link out of that page (header, tabs, both next steps) and Sign out asks "Token copied?" in the
   two-step pattern (an armed link reads "Leave this page" and is named "Leave this page: <link text>"); a copy that worked lifts the guard, and "I've saved it" lifts it for a token copied by hand.
@@ -218,6 +263,12 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
   the block says "<agent> may run <action> · <entry> · <project> / <environment> · valid for N days · asks every
   time" (the form's own `<template data-held-summary>`, filled from its fields by app.js and following them while
   held); it is the button's description (`aria-describedby`).
+- The grant action `onetimesecret.link` (listed once Onetime Secret is set up) lets an agent put that entry's
+  values into a one-time link; the agent must also be allowed one-time links on Identities ("This agent may not
+  create one-time links. Allow them on Identities first."). With "Require owner approval" every such link is a
+  request on Requests, like any action. Its row there says what the link would hold, under the action: "fields
+  username, password · 3 days · passphrase" at normal weight on a line of its own (also in the held summary and the
+  decision's accessible name). Action codes may break after their dots (`<wbr>`), never inside a word that fits.
 - `/workspaces/{w}/settings` — old address; redirects to Requests.
 
 ### Members (owner)
@@ -232,7 +283,7 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 ### Setup (owner, editor)
 
-Two tabs under the h1 "Setup": **Projects · Entry types**.
+Tabs under the h1 "Setup": **Projects · Entry types**, and for an owner **Onetime Secret**.
 
 - `/workspaces/{w}/structure` — the project cards right under the tabs, with no h2 of their own (each project a
   card with Edit folds; the cards are a `.deck`, two side by side at `--wide` and one column below), then the h2
@@ -249,6 +300,17 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
   One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
   after the confirmation expired is held as "Save entry type Login", "Remove entry type Login" or "Add entry type
   FTP server". New field rows start with Required unchecked, in a fold and in the add form alike.
+
+- `/workspaces/{w}/onetimesecret` (owner; 404 for an editor, who does not get the tab) — the account one-time
+  links are made with. While set up: the facts (Region, Account email, API token "Saved <date> UTC", Lifetimes) and
+  "Check account" (signs in, creates nothing), then "Change the account"; before: one sentence on what to prepare and
+  "Set up the account". The form: Region, Account email, API token (required the first time, then "Leave blank to
+  keep"; stored in OpenBao `settings/<workspace>`, never shown again), Default lifetime, Longest lifetime, the form's
+  own password block, "Save account". While links of the current account are open, a "Change anyway" checkbox
+  (with a hint naming how many) stands above the password block: moving to another region or email without it is a
+  validation error, because Vault cannot check or burn those links afterwards; a new token for the same account
+  needs nothing. While set up, "Remove account" (a `stop` button with the two-step question, no
+  password: it only takes the ability away and deletes the token) stands under "Check account".
 
 ### Activity (owner)
 
@@ -291,7 +353,8 @@ Two tabs under the h1 "Setup": **Projects · Entry types**.
 | Shell, account, confirm | `layout`, `account`, `confirm`, `workspace-new`, `error`, `tabs` partial | `Account::*`, `Identity::confirm` |
 | Entries | `catalog`, `entry`, `entry-form`, `import` | `Workspace::index`, `entryForm`, `detail`, `importForm` |
 | Agents, members | `requests`, `agents`, `grants`, `members`, `token`, `operations` and `end-date` partials | `Workspace::requests`, `agents`, `grants`, `members`, `settings` |
-| Setup | `structure`, `types` | `Workspace::structurePage`, `typesPage` |
+| Setup | `structure`, `types`, `onetimesecret` | `Workspace::structurePage`, `typesPage`, `Sharing::settings` |
+| Links | `links`, `link-created`, `notice` partial | `Sharing::index`, `store`, `check`, `burn`, `machine` |
 
 ## House rules
 

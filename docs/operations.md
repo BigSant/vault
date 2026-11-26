@@ -10,6 +10,16 @@ OpenBao AppRole tokens have a 5-minute TTL. The web app reads and writes entries
 
 On existing installations, the OpenBao KV v2 limit `max_versions=1000` takes effect after updating `secret/config`. For local/test, rerun `bin/vault install` with the selected `VAULT_ENV`. For stage/prod, run `bin/vault initialize` with the appropriate `VAULT_ENV`. OpenBao backups grow as entry versions accumulate.
 
+**One-time links (Onetime Secret).** The application's OpenBao policy also covers `secret/data/links/*`,
+`secret/metadata/links/*` (read, delete) and `secret/data/settings/*`. On an existing installation, rerun
+`bin/vault install` (local/test) or `bin/vault initialize` (stage/prod) once, so the policy is rewritten, then run
+the migrations. The PHP container calls `https://REGION.onetimesecret.com` directly and needs outbound HTTPS to that
+one host. `bin/vault links` (artisan `vault:links`; install `ops/vault-links.timer`, every 10 minutes) ends links
+whose lifetime is over (asking the receipt first, so a link read before its end is recorded as read), checks the open
+ones and records `link.read` / `link.previewed` in the activity log as they happen; `vault:maintenance` also retries
+destroying what OpenBao still holds for ended links. Removing the account (Setup › Onetime Secret) deletes the token
+with all its versions; a new token replaces the old one the same way.
+
 ## Backup and full restore
 
 ```bash
