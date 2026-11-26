@@ -1,5 +1,8 @@
 """Isolated action executor. Public results contain states only, never upstream bytes."""
 import asyncio
+import base64
+import binascii
+from datetime import datetime, timedelta, timezone
 import hmac
 import html
 import json
@@ -9,8 +12,9 @@ import uuid
 import pymysql
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from browser_policy import origin, request_allowed
-from urllib.parse import urljoin
+import handoff
+from browser_policy import origin, registered, request_allowed, static_allowed, static_request
+from urllib.parse import quote, quote_plus, urljoin, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -34,6 +38,17 @@ async def authorized(op):
         response = await client.get(os.environ['APP_URL'] + '/internal/operations/' + op['id'], headers={'Authorization': 'Bearer ' + key()})
         data = response.json() if response.status_code == 200 else {}
         return data.get('allowed') is True and all(data.get(k) == op[k] for k in ('entry_id', 'version', 'action'))
+
+
+async def notify(op, body):
+    """Tells the application about a handoff file (written, removed). Only 200 with ok=true counts."""
+    try:
+        async with httpx.AsyncClient(trust_env=False, timeout=5, follow_redirects=False) as client:
+            response = await client.post(os.environ['APP_URL'] + '/api/internal/operations/' + op['id'] + '/handoff',
+                                         json=body, headers={'Authorization': 'Bearer ' + key()})
+            return response.status_code == 200 and response.json().get('ok') is True
+    except Exception:
+        return False
 
 
 async def secret(op):
@@ -99,7 +114,7 @@ async def database_action(action, value):
             revoked.raise_for_status()
 
 
-async def browser_action(op, action, value):
+async def browser_action(op, action, value, capture=None):
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, chromium_sandbox=True, proxy={'server': proxy},
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
@@ -120,7 +135,15 @@ async def browser_action(op, action, value):
                 response=None
                 try:
                     request=request_route.request
-                    allowed=request.frame==page.main_frame and request_allowed(action,request.url,request.method) and await authorized(op)
+                    navigation=request.is_navigation_request()
+                    static=static_allowed(action,request.url,request.method,request.resource_type,navigation)
+                    if request.frame==page.main_frame and not static and not request_allowed(action,request.url,request.method) \
+                            and static_request(action,request.method,request.resource_type,navigation):
+                        # A static GET outside the registered origins (analytics, a font CDN) is dropped before it
+                        # leaves; it is not a reason to fail the login.
+                        with suppress(Exception):await request_route.abort()
+                        return
+                    allowed=request.frame==page.main_frame and (static or request_allowed(action,request.url,request.method)) and await authorized(op)
                     if not allowed:
                         await deny(request_route);return
                     # continue_ may follow redirects without another interception. Fetch one
@@ -128,6 +151,10 @@ async def browser_action(op, action, value):
                     response=await request_route.fetch(max_redirects=0,timeout=12000)
                     if 'attachment' in response.headers.get('content-disposition','').lower():
                         await deny(request_route);return
+                    if response.status in (301,302,303,307,308) and static:
+                        # A static subresource is never followed to another place.
+                        with suppress(Exception):await request_route.abort()
+                        return
                     if response.status in (301,302,303,307,308):
                         location=response.headers.get('location','')
                         method='GET' if response.status==303 or response.status in (301,302) and request.method=='POST' else request.method
@@ -174,42 +201,166 @@ async def browser_action(op, action, value):
                 await page.locator(action['mfa_submit_selector']).click()
                 op['state'] = 'running'
             await page.locator(action['success_selector']).wait_for()
-            return await page.locator(action['success_selector']).inner_text() == action['success_text']
+            ok = await page.locator(action['success_selector']).inner_text() == action['success_text']
+            if ok and capture is not None and not op.get('policy_denied'):
+                capture.update(await context.storage_state())
+            return ok
         finally:
             await context.close()
             await browser.close()
 
 
+HANDOFF_KINDS = ('storage_state',)
+LOGIN_SECONDS = 180
+
+
+def lease_seconds(action):
+    """The connector's ttl_seconds (default 900): a whole number from 1 to 1800, anything else is refused."""
+    value = action.get('ttl_seconds', 900)
+    if type(value) is not int or not 1 <= value <= 1800:
+        raise ValueError()
+    return value
+
+
+def encodings(secret):
+    """The forms a page could store a value in: plain, JSON-escaped, URL-encoded, hex and base64 at every alignment."""
+    raw = secret.encode()
+    forms = {raw, json.dumps(secret)[1:-1].encode(), quote(secret, safe='').encode(), quote_plus(secret).encode(),
+             quote(secret, safe="-_.!~*'()").encode(), binascii.hexlify(raw)}
+    for offset in range(3):
+        encoded = base64.b64encode(b'\0' * offset + raw)
+        first, last = (offset + 2) // 3, (offset + len(raw)) // 3
+        core = encoded[first * 4:last * 4]
+        if len(core) >= 8:
+            forms |= {core, core.translate(bytes.maketrans(b'+/', b'-_'))}
+    return [form for form in forms if len(form) >= 4]
+
+
+def storage_content(action, state, secrets):
+    """The executor's file: Playwright storageState limited to the registered origins. Refused when it holds an entry
+    value (a page can copy the password into a cookie or localStorage), when it is too large, or when it is empty."""
+    allowed = registered(action)
+    hosts = {host for _, host, _ in allowed}
+    cookies = [cookie for cookie in state.get('cookies', []) if isinstance(cookie, dict)
+               and any(host == cookie.get('domain', '').lstrip('.') or host.endswith('.' + cookie.get('domain', '').lstrip('.')) for host in hosts if cookie.get('domain', '').lstrip('.'))]
+    origins = [entry for entry in state.get('origins', []) if isinstance(entry, dict) and origin(entry.get('origin', '')) in allowed]
+    if not cookies and not origins:
+        raise ValueError()
+    content = json.dumps({'cookies': cookies, 'origins': origins}, ensure_ascii=False, separators=(',', ':')).encode()
+    if len(content) > handoff.MAX_BYTES:
+        raise ValueError()
+    folded = content.lower()
+    for value in secrets:
+        if isinstance(value, str) and len(value) >= 4:
+            if any(form in content or form.lower() in folded for form in encodings(value)):
+                raise ValueError()
+    return content
+
+
+async def perform(op, action):
+    """Logs in or calls the target. Returns a final state, or for a handoff kind the bytes of the executor's file."""
+    if not await authorized(op):
+        return 'revoked'
+    kind = action['kind']
+    if kind != 'database' and origin(action['url']) is None:
+        raise ValueError()
+    if kind in HANDOFF_KINDS:
+        # Runs are unattended: a login that would wait for a person is not a storage_state login.
+        if action.get('mfa_selector') or not isinstance(action.get('entry_types'), list):
+            raise ValueError()
+        lease_seconds(action)
+    value = await secret(op)
+    content = None
+    try:
+        if kind == 'http':
+            ok = await http_action(action, value)
+        elif kind == 'cli':
+            ok = await cli_action(action, value)
+        elif kind == 'browser':
+            ok = await browser_action(op, action, value)
+        elif kind == 'database':
+            ok = await database_action(action, value)
+        elif kind == 'storage_state':
+            captured = {}
+            ok = await browser_action(op, action, value, captured)
+            if ok and not op.get('policy_denied'):
+                # The username is shown by the site itself; every other field must never reach the file.
+                content = storage_content(action, captured, [v for k, v in value.items() if k != 'username'])
+            captured.clear()
+        else:
+            raise ValueError()
+    finally:
+        value.clear()
+    if not await authorized(op):
+        return 'revoked'
+    if not ok or op.get('policy_denied'):
+        return 'failed'
+    return content if kind in HANDOFF_KINDS else 'succeeded'
+
+
+async def lease(op, action, content):
+    """Writes the file, tells the application, then holds it until release (succeeded) or the TTL (expired). A
+    revocation cancels this task; run() removes the file in every case."""
+    seconds = lease_seconds(action)
+    if not await authorized(op):
+        op['state'] = 'revoked'
+        return
+    handoff.write(op['id'], content)
+    op['written'] = True
+    until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    op['lease_expires_at'] = until.strftime('%Y-%m-%dT%H:%M:%SZ')
+    # An unrecorded handoff never stays: without the application's ok the file goes at once.
+    if not await notify(op, {'event': 'written', 'lease_expires_at': op['lease_expires_at']}):
+        raise ValueError()
+    op['ready'] = True
+    try:
+        await asyncio.wait_for(op['release'].wait(), seconds)
+        op['reason'], op['state'] = 'release', 'succeeded'
+    except TimeoutError:
+        op['reason'], op['state'] = 'ttl', 'expired'
+
+
+def discard(op):
+    """Removes the operation's file if this broker wrote it. Never raises: a failure is a failed operation."""
+    if not op.get('written'):
+        return True
+    try:
+        handoff.remove(op['id'])
+        op['written'] = False
+        op['ready'] = False
+        return True
+    except Exception:
+        return False
+
+
 async def run(op):
     try:
         action = definitions()[op['action']]
-        async with asyncio.timeout(min(180,max(1,int(action.get('timeout_seconds',180))))):
-            if not await authorized(op):
-                op['state'] = 'revoked'
-                return
-            if action['kind'] != 'database' and origin(action['url']) is None:
-                raise ValueError()
-            value = await secret(op)
-            if action['kind'] == 'http':
-                ok = await http_action(action, value)
-            elif action['kind'] == 'cli':
-                ok = await cli_action(action, value)
-            elif action['kind'] == 'browser':
-                ok = await browser_action(op, action, value)
-            elif action['kind'] == 'database':
-                ok = await database_action(action, value)
-            else:
-                raise ValueError()
-            value.clear()
-            op['state'] = ('succeeded' if ok and not op.get('policy_denied') else 'failed') if await authorized(op) else 'revoked'
-    except TimeoutError:
-        op['state'] = 'expired'
+        try:
+            async with asyncio.timeout(min(LOGIN_SECONDS,max(1,int(action.get('timeout_seconds',LOGIN_SECONDS))))):
+                result = await perform(op, action)
+        except TimeoutError:
+            op['state'] = 'expired'
+            return
+        if isinstance(result, str):
+            op['state'] = result
+            return
+        await lease(op, action, result)
     except asyncio.CancelledError:
         op['state'] = 'failed' if op.get('policy_denied') else 'revoked'
+        op.setdefault('reason', 'revoke')
         raise
     except Exception:
         op['state'] = 'failed'
     finally:
+        had_file = op.get('written', False)
+        if not discard(op):
+            op['state'] = 'failed'
+        elif had_file:
+            reason = op.get('reason') or ('restart' if op['state'] == 'failed' else 'revoke')
+            # Best effort: the application also records the removal when it learns the final state.
+            with suppress(BaseException):
+                await asyncio.shield(notify(op, {'event': 'removed', 'reason': reason}))
         op['finished_at'] = time.monotonic()
 
 
@@ -220,21 +371,40 @@ async def reap():
             if op['state'] in ('running', 'requires_user_action'):
                 try:
                     if not await authorized(op):
+                        op.setdefault('reason', 'revoke')
                         op['task'].cancel()
                 except Exception:
+                    op.setdefault('reason', 'revoke')
                     op['task'].cancel()
             elif time.monotonic() - op.get('finished_at', time.monotonic()) > 600:
                 operations.pop(op['id'], None)
 
 
+async def announce_restart(ids):
+    """Files left by an earlier broker are gone; tell the application, which fails those operations."""
+    for _ in range(12):
+        ids = [oid for oid in ids if not await notify({'id': oid}, {'event': 'removed', 'reason': 'restart'})]
+        if not ids:
+            return
+        await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app):
+    # No operation survives a restart, so no handoff file may either. A missing or unsafe directory only disables
+    # handoff kinds (each write checks it again).
+    left = []
+    with suppress(Exception):
+        left = handoff.clean()
+    announcer = asyncio.create_task(announce_restart(left))
     janitor = asyncio.create_task(reap())
     yield
     janitor.cancel()
+    announcer.cancel()
     for op in operations.values():
+        op.setdefault('reason', 'restart')
         op['task'].cancel()
-    await asyncio.gather(janitor, *(op['task'] for op in operations.values()), return_exceptions=True)
+    await asyncio.gather(janitor, announcer, *(op['task'] for op in operations.values()), return_exceptions=True)
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -263,7 +433,7 @@ async def start(body: Start):
     oid = str(body.id)
     if oid in operations:
         return {'id': oid, 'state': operations[oid]['state']}
-    op = body.model_dump(mode='json') | {'state': 'running', 'mfa': asyncio.Queue(maxsize=1)}
+    op = body.model_dump(mode='json') | {'state': 'running', 'mfa': asyncio.Queue(maxsize=1), 'release': asyncio.Event()}
     if not await authorized(op):
         raise HTTPException(403)
     # Authorization awaited IO; another start can have claimed the same ID/capacity.
@@ -279,13 +449,30 @@ async def start(body: Start):
 @app.get('/operations/{oid}')
 async def status(oid: uuid.UUID):
     # Unknown after a restart is a failure, never a replay of the operation.
-    return {'id': str(oid), 'state': operations.get(str(oid), {}).get('state', 'failed')}
+    op = operations.get(str(oid), {})
+    answer = {'id': str(oid), 'state': op.get('state', 'failed')}
+    if op.get('ready') and op.get('state') == 'running':
+        answer['lease_expires_at'] = op['lease_expires_at']
+    return answer
+
+
+@app.post('/operations/{oid}/release')
+async def release(oid: uuid.UUID):
+    """The executor is done with the file: remove it, the operation succeeded."""
+    op = operations.get(str(oid))
+    if not op or (not op['task'].done() and not op.get('ready')):
+        raise HTTPException(409)
+    if not op['task'].done():
+        op['release'].set()
+        await asyncio.gather(op['task'], return_exceptions=True)
+    return {'id': str(oid), 'state': op['state']}
 
 
 @app.post('/operations/{oid}/cancel')
 async def cancel(oid: uuid.UUID):
     op = operations.get(str(oid))
     if op and not op['task'].done():
+        op.setdefault('reason', 'revoke')
         op['task'].cancel()
         await asyncio.gather(op['task'], return_exceptions=True)
     return {'state': 'revoked'}
