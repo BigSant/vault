@@ -131,8 +131,6 @@ async def browser_action(op, action, value, capture=None):
         browser = await pw.chromium.launch(headless=True, chromium_sandbox=True, proxy={'server': proxy},
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
         context = await browser.new_context(accept_downloads=False, service_workers='block')
-        # Static subresources are fetched through their own request context: no cookie jar, no credentials.
-        anonymous = await pw.request.new_context(proxy={'server': proxy}, extra_http_headers={})
         try:
             def policy_violation(*_):
                 first = not op.get('policy_denied', False)
@@ -146,9 +144,13 @@ async def browser_action(op, action, value, capture=None):
                     await request_route.abort()
 
             async def static_fetch(request_route, request):
+                # A fresh request context per file: no cookie jar (not even one a static response tried to set), no
+                # credentials, nothing shared with the page's context.
                 headers = {k: v for k, v in request.headers.items() if k.lower() not in CREDENTIAL_HEADERS}
-                response = await anonymous.fetch(request.url, method='GET', headers=headers, max_redirects=0, timeout=12000, fail_on_status_code=False)
+                anonymous = await pw.request.new_context(proxy={'server': proxy})
+                response = None
                 try:
+                    response = await anonymous.fetch(request.url, method='GET', headers=headers, max_redirects=0, timeout=12000, fail_on_status_code=False)
                     if response.status >= 300 and response.status < 400 or 'attachment' in response.headers.get('content-disposition', '').lower():
                         # A static subresource is never followed to another place.
                         with suppress(Exception):await request_route.abort()
@@ -156,7 +158,9 @@ async def browser_action(op, action, value, capture=None):
                     await request_route.fulfill(status=response.status, body=await response.body(),
                         headers={k: v for k, v in response.headers.items() if k.lower() not in DROPPED_RESPONSE_HEADERS})
                 finally:
-                    with suppress(Exception):await response.dispose()
+                    if response:
+                        with suppress(Exception):await response.dispose()
+                    with suppress(Exception):await anonymous.dispose()
 
             async def route(request_route):
                 response=None
@@ -237,8 +241,6 @@ async def browser_action(op, action, value, capture=None):
             return ok
         finally:
             await context.close()
-            with suppress(Exception):
-                await anonymous.dispose()
             await browser.close()
 
 
