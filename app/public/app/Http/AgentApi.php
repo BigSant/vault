@@ -104,7 +104,7 @@ final class AgentApi
             'vault_link_burn' => ['description' => 'Destroy your one-time link before it is read.', 'properties' => ['id' => ['type' => 'string']], 'required' => ['id']],
         ];
         // The link tools exist only for an agent the owner allowed one-time links.
-        if (! $r->attributes->get('machine')->links) {
+        if (! Links::allowedFor($r->attributes->get('machine'))) {
             $schemas = array_filter($schemas, fn ($name) => ! str_starts_with($name, 'vault_link_'), ARRAY_FILTER_USE_KEY);
         }
         // Releasing a handoff exists only for an executor identity.

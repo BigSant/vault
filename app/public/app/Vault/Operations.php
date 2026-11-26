@@ -18,8 +18,13 @@ final class Operations
     /** Handoffs one executor may start per hour. */
     public const HANDOFFS_PER_HOUR = 60;
 
-    /** Why a file was removed, by the final state the removal gives. */
-    private const REMOVAL = ['succeeded' => 'release', 'expired' => 'ttl', 'revoked' => 'revoke', 'failed' => 'restart'];
+    /** The broker's reasons for a removed file, and the final state each gives. */
+    private const REASONS = ['release' => 'succeeded', 'ttl' => 'expired', 'revoke' => 'revoked', 'restart' => 'failed', 'error' => 'failed'];
+
+    /** The reason recorded when Vault itself ended a handoff and the broker confirmed the file gone. */
+    private const REASON = ['succeeded' => 'release', 'expired' => 'ttl', 'revoked' => 'revoke', 'failed' => 'error'];
+
+    private const ACTIVE = ['pending', 'approved', 'running', 'requires_user_action'];
 
     public function __construct(private Access $access) {}
 
@@ -82,7 +87,9 @@ final class Operations
             'type' => 'sometimes|string|max:40',
             'page' => 'sometimes|integer|min:1|max:10000', 'per_page' => 'sometimes|integer|min:1|max:100',
         ])->validate();
-        $query = $this->grantQuery()->where('machines.id', $machine->id)->whereIn('grants.action', array_keys($this->definitions()));
+        $query = $this->grantQuery()->where('machines.id', $machine->id)->whereIn('grants.action', array_keys($this->definitions()))
+            // A handoff action exists only for an executor, also when an old grant names one.
+            ->when(! ($machine->executor ?? false), fn ($q) => $q->whereNotIn('grants.action', $this->handoffActions()));
         if (isset($filters['query'])) {
             $query->where('entries.alias', 'like', '%'.$filters['query'].'%');
         }
@@ -149,8 +156,16 @@ final class Operations
     {
         abort_unless(preg_match('/^[A-Za-z0-9_-]{8,80}$/D', $requestId), 422);
 
-        return DB::transaction(function () use ($machine, $entry, $action, $requestId, $created) {
+        $handoff = self::isHandoff($this->definitions()[$action] ?? null);
+
+        return DB::transaction(function () use ($machine, $entry, $action, $requestId, $created, $handoff) {
             DB::table('machines')->where('id', $machine->id)->lockForUpdate()->first();
+            if ($handoff) {
+                // One live handoff per entry, whoever asks: the entry's row lock orders concurrent requests. Taken
+                // before any plain read, so this transaction's snapshot (REPEATABLE READ) starts after the lock is
+                // held and sees an operation another identity just committed.
+                DB::table('entries')->where('id', $entry)->lockForUpdate()->first();
+            }
             $prior = DB::table('operations')->where('machine_id', $machine->id)->where('request_id', $requestId)->first();
             if ($prior) {
                 abort_unless($prior->entry_id === $entry && $prior->action === $action, 409);
@@ -165,9 +180,7 @@ final class Operations
                 // Only an executor identity ever receives a handoff; to anyone else the action does not exist.
                 abort_unless($machine->executor ?? false, 404);
                 abort_unless(self::acceptsType($definition, $grant->entry_type), 422);
-                abort_if(self::leaseSeconds($definition) === null, 503);
-                // One live handoff per entry, whoever asks: the entry's row lock orders concurrent requests.
-                DB::table('entries')->where('id', $entry)->lockForUpdate()->first();
+                abort_if(self::leaseSeconds($definition) === null || ! empty($definition['mfa_selector']), 503);
                 abort_if(DB::table('operations')->where('entry_id', $entry)->whereIn('action', $this->handoffActions())
                     ->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '>', now())->exists(), 429);
                 abort_if(DB::table('operations')->where('machine_id', $machine->id)->whereIn('action', $this->handoffActions())
@@ -189,6 +202,40 @@ final class Operations
         });
     }
 
+    /** A stored UTC timestamp as RFC 3339 (2026-11-27T03:15:00Z). */
+    public static function rfc3339(?string $value): ?string
+    {
+        return $value === null ? null : \Illuminate\Support\Carbon::parse($value, 'UTC')->utc()->format('Y-m-d\\TH:i:s\\Z');
+    }
+
+    /**
+     * Starts the claimed operation at the broker. A clear refusal before start (429, another 4xx, 503, connection
+     * refused) ends the operation as failed at once and answers 429 or 503; only an ambiguous outcome (timeout after
+     * sending, 5xx) leaves it running for status to settle.
+     */
+    private function dispatch(object $op, object $machine): void
+    {
+        try {
+            $response = Http::baseUrl(config('vault.broker_url'))->withToken(trim(file_get_contents(config('vault.broker_key'))))
+                ->timeout(8)->connectTimeout(2)->withoutRedirecting()->post('/operations', ['id' => $op->id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            // cURL 7: the connection was refused, nothing was sent. Anything else (a timeout) may have started it.
+            abort_unless(str_contains($e->getMessage(), 'cURL error 7:'), 503);
+            $this->terminal($op, 'failed', $machine, false);
+            abort(503);
+        } catch (\Throwable) {
+            abort(503);
+        }
+        if ($response->successful()) {
+            return;
+        }
+        if ($response->clientError() || $response->status() === 503) {
+            $this->terminal($op, 'failed', $machine, false);
+            abort($response->status() === 429 ? 429 : 503);
+        }
+        abort(503);
+    }
+
     public function status(object $machine, string $id): array
     {
         $op = DB::table('operations')->where('id', $id)->where('machine_id', $machine->id)->first();
@@ -207,7 +254,7 @@ final class Operations
                 if ($claimed && $op->action === Links::ACTION) {
                     $this->terminal($op, app(Links::class)->send($op), $machine);
                 } elseif ($claimed) {
-                    $this->broker('POST', '/operations', ['id' => $id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
+                    $this->dispatch($op, $machine);
                 }
             } elseif ($op->action === Links::ACTION && $op->state === 'running') {
                 // Sending a link takes seconds and happens inside the claim. Still running long after: that claim
@@ -217,6 +264,7 @@ final class Operations
                 }
             } elseif (in_array($op->state, ['running', 'requires_user_action'])) {
                 $result = $this->broker('GET', '/operations/'.$id);
+                $brokerReady = ($result['ready'] ?? false) === true;
                 $state = $result['state'] ?? 'failed';
                 abort_unless(in_array($state, ['running', 'requires_user_action', 'succeeded', 'failed', 'expired', 'revoked']), 503);
                 if (in_array($state, ['succeeded', 'failed', 'expired', 'revoked'])) {
@@ -228,10 +276,11 @@ final class Operations
         }
         $op = DB::table('operations')->where('id', $id)->first();
         $answer = ['id' => $id, 'state' => $op->state, 'ok' => $op->state === 'succeeded', 'expires_at' => $op->expires_at];
-        // A handoff also says when its file is ready (and until when). Never the path, never a value.
+        // A handoff also says when its file is ready (and until when). Ready rests on the same confirmation as the
+        // broker's release: recorded here and group-readable there. Never the path, never a value.
         if (in_array($op->action, $this->handoffActions(), true)) {
-            $ready = $op->state === 'running' && $op->handoff === 'written';
-            $answer += ['ready' => $ready, 'lease_expires_at' => $ready ? $op->lease_expires_at : null];
+            $ready = $op->state === 'running' && $op->handoff === 'written' && ($brokerReady ?? false);
+            $answer += ['ready' => $ready, 'lease_expires_at' => $ready ? self::rfc3339($op->lease_expires_at) : null];
         }
 
         return $answer;
@@ -249,16 +298,18 @@ final class Operations
             }
         });
         if ($tellBroker && in_array($state, ['revoked', 'expired']) && $op->action !== Links::ACTION) {
-            // The broker removes a handoff file before it answers.
-            $this->broker('POST', '/operations/'.$op->id.'/cancel');
-        }
-        $final = DB::table('operations')->where('id', $op->id)->value('state');
-        if (isset(self::REMOVAL[$final])) {
-            $this->handoffRemoved($op->id, self::REMOVAL[$final]);
+            // The broker removes a handoff file before it answers, and says whether it is gone.
+            $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
+            if (($result['removed'] ?? false) === true) {
+                $this->handoffRemoved($op->id, self::REASON[$state]);
+            }
         }
     }
 
-    /** Records once that an operation's handoff file is gone. Nothing happens for an operation without one. */
+    /**
+     * Records once that an operation's handoff file is gone. Only on the broker's confirmation (an unlink or ENOENT);
+     * nothing happens for an operation without a recorded file.
+     */
     public function handoffRemoved(string $id, string $reason): void
     {
         DB::transaction(function () use ($id, $reason) {
@@ -296,11 +347,38 @@ final class Operations
             return ['ok' => true];
         }
         $reason = $body['reason'] ?? null;
-        abort_unless(($body['event'] ?? null) === 'removed' && in_array($reason, self::REMOVAL, true), 422);
-        $this->terminal($op, array_search($reason, self::REMOVAL, true), $machine, false);
+        abort_unless(($body['event'] ?? null) === 'removed' && is_string($reason) && isset(self::REASONS[$reason]), 422);
+        $this->terminal($op, self::REASONS[$reason], $machine, false);
         $this->handoffRemoved($id, $reason);
 
         return ['ok' => true];
+    }
+
+    /**
+     * vault:maintenance: a recorded handoff file whose operation is over (or past its end) is removed by the broker,
+     * and recorded as removed only when the broker confirms it. A broker that does not answer leaves it for the next
+     * run. Returns how many removals were recorded.
+     */
+    public function settleHandoffs(): int
+    {
+        $settled = 0;
+        foreach (DB::table('operations')->where('handoff', 'written')->get() as $op) {
+            try {
+                $machine = DB::table('machines')->where('id', $op->machine_id)->first();
+                if (in_array($op->state, self::ACTIVE, true) && strtotime($op->expires_at) <= time()) {
+                    $this->terminal($op, 'expired', $machine);
+                } elseif (! in_array($op->state, self::ACTIVE, true)) {
+                    $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
+                    if (($result['removed'] ?? false) === true) {
+                        $this->handoffRemoved($op->id, self::REASON[$op->state] ?? 'error');
+                    }
+                }
+            } catch (\Throwable) {
+            }
+            $settled += DB::table('operations')->where('id', $op->id)->where('handoff', 'removed')->count();
+        }
+
+        return $settled;
     }
 
     /** The executor is done with the file: the broker removes it and the operation succeeds. */
@@ -317,6 +395,9 @@ final class Operations
         $state = $result['state'] ?? 'failed';
         abort_unless(in_array($state, ['succeeded', 'failed', 'expired', 'revoked'], true), 503);
         $this->terminal($op, $state, $machine, false);
+        if (($result['removed'] ?? false) === true) {
+            $this->handoffRemoved($id, self::REASON[$state]);
+        }
 
         return $this->status($machine, $id);
     }

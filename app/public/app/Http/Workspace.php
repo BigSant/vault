@@ -585,8 +585,11 @@ final class Workspace
             if (Operations::leaseSeconds($definition) === null) {
                 throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' has an invalid ttl_seconds (1-1800). Fix connectors.json first.']);
             }
+            if (! empty($definition['mfa_selector'])) {
+                throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' asks for MFA; a storage_state run is unattended. Remove mfa_selector from connectors.json first.']);
+            }
         }
-        if ($d['action'] === Links::ACTION && ! DB::table('machines')->where('id', $d['machine_id'])->value('links')) {
+        if ($d['action'] === Links::ACTION && ! Links::allowedFor(DB::table('machines')->where('id', $d['machine_id'])->first())) {
             throw ValidationException::withMessages(['action' => 'This agent may not create one-time links. Allow them on Identities first.']);
         }
         // A link with an entry's values can be opened by the agent itself: an owner approves every one.

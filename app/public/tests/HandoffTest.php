@@ -29,6 +29,12 @@ final class HandoffTest extends TestCase
     /** What the fake broker answers for GET /operations/{id}. */
     private string $brokerState = 'running';
 
+    /** Whether the fake broker confirms a file gone on cancel. */
+    private bool $brokerRemoved = true;
+
+    /** How the fake broker answers POST /operations: 200, another status, or 'refused' / 'timeout' (no answer). */
+    private int|string $brokerStart = 200;
+
     /** @var list<string> broker calls, method and path */
     private array $calls = [];
 
@@ -65,12 +71,21 @@ final class HandoffTest extends TestCase
             }
             if (str_starts_with($path, '/operations')) {
                 $this->calls[] = $request->method().' '.$path;
+                if ($path === '/operations' && $this->brokerStart !== 200) {
+                    if (is_int($this->brokerStart)) {
+                        return Http::response(['detail' => 'refused'], $this->brokerStart);
+                    }
+                    throw new \Illuminate\Http\Client\ConnectionException($this->brokerStart === 'refused'
+                        ? 'cURL error 7: Failed to connect to broker port 8010: Connection refused' : 'cURL error 28: Operation timed out after 8001 milliseconds');
+                }
+                // The broker's file is ready once the application recorded it (the fake publishes at once).
+                $written = DB::table('operations')->where('id', basename($path))->value('handoff') === 'written';
 
                 return Http::response(match (true) {
-                    str_ends_with($path, '/release') => ['state' => 'succeeded'],
-                    str_ends_with($path, '/cancel') => ['state' => 'revoked'],
+                    str_ends_with($path, '/release') => ['state' => 'succeeded', 'removed' => true],
+                    str_ends_with($path, '/cancel') => ['state' => 'revoked', 'removed' => $this->brokerRemoved],
                     $request->method() === 'POST' => ['state' => 'running'],
-                    default => ['state' => $this->brokerState],
+                    default => ['state' => $this->brokerState] + ($written && $this->brokerState === 'running' ? ['ready' => true, 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 900)] : []),
                 });
             }
 
@@ -327,5 +342,152 @@ final class HandoffTest extends TestCase
         $this->written($op, -5)->assertStatus(422);
         $this->withToken('test-broker')->postJson('/api/internal/operations/'.(string) Str::uuid().'/handoff', ['event' => 'written', 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 60)])->assertNotFound();
         $this->assertNull(DB::table('operations')->where('id', $op)->value('handoff'));
+    }
+
+    private function linksReady(): void
+    {
+        DB::table('link_settings')->insert(['workspace_id' => $this->workspace, 'region' => 'eu', 'email' => 'links@example.test',
+            'default_lifetime' => 3600, 'max_lifetime' => 86400, 'token_saved_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    public function test_an_existing_executor_cannot_be_given_one_time_links_later(): void
+    {
+        $this->linksReady();
+        [$executor, $token] = $this->identity(true);
+        $this->get('/workspaces/'.$this->workspace.'/agents')->assertOk()->assertSee('not for executors')
+            ->assertDontSee('Allow one-time links for agent runner');
+        $this->post('/workspaces/'.$this->workspace.'/machines/'.$executor.'/links', ['links' => '1'])->assertStatus(409);
+        $this->assertFalse((bool) DB::table('machines')->where('id', $executor)->value('links'));
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $executor, 'entry_id' => $this->entry(), 'action' => 'onetimesecret.link', 'days' => 1, 'approval' => '1'])
+            ->assertStatus(303)->assertSessionHasErrors('action');
+        // An executor that has the flag anyway (set before this check existed) still gets no link tool or link.
+        DB::table('machines')->where('id', $executor)->update(['links' => true]);
+        $tools = array_column($this->withToken($token)->postJson('/api/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])->json('result.tools'), 'name');
+        $this->assertSame([], array_values(array_filter($tools, fn ($t) => str_starts_with($t, 'vault_link_'))));
+        $this->withToken($token)->getJson('/api/v1/links/options')->assertOk()->assertJsonPath('allowed', false);
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'hello', 'request_id' => 'link-run-0001'])->assertForbidden();
+        $this->assertSame(0, DB::table('links')->count());
+        // Stopping stays possible.
+        $this->post('/workspaces/'.$this->workspace.'/machines/'.$executor.'/links', ['links' => '0'])->assertRedirect();
+    }
+
+    public function test_catalog_hides_a_handoff_action_from_an_agent_with_an_old_grant(): void
+    {
+        $entry = $this->entry();
+        [$agent, $token] = $this->identity(false);
+        [$executor, $executorToken] = $this->identity(true, 'runner-2');
+        $this->grant($agent, $entry);
+        $this->grant($agent, $entry, 'test.http');
+        $this->grant($executor, $entry);
+        $this->assertSame(['test.http'], array_column($this->withToken($token)->getJson('/api/v1/catalog')->assertOk()->json('entries'), 'action'));
+        $this->assertSame(['shop.session'], array_column($this->withToken($executorToken)->getJson('/api/v1/catalog')->assertOk()->json('entries'), 'action'));
+    }
+
+    public function test_a_connector_with_mfa_cannot_be_granted_or_run(): void
+    {
+        [$executor, $token] = $this->identity(true);
+        $entry = $this->entry();
+        $this->grant($executor, $entry);
+        $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'entry_types' => ['login'], 'mfa_selector' => '#code']]);
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $executor, 'entry_id' => $this->entry('login', 'shop-admin'), 'action' => 'shop.session', 'days' => 1])
+            ->assertStatus(303)->assertSessionHasErrors('action');
+        $this->execute($token, $entry)->assertStatus(503);
+        $this->assertSame(0, DB::table('operations')->count());
+    }
+
+    public function test_authorization_requires_an_executor_and_an_accepted_entry_type_during_the_lease(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->assertOk()->json('id');
+        $check = fn () => $this->withToken('test-broker')->getJson('/internal/operations/'.$op)->json('allowed');
+        $this->assertTrue($check());
+        DB::table('machines')->where('id', $executor)->update(['executor' => false]);
+        $this->assertFalse($check());
+        DB::table('machines')->where('id', $executor)->update(['executor' => true]);
+        $this->assertTrue($check());
+        $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'entry_types' => ['prestashop_admin'], 'ttl_seconds' => 900]]);
+        $this->assertFalse($check());
+    }
+
+    public function test_a_broker_refusal_before_start_fails_the_operation_at_once(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        foreach ([[429, 429], [403, 503], [503, 503], ['refused', 503]] as $i => [$answer, $status]) {
+            $this->brokerStart = $answer;
+            $this->execute($token, $entry, 'refused-run-000'.$i)->assertStatus($status);
+            $op = DB::table('operations')->where('request_id', 'refused-run-000'.$i)->first();
+            $this->assertSame('failed', $op->state, (string) $answer);
+            $this->assertSame('operation.finish', DB::table('audit')->where('subject', $op->id)->orderByDesc('id')->value('event'));
+        }
+        // Nothing holds the entry: the next run starts. A timeout after sending is ambiguous and stays running.
+        $this->brokerStart = 'timeout';
+        $this->execute($token, $entry, 'timeout-run-0001')->assertStatus(503);
+        $this->assertSame('running', DB::table('operations')->where('request_id', 'timeout-run-0001')->value('state'));
+        $this->brokerStart = 200;
+        DB::table('operations')->where('request_id', 'timeout-run-0001')->update(['state' => 'failed']);
+        $this->execute($token, $entry, 'normal-run-0001')->assertOk()->assertJsonPath('state', 'running');
+    }
+
+    public function test_ready_waits_for_the_broker_and_lease_end_is_rfc3339(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // Recorded here, but the broker has not made the file readable (or it ended): not ready, no release.
+        $this->brokerState = 'requires_user_action';
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('ready', false)->assertJsonPath('lease_expires_at', null);
+        $this->withToken($token)->postJson('/api/v1/operations/'.$op.'/release')->assertStatus(409);
+        $this->brokerState = 'running';
+        $lease = $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('ready', true)->json('lease_expires_at');
+        $this->assertMatchesRegularExpression('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/', $lease);
+        $this->assertEqualsWithDelta(time() + 900, strtotime($lease), 5);
+    }
+
+    public function test_a_foreign_executor_neither_reads_nor_releases(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        [, $foreign] = $this->identity(true, 'runner-2');
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        $this->withToken($foreign)->getJson('/api/v1/operations/'.$op)->assertNotFound();
+        $this->withToken($foreign)->postJson('/api/v1/operations/'.$op.'/release')->assertNotFound();
+        $this->withToken($foreign)->postJson('/api/mcp', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => 'vault_release', 'arguments' => ['id' => $op]]])
+            ->assertOk()->assertJsonMissingPath('result')->assertJsonPath('error.message', 'Action unavailable or refused');
+        $this->assertNotContains('POST /operations/'.$op.'/release', $this->calls);
+        $this->assertSame('running', DB::table('operations')->where('id', $op)->value('state'));
+    }
+
+    public function test_removal_is_recorded_only_when_the_broker_confirms_it_and_maintenance_retries(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        $this->brokerRemoved = false;
+        $this->withToken($token)->postJson('/api/v1/operations/'.$op.'/cancel')->assertOk()->assertJsonPath('state', 'revoked');
+        $this->assertSame('written', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertFalse(DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->exists());
+        Artisan::call('vault:maintenance');
+        $this->assertSame('written', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->brokerRemoved = true;
+        Artisan::call('vault:maintenance');
+        $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame('revoke', DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'));
+        // A lease past its end: maintenance expires it and records the confirmed removal.
+        $second = $this->execute($token, $entry, 'nightly-run-0002')->json('id');
+        $this->written($second)->assertOk();
+        DB::table('operations')->where('id', $second)->update(['expires_at' => now()->subSecond()]);
+        Artisan::call('vault:maintenance');
+        $this->assertSame(['expired', 'removed'], array_values((array) DB::table('operations')->where('id', $second)->first(['state', 'handoff'])));
+        $this->assertSame('ttl', DB::table('audit')->where('subject', $second)->where('event', 'handoff.removed')->value('outcome'));
     }
 }
