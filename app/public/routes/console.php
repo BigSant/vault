@@ -19,5 +19,6 @@ Artisan::command('vault:maintenance', function () {
     DB::table('sessions')->where('last_activity', '<', time() - 8 * 3600)->delete();
     DB::table('cache')->where('expiration', '<', time())->delete();
     DB::table('cache_locks')->where('expiration', '<', time())->delete();
-    $this->info('Expired operation, session and cache maintenance completed.');
+    app(\App\Vault\Links::class)->maintenance();
+    $this->info('Expired operation, link, session and cache maintenance completed.');
 });

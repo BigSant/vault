@@ -74,6 +74,13 @@ def main():
     execute.add_argument('entry'); execute.add_argument('action'); execute.add_argument('--request-id', required=True)
     for command in ['status','cancel']:
         sub.add_parser(command).add_argument('id')
+    sub.add_parser('link-options')
+    # The content and the passphrase come as JSON on stdin ({"text": ..., "passphrase": ...}), never as arguments:
+    # arguments are visible in the process list.
+    link = sub.add_parser('link-create')
+    link.add_argument('--entry'); link.add_argument('--lifetime', type=int); link.add_argument('--note'); link.add_argument('--request-id', required=True)
+    for command in ['link-status','link-burn']:
+        sub.add_parser(command).add_argument('id')
     args = parser.parse_args()
     try:
         client = VaultClient(args.config)
@@ -84,6 +91,19 @@ def main():
             answer = client.call('/api/v1/catalog?'+urllib.parse.urlencode(filters))
         elif args.command == 'execute':
             answer = client.call('/api/v1/execute', {'entry_id':args.entry,'action':args.action,'request_id':args.request_id})
+        elif args.command == 'link-options':
+            answer = client.call('/api/v1/links/options')
+        elif args.command == 'link-create':
+            content = json.loads(sys.stdin.read(65536) or '{}')
+            if not isinstance(content, dict) or set(content) - {'text','passphrase'}:
+                raise ValueError()
+            payload = {key:value for key,value in {**content, 'entry_id':args.entry, 'lifetime':args.lifetime, 'note':args.note,
+                'request_id':args.request_id}.items() if value is not None}
+            answer = client.call('/api/v1/links', payload)
+        elif args.command in ('link-status','link-burn'):
+            import uuid
+            lid = str(uuid.UUID(args.id))
+            answer = client.call('/api/v1/links/'+lid+('/burn' if args.command=='link-burn' else ''), {} if args.command=='link-burn' else None)
         else:
             import uuid
             oid = str(uuid.UUID(args.id))

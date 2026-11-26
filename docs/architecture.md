@@ -24,6 +24,10 @@ LLM → ai-os trusted backend / MCP → Operations → broker
 
 - `Secrets` hides the OpenBao AppRole, CAS and version reads. Web sessions are encrypted with the application key.
 - `Catalog` manages typed content, search, version restore, import, archive and destruction. The backend write and SQL are not one distributed transaction: a failure can leave an unreachable backend orphan; there is no plaintext fallback.
+- `Links` makes one-time links with the workspace's Onetime Secret account (`OneTimeSecret`, API v2). The content
+  may name an entry's fields as `{{field}}`; the application puts the values in when it sends the content, and the
+  agent that asked gets only the link. An agent's link that uses an entry is a request of the built-in action
+  `onetimesecret.link` (approval, deadline and audit as any request), sent by the application, never by the broker.
 - `Operations` binds the machine, entry, action, version, specific approval and a five-minute deadline. `request_id` ensures idempotency within one identity. The dispatch claim is written before execution: a crash in that interval ends in a safe failure, not a repeated external action.
 - The broker re-checks the grant before getting the value, before the browser's network requests and every second during active work. There is no promise to undo an external action that has already completed. Responses are only server-generated states/booleans.
 - The audit records the action, subject, actor, time and outcome. Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.

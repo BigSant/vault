@@ -140,6 +140,7 @@
         </div>
     @endif
 </div>
+@if($canEdit && $linksReady)<p class="note"><a class="more-link" href="/workspaces/{{ $space->id }}/links?entry={{ $entry->id }}#add-link">Share as a one-time link →</a></p>@endif
 @endif
 @endif
 

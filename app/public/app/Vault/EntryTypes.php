@@ -35,6 +35,8 @@ final class EntryTypes
         return match ($kind) {
             'browser' => ['username', 'password'],
             'database' => ['role'],
+            // A one-time link reads the fields its text names; none are fixed.
+            'onetimesecret' => [],
             default => ['token'],
         };
     }

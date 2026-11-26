@@ -82,7 +82,12 @@ def initialize():
     policies = {
         'app': 'path "secret/data/entries/*" { capabilities=["create","read","update"] }\n'
                'path "secret/metadata/entries/*" { capabilities=["read","delete"] }\n'
-               'path "secret/data/auth/*" { capabilities=["create","read","update"] }\n',
+               'path "secret/data/auth/*" { capabilities=["create","read","update"] }\n'
+               # One-time links (content until sent, receipt, passphrase) and the Onetime Secret API token.
+               'path "secret/data/links/*" { capabilities=["create","read","update"] }\n'
+               'path "secret/metadata/links/*" { capabilities=["read","delete"] }\n'
+               'path "secret/data/settings/*" { capabilities=["create","read","update"] }\n'
+               'path "secret/metadata/settings/*" { capabilities=["read"] }\n',
         'broker': 'path "secret/data/entries/*" { capabilities=["read"] }\n'
                   'path "database/creds/vault-*" { capabilities=["read"] }\n'
                   'path "auth/token/revoke-self" { capabilities=["update"] }\n',

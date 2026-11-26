@@ -40,6 +40,40 @@ python3 clients/vault.py --config /private/client.json mcp
 
 The file schema is the same (url/token), permissions 0600, no symlinks. The client does not follow redirects and does not pick up the environment's HTTP proxy. This process's file reading or shell is not a model tool; if the LLM has the same host administration, the promise of secret separation no longer holds. For the ai-os integration, use its trusted backend, not a config file in the agent sandbox.
 
+## One-time links (Onetime Secret)
+
+An owner sets up the workspace's Onetime Secret account in Setup › Onetime Secret: the region (`eu`, `uk`, `us`,
+`ca`, `nz`), the account email, its API token (kept in OpenBao) and the lifetimes people and agents may choose. Every
+link is made in that account through the API v2 (`POST /api/v2/secret/conceal`, HTTP Basic). The PHP application
+calls `https://REGION.onetimesecret.com` itself, so it needs outbound HTTPS to that host; the broker is not involved.
+
+An agent may create links only when an owner allowed it on Identities. It then has four more tools (MCP) and
+endpoints (HTTP); an agent without the permission does not see the tools.
+
+| MCP tool | HTTP | What it does |
+|---|---|---|
+| `vault_link_options` | `GET /api/v1/links/options` | `allowed`, `lifetimes` (seconds), `default_lifetime`, and `entries` it may use: `id`, `alias`, `fields` (keys), `approval` |
+| `vault_link_create` | `POST /api/v1/links` | `text`, `entry_id`, `lifetime`, `passphrase`, `note`, `request_id` (8–80, the same one for a retry) |
+| `vault_link_status` | `GET /api/v1/links/{id}` | the state and, while the link can be opened, the link |
+| `vault_link_burn` | `POST /api/v1/links/{id}/burn` | destroys an unread link (or cancels one waiting for approval) |
+
+`text` is the content, up to 10,000 characters. With `entry_id` it may name that entry's fields as `{{field}}`;
+Vault puts the values in when it sends the content, so the agent never handles them (without `text`: every field,
+one "Label: value" per line). Using an entry needs a grant of the action `onetimesecret.link` on it; with "Require
+owner approval" the answer is `"state": "pending"` until the owner allows it on Requests, and the agent checks
+`vault_link_status`. States: `pending`, `active` (not opened), `previewed`, `revealed`, `burned`, `expired`,
+`cancelled`, `failed`. The `link` field is null once the link can no longer be opened.
+
+**Boundary.** Whoever holds a link can open it once. An agent that may use an entry's values in a link can therefore
+read them by opening the link itself (which also uses it up, and Links then shows it as read). Allow one-time links
+only for agents that must hand credentials to people, grant `onetimesecret.link` only on the entries they need, and
+keep "Require owner approval" for them. The content, the receipt, the passphrase and the link live in OpenBao
+(`links/<id>`) until the link has ended, then they are destroyed; MySQL keeps who, which entry, which field names,
+the lifetime and the state. The audit records `link.create` and `link.burn` without content.
+
+CLI: `link-options`, `link-create --request-id ID [--entry UUID] [--lifetime S] [--note TEXT]` with
+`{"text": "...", "passphrase": "..."}` on stdin (never as arguments), `link-status ID`, `link-burn ID`.
+
 ## Connector definition
 
 The private `data/connectors/connectors.json` (the corresponding environment's data path) has an `actions` object. The default configuration is empty. An example without real values:

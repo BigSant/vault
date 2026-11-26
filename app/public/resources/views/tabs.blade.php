@@ -4,7 +4,9 @@
     $base = '/workspaces/'.$space->id;
     $sets = [
         'agents' => ['Agents sections', ['requests' => 'Requests', 'agents' => 'Identities', 'grants' => 'Grants']],
-        'setup' => ['Setup sections', ['structure' => 'Projects', 'types' => 'Entry types']],
+        'setup' => ['Setup sections', ['structure' => 'Projects', 'types' => 'Entry types']
+            // The Onetime Secret account is the owner's: an editor does not get the tab (and gets 404 at its address).
+            + (($space->role ?? null) === 'owner' ? ['onetimesecret' => 'Onetime Secret'] : [])],
     ];
     [$label, $items] = $sets[$area];
 @endphp

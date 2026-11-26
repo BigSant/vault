@@ -18,6 +18,8 @@
         'workspace.create' => 'Added workspace', 'project.create' => 'Added project', 'project.rename' => 'Renamed project', 'project.delete' => 'Removed project',
         'environment.create' => 'Added environment', 'environment.update' => 'Updated environment', 'environment.delete' => 'Removed environment',
         'environment.template' => 'Changed environment template', 'type.save' => 'Saved entry type', 'type.delete' => 'Removed entry type',
+        'link.create' => 'Added one-time link', 'link.burn' => 'Burned one-time link', 'links.settings' => 'Changed Onetime Secret account',
+        'machine.links_allow' => 'Allowed one-time links for agent', 'machine.links_stop' => 'Stopped one-time links for agent',
         'session.login' => 'Signed in', 'session.logout' => 'Signed out', 'user.password' => 'Changed password', 'user.recover' => 'Recovered account',
     ];
     // Codes are shown in the UI vocabulary: request, agent, grant. A new request reads request.open, never request.request.

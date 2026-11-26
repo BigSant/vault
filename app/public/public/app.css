@@ -1217,3 +1217,50 @@ label.check{min-height:40px;align-items:center}
 details>summary{min-height:40px}
 details:not(.menu):not(.fold):not(.filters):not(.jump):not(.env-add):not(.type-detour)>summary{padding-top:11px;padding-bottom:11px}
 }
+
+/* One-time links (Links page, Setup › Onetime Secret, the agents' permission). */
+.links-check{display:flex;align-items:center;gap:8px 14px;margin:0 0 12px}
+.links-check form{flex:none}
+.links-check .note{margin:0;flex:1 1 30ch}
+.board.links td.name small.link-what{display:block;margin-top:2px;color:var(--dim)}
+.board.links td.name small.link-what .chip{margin-left:4px;vertical-align:0}
+.board.links td{overflow-wrap:anywhere}
+.callout.notice p{max-width:none}
+.link-entry{margin:0 0 4px}
+.link-entry .k{color:var(--dim);margin-right:6px}
+.link-entry .more-link{margin-left:10px}
+.board.identities td.links .controls{flex-wrap:nowrap;align-items:center;gap:8px}
+.board.identities td.links .controls span{white-space:nowrap}
+@media (min-width:901px){
+/* As a table: the link takes the room, Made by 140 px, both dates 168 px, State 172 px (its longest chip,
+   "waiting for approval"), Burn 92 px. */
+.board.links{table-layout:fixed}
+.board.links th:nth-child(2){width:140px}
+.board.links th:nth-child(3){width:160px}
+.board.links th:nth-child(4){width:196px}
+.board.links th:nth-child(5){width:184px}
+.board.links th:nth-child(6){width:92px}
+}
+@media (max-width:900px){
+/* Link card: line 1 the link with its state at the right (what it holds under the name); line 2 who made it and
+   when; line 3 the end date with Burn at the right. The two empty pseudo-elements are the line breaks. */
+.board.links tr::before,.board.links tr::after{content:"";flex-basis:100%;height:0}
+.board.links td.name{order:0;flex:1 1 0}
+.board.links td.state{order:1;flex:none;margin-left:auto}
+.board.links tr::before{order:2}
+.board.links td.who{order:3;flex:none}
+.board.links td.when:nth-child(3){order:4}
+.board.links tr::after{order:5}
+.board.links td.when:nth-child(4){order:6;flex:1 1 auto}
+.board.links td:last-child{order:7;flex:none;margin-left:auto}
+.board.links td:last-child .controls{margin-top:0}
+.board.links td.who .chip{margin-left:2px}
+.links-check{flex-wrap:wrap}
+.links-check .note{flex:1 1 100%}
+/* Identities card: whether the agent may create one-time links is the last line, under the grants and Revoke. */
+.board.identities td.links{order:4;flex-basis:100%}
+}
+@media (max-width:600px){
+/* Six nav items (an owner) do not fit one row at 390 px: two even rows of three instead of one wrapped item. */
+.nav:has(>.btn:nth-child(6)){display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+}

@@ -10,19 +10,24 @@
     // The page's section inside a workspace, e.g. "grants" for /workspaces/{id}/grants.
     $section = preg_match('#^workspaces/[^/]+/([a-z]+)$#D', $path, $m) ? $m[1] : null;
     $sectionRoles = ['requests' => ['owner'], 'agents' => ['owner'], 'grants' => ['owner'], 'members' => ['owner'], 'audit' => ['owner'],
-        'structure' => ['owner', 'editor'], 'types' => ['owner', 'editor'], 'import' => ['owner', 'editor']];
+        'structure' => ['owner', 'editor'], 'types' => ['owner', 'editor'], 'import' => ['owner', 'editor'],
+        'links' => ['owner', 'editor'], 'onetimesecret' => ['owner']];
     $switchTo = fn ($s) => in_array($s->role, $sectionRoles[$section] ?? [], true) ? '/workspaces/'.$s->id.'/'.$section : '/?workspace='.$s->id;
     // The confirm page and error pages stand in for another page: no nav item is the current one.
     $quiet = $__env->hasSection('quiet-nav');
     // The last value is the item's aria-current: "page" when the item is the page itself; "location" when the page
     // is inside the item's area (an entry, the import, a tab of Agents or Setup: there the tab is the "page").
     $items = [['Entries', $navSpace ? '/?workspace='.$navSpace->id : '/', $path === '/' || str_starts_with($path, 'entries') || $section === 'import', 0, $path === '/' ? 'page' : 'location']];
+    // Links sits beside Entries: both are about the workspace's secrets, for the same roles that edit entries.
+    if (in_array($navRole, ['owner', 'editor'], true)) {
+        $items[] = ['Links', $base.'/links', $section === 'links', 0, 'page'];
+    }
     if ($navRole === 'owner') {
         $items[] = ['Agents', $base.'/requests', in_array($section, ['requests', 'agents', 'grants', 'machines'], true), $navWaiting, 'location'];
         $items[] = ['Members', $base.'/members', $section === 'members', 0, 'page'];
     }
     if (in_array($navRole, ['owner', 'editor'], true)) {
-        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'types'], true), 0, 'location'];
+        $items[] = ['Setup', $base.'/structure', in_array($section, ['structure', 'types', 'onetimesecret'], true), 0, 'location'];
     }
     if ($navRole === 'owner') {
         $items[] = ['Activity', $base.'/audit', $section === 'audit', 0, 'page'];
