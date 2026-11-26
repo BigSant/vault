@@ -141,7 +141,12 @@ VAULT  [workspace ▾]   Entries · Links · Agents (2) · Members · Setup · A
   ("Request activity for this entry →", "All activity for this entry →").
   **Page length (decided):** Recent requests stays a section of its own (it holds the decisions: denied, expired,
   cancelled) and lists the last 10 finished requests; Activity lists the last 10 events. The two links lead to the rest.
-- `/entries/new`, `/entries/new?entry=` — add / update form. Missing a type or a field never costs the draft.
+- `/entries/new`, `/entries/new?entry=` — add / update form. On the add form **Project** and **Environment** are two
+  choices, each a select that app.js turns into a searchable combobox (`select[data-search]`: a text field with the
+  matches in a listbox under it; arrows move, Enter or a click chooses, Tab takes a single match, Escape restores;
+  matching ignores case and accents; the select stays in the form, hidden, and carries the value; without script it
+  is the plain select). Before a project, an environment or an entry type exists, the form is an empty state naming
+  each missing one with a link to its Setup tab. On the update form the project and environment are fixed text. Missing a type or a field never costs the draft.
   Under Type sits a closed disclosure (`details.type-detour`) whose summary is the question, always in view:
   "Missing a type or field?" ("Missing a field?" on the update form). The ordinary path stays short, on phones
   too; opened, it says what to do in words on the page, never in a `title`, and names the button: "Edit entry
@@ -286,18 +291,21 @@ Three tabs under the h1 "Agents": **Requests · Identities · Grants**.
 
 ### Setup (owner, editor)
 
-Tabs under the h1 "Setup": **Projects · Entry types**, and for an owner **Onetime Secret**.
+Tabs under the h1 "Setup": **Projects · Environments · Entry types**, and for an owner **Onetime Secret**.
+Projects and environments are two separate lists of the workspace; an entry names one of each. Environments are
+one shared list, like entry types: no project has environments of its own, and there is no environment template.
 
-- `/workspaces/{w}/structure` — the project cards right under the tabs, with no h2 of their own (each project a
-  card with Edit folds; the cards are a `.deck`, two side by side at `--wide` and one column below), then the h2
-  sections "Add a project" and "Environment template". A fold's toggle is a compact control with an edge
-  (`.fold-act`): ▸ "Edit" while closed, ▾ "Close" while open (every fold, Account's "Change sign-in password"
-  too); on phone an environment row is one line (sign, count, Edit; a long sign wraps inside itself), and a
-  project's head is one line while it fits: a long project name takes the line and the count drops under it, with
-  Edit at the right of that second line (`.fold-tail`). On desktop the count and Edit are one group at the right
-  that never wraps (`.fold-tail`), and a long project name wraps in the room at its left. On phones a project's
-  count stands beside Edit while the head is one line, like an environment row's. "+ Add an environment" is a
-  control with an edge (`.fold-act.add`), its text starting where the environment names start. One shared password block (`confirm-setup`) above the cards serves every form of the page.
+- `/workspaces/{w}/structure` — the projects as folds under the tabs (`details.fold.project-fold.capped`, one per
+  project: name, entry count, ▸ "Edit"), then the h2 section "Add a project". A fold renames the project and, while
+  it holds no entries, removes it. A fold's toggle is a compact control with an edge (`.fold-act`): ▸ "Edit" while
+  closed, ▾ "Close" while open (every fold, Account's "Change sign-in password" too). The count and Edit are one
+  group at the right that never wraps (`.fold-tail`); a long project name wraps in the room at its left. One shared
+  password block (`confirm-setup`) above the folds serves every form of the page.
+- `/workspaces/{w}/environments` — the workspace's environments as folds (`details.fold.env-fold.capped`: the sign,
+  entry count, Edit), production first, then by name; a fold renames, sets Production and, while it holds no
+  entries, removes. Then the h2 section "Add an environment" (Name, Production). Names are unique in the workspace
+  whatever their case or accents ("Tęst" is "test"). A new workspace starts with local, test, stage and prod. One
+  shared password block (`confirm-environments`) above the folds serves every form of the page.
 - `/workspaces/{w}/types` — the entry types as folds under the tabs, listed by name whatever the case (so are
   the Type options everywhere), then the h2 section "Add an entry type".
   One shared password block (`confirm-types`) above the folds serves every form of the page: an action pressed
@@ -383,10 +391,10 @@ Every page follows these, so the same kind of thing looks and behaves the same e
    `'confirm-decide'` above the waiting board, `'confirm-members'` above the members board). Where a page has
    such a block, its other sensitive actions use it too, so the page has one password field: Restore (Versions)
    and Archive entry on the entry page; every form of Setup › Projects (`'confirm-setup'` above the project
-   cards); every form of Setup › Entry types (`'confirm-types'` above the folds: Save entry type, Remove entry
+   folds); every form of Setup › Environments (`'confirm-environments'` above the folds); every form of Setup › Entry types (`'confirm-types'` above the folds: Save entry type, Remove entry
    type, Add entry type; no fold has a block of its own); Revoke and the add form on Identities
    (`'confirm-agents'`, above the board) and Grants (`'confirm-grants'`, above the filter bar). A form card on such a page (Add a
-   member, Add an agent, Add a grant, Add a project, the environment template, Add an entry type) holds a
+   member, Add an agent, Add a grant, Add a project, Add an environment, Add an entry type) holds a
    deferred block (`'primary' => '<id>'`, `'fallback' => true`): nothing while valid, a pointer to the one field
    when expired, and a field of its own only in `<noscript>`. The pointer is one line under a dashed rule,
    "Password confirmation expired. Go to the password field ↑" (the link puts the focus in that field), and while it
@@ -544,7 +552,7 @@ validates the date. An import that fails names the item by its place in the arra
   stand in for another page and never name the workspace, also when a stopped action renders them at a workspace
   address: `<title>Password confirmation · Vault</title>` (the layout checks the `quiet-nav` section, not the path).
 - **Table names.** Every `.facts` and `.list` table has `aria-labelledby` too: its section h2 (Details, Workspaces,
-  Format, Environment template, Add an entry type), the h1 where it has no section (Account), or the summary or
+  Format, Add an entry type), the h1 where it has no section (Account), or the summary or
   fold name it sits under (Import's two folds, an entry type). Every board has `aria-labelledby`: its section h2 where it has one (the request boards, and
   Versions, Agent access and Activity on an entry page), else the current tab (`id="tab-current"`: Identities,
   Grants) or the page h1 (`id="page-title"`: Entries, Members, Activity).
@@ -574,7 +582,6 @@ validates the date. An import that fails names the item by its place in the arra
   again): the note stands above the buttons (`.form-foot.stack`), the buttons keep one row at the right.
 - **Removing a project or environment** that still holds entries says "Archive and destroy all entries in this
   project before removing it." (an archived entry still counts; only destroyed ones do not).
-- **Environment template rows** are labelled "Environment" on phones (the column head is not shown there).
 - **Account.** The head row and both h2s ("Security", "Workspaces") are as wide as the cards (`.capped`), so
   "Sign out" and the heading rules end where the cards end, and the head row keeps
   the block gap of other head rows above the facts. The Security deck is one column at the card width in both

@@ -57,12 +57,14 @@ final class StructureTest extends TestCase
     {
         $pages = ['/entries/new?workspace='.$this->workspace, $this->base.'/import'];
         foreach ($pages as $page) {
-            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#add-project">Add a project in Setup, then an environment</a>', false);
+            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#add-project">Add a project in Setup</a>', false)
+                ->assertSee('href="'.$this->base.'/environments#add-environment">Add an environment in Setup</a>', false);
         }
-        [$project, $environment] = $this->project($this->workspace);
+        [, $environment] = $this->project($this->workspace);
         DB::table('environments')->where('id', $environment)->delete();
         foreach ($pages as $page) {
-            $this->get($page)->assertOk()->assertSee('href="'.$this->base.'/structure#p-'.$project.'">Add an environment to a project in Setup</a>', false);
+            $this->get($page)->assertOk()->assertDontSee('Add a project in Setup')
+                ->assertSee('href="'.$this->base.'/environments#add-environment">Add an environment in Setup</a>', false);
         }
     }
 
@@ -80,8 +82,8 @@ final class StructureTest extends TestCase
         $other = $this->workspace();
         $fixtures = [];
         foreach ([$this->workspace, $other] as $workspace) {
-            [, $environment] = $this->project($workspace);
-            $entry = $this->entry($environment, 'active');
+            [$project, $environment] = $this->project($workspace);
+            $entry = $this->entry($project, $environment, 'active');
             $machine = (string) Str::uuid();
             DB::table('machines')->insert(['id' => $machine, 'workspace_id' => $workspace, 'name' => $machine, 'token_hash' => hash('sha256', $machine), 'expires_at' => now()->addDay()]);
             DB::table('grants')->insert(['id' => (string) Str::uuid(), 'machine_id' => $machine, 'entry_id' => $entry, 'action' => 'action.'.$machine, 'expires_at' => now()->addDay()]);
@@ -96,23 +98,26 @@ final class StructureTest extends TestCase
             ->assertSee('value="'.$agent.'" selected', false)->assertSee('value="'.$entry.'" selected', false);
     }
 
-    public function test_template_rejects_names_that_differ_only_in_case_or_accent(): void
+    public function test_environment_names_are_unique_whatever_the_case_or_accent(): void
     {
-        $this->post($this->base.'/template', ['env_name' => ['test', 'Tęst']])->assertStatus(303)->assertSessionHasErrors();
-        $this->post($this->base.'/projects', ['name' => 'Example'])->assertRedirect();
-        $project = DB::table('projects')->where('workspace_id', $this->workspace)->value('id');
-        $this->assertEqualsCanonicalizing(['local', 'test', 'stage', 'prod'], DB::table('environments')->where('project_id', $project)->pluck('name')->all());
+        $this->post($this->base.'/environments', ['name' => 'test'])->assertRedirect($this->base.'/environments');
+        $this->post($this->base.'/environments', ['name' => 'Tęst'])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments', ['name' => 'qa'])->assertRedirect();
+        $qa = DB::table('environments')->where('name', 'qa')->value('id');
+        $this->post($this->base.'/environments/'.$qa, ['name' => 'TEST'])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments/'.$qa, ['name' => 'QA', 'production' => '1'])->assertRedirect();
+        $this->assertDatabaseHas('environments', ['id' => $qa, 'name' => 'QA', 'production' => true]);
     }
 
-    public function test_project_creation_rolls_back_when_a_stored_template_conflicts_with_the_unique_index(): void
+    public function test_a_new_workspace_starts_with_the_default_environments_and_projects_have_none(): void
     {
-        DB::table('workspaces')->where('id', $this->workspace)->update(['environment_template' => json_encode([
-            ['name' => 'qa', 'production' => false], ['name' => 'qa', 'production' => true],
-        ])]);
-
-        $this->post($this->base.'/projects', ['name' => 'New project'])->assertStatus(303)->assertSessionHasErrors();
-        $this->assertDatabaseMissing('projects', ['workspace_id' => $this->workspace]);
-        $this->assertDatabaseMissing('audit', ['workspace_id' => $this->workspace, 'event' => 'project.create']);
+        $this->post('/workspaces', ['name' => 'Fresh'])->assertRedirect();
+        $fresh = DB::table('workspaces')->where('name', 'Fresh')->value('id');
+        $this->assertEqualsCanonicalizing(['local', 'test', 'stage', 'prod'], DB::table('environments')->where('workspace_id', $fresh)->pluck('name')->all());
+        $this->assertTrue((bool) DB::table('environments')->where('workspace_id', $fresh)->where('name', 'prod')->value('production'));
+        $this->post('/workspaces/'.$fresh.'/projects', ['name' => 'Example'])->assertRedirect();
+        $this->assertSame(4, DB::table('environments')->where('workspace_id', $fresh)->count());
+        $this->get('/workspaces/'.$fresh.'/environments')->assertOk()->assertSeeInOrder(['prod', 'local', 'stage', 'test']);
     }
 
     public static function deletionTargets(): array
@@ -125,8 +130,8 @@ final class StructureTest extends TestCase
     {
         [$project, $environment] = $this->project($this->workspace);
         [$otherProject, $otherEnvironment] = $this->project($this->workspace);
-        $otherEntry = $this->entry($otherEnvironment, 'destroyed');
-        $entry = $this->entry($environment, 'destroyed');
+        $otherEntry = $this->entry($otherProject, $otherEnvironment, 'destroyed');
+        $entry = $this->entry($project, $environment, 'destroyed');
         $machine = (string) Str::uuid();
         $grant = (string) Str::uuid();
         $operation = (string) Str::uuid();
@@ -139,10 +144,9 @@ final class StructureTest extends TestCase
 
         $id = $target === 'projects' ? $project : $environment;
         $deleteUrl = $this->base.'/'.$target.'/'.$id.'/delete';
-        $this->get($this->base.'/structure')->assertOk()->assertSee('action="'.$deleteUrl.'"', false);
+        $this->get($this->base.($target === 'projects' ? '/structure' : '/environments'))->assertOk()->assertSee('action="'.$deleteUrl.'"', false);
         $this->post($deleteUrl)->assertRedirect();
         $this->assertDatabaseMissing($target, ['id' => $id]);
-        $this->assertDatabaseMissing('environments', ['id' => $environment]);
         $this->assertDatabaseMissing('entries', ['id' => $entry]);
         $this->assertDatabaseMissing('grants', ['id' => $grant]);
         $this->assertDatabaseMissing('entry_changes', ['entry_id' => $entry]);
@@ -151,6 +155,8 @@ final class StructureTest extends TestCase
         $this->assertDatabaseHas('audit', ['workspace_id' => $this->workspace, 'event' => $event, 'subject' => $id]);
         $this->assertDatabaseHas('entries', ['environment_id' => $otherEnvironment, 'id' => $otherEntry]);
         $this->assertDatabaseHas('projects', ['id' => $otherProject]);
+        // Removing a project leaves the workspace's environments; removing an environment leaves the projects.
+        $this->assertDatabaseHas($target === 'projects' ? 'environments' : 'projects', ['id' => $target === 'projects' ? $environment : $project]);
     }
 
     public static function enrollmentCases(): array
@@ -188,11 +194,12 @@ final class StructureTest extends TestCase
     {
         $other = $this->workspace();
         [$project, $environment] = $this->project($other);
-        foreach ($this->structureRequests($project, $environment) as $route => $input) {
+        // Adding an environment names no other workspace's row: only the routes that do are tried here.
+        foreach (array_diff_key($this->structureRequests($project, $environment), ['/environments' => true]) as $route => $input) {
             $this->post($this->base.$route, $input)->assertNotFound();
         }
         $this->assertDatabaseHas('projects', ['workspace_id' => $other, 'id' => $project, 'name' => $project]);
-        $this->assertDatabaseHas('environments', ['project_id' => $project, 'id' => $environment, 'name' => 'test']);
+        $this->assertDatabaseHas('environments', ['workspace_id' => $other, 'id' => $environment]);
     }
 
     public function test_viewer_cannot_post_to_project_environment_or_template_routes(): void
@@ -201,7 +208,6 @@ final class StructureTest extends TestCase
         DB::table('members')->where('workspace_id', $this->workspace)->where('user_id', $this->owner->id)->update(['role' => 'viewer']);
         $requests = $this->structureRequests($project, $environment);
         $requests['/projects'] = ['name' => 'New project'];
-        $requests['/template'] = ['env_name' => ['qa']];
         foreach ($requests as $route => $input) {
             $this->post($this->base.$route, $input)->assertNotFound();
         }
@@ -212,7 +218,7 @@ final class StructureTest extends TestCase
     {
         return [
             '/projects/'.$project => ['name' => 'Renamed'],
-            '/environments' => ['name' => 'Added', 'project_id' => $project],
+            '/environments' => ['name' => 'Added'],
             '/environments/'.$environment => ['name' => 'Renamed'],
             '/environments/'.$environment.'/delete' => [],
             '/projects/'.$project.'/delete' => [],
@@ -222,8 +228,8 @@ final class StructureTest extends TestCase
     public function test_archived_entries_still_block_deletion_without_purging_destroyed_siblings(): void
     {
         [$project, $environment] = $this->project($this->workspace);
-        $archived = $this->entry($environment, 'archived');
-        $destroyed = $this->entry($environment, 'destroyed');
+        $archived = $this->entry($project, $environment, 'archived');
+        $destroyed = $this->entry($project, $environment, 'destroyed');
 
         $this->post($this->base.'/projects/'.$project.'/delete')->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/environments/'.$environment.'/delete')->assertStatus(303)->assertSessionHasErrors();
@@ -234,29 +240,30 @@ final class StructureTest extends TestCase
 
     public function test_project_and_environment_name_conflicts_return_validation_errors(): void
     {
-        [$project, $environment] = $this->project($this->workspace);
+        [$project, $environment] = $this->project($this->workspace, 'test');
         [$other] = $this->project($this->workspace);
         $this->post($this->base.'/projects', ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
         $this->post($this->base.'/projects/'.$other, ['name' => $project])->assertStatus(303)->assertSessionHasErrors();
-        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'test'])->assertStatus(303)->assertSessionHasErrors();
-        $this->post($this->base.'/environments', ['project_id' => $project, 'name' => 'qa'])->assertRedirect();
+        $this->post($this->base.'/environments', ['name' => 'test'])->assertStatus(303)->assertSessionHasErrors();
+        $this->post($this->base.'/environments', ['name' => 'qa'])->assertRedirect();
         $this->post($this->base.'/environments/'.$environment, ['name' => 'qa'])->assertStatus(303)->assertSessionHasErrors();
     }
 
-    private function project(string $workspace): array
+    /** A project and an environment of the workspace (environment names are unique in a workspace). */
+    private function project(string $workspace, ?string $environmentName = null): array
     {
         $project = (string) Str::uuid();
         $environment = (string) Str::uuid();
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $workspace, 'name' => $project]);
-        DB::table('environments')->insert(['id' => $environment, 'project_id' => $project, 'name' => 'test']);
+        DB::table('environments')->insert(['id' => $environment, 'workspace_id' => $workspace, 'name' => $environmentName ?? 'env-'.substr($environment, 0, 8)]);
 
         return [$project, $environment];
     }
 
-    private function entry(string $environment, string $state): string
+    private function entry(string $project, string $environment, string $state): string
     {
         $entry = (string) Str::uuid();
-        DB::table('entries')->insert(['id' => $entry, 'environment_id' => $environment, 'name' => 'Example', 'alias' => 'example', 'type' => 'api_key', 'state' => $state, 'version' => 1]);
+        DB::table('entries')->insert(['id' => $entry, 'project_id' => $project, 'environment_id' => $environment, 'name' => 'Example', 'alias' => 'example', 'type' => 'api_key', 'state' => $state, 'version' => 1]);
 
         return $entry;
     }

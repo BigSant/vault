@@ -34,8 +34,8 @@ final class Sharing
         if (is_string($entryId) && Str::isUuid($entryId)) {
             $entry = $this->access->entry($entryId, ['owner', 'editor']);
             abort_unless($entry->workspace_id === $workspace, 404);
-            $entry->place = DB::table('environments')->join('projects', 'projects.id', '=', 'environments.project_id')->where('environments.id', $entry->environment_id)
-                ->select('environments.name as environment', 'environments.production', 'projects.name as project')->first();
+            $entry->place = DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')->join('projects', 'projects.id', '=', 'entries.project_id')
+                ->where('entries.id', $entry->id)->select('environments.name as environment', 'environments.production', 'projects.name as project')->first();
             $type = $this->types->find($workspace, $entry->type);
         }
         $links = DB::table('links')->where('links.workspace_id', $workspace)

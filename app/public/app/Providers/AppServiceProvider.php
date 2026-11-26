@@ -65,7 +65,7 @@ final class AppServiceProvider extends ServiceProvider
             $entry = $r->is('entries/*') ? $r->route('id') : null;
             if (is_string($entry) && $entry !== '') {
                 return DB::table('entries')->join('environments', 'environments.id', '=', 'entries.environment_id')
-                    ->join('projects', 'projects.id', '=', 'environments.project_id')->where('entries.id', $entry)->value('projects.workspace_id');
+                    ->join('projects', 'projects.id', '=', 'entries.project_id')->where('entries.id', $entry)->value('projects.workspace_id');
             }
         } catch (\Throwable) {
             // No route or no database: the header falls back to the last workspace.

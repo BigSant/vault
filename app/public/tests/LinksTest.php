@@ -40,6 +40,8 @@ final class LinksTest extends TestCase
 
     private string $environment;
 
+    private string $project;
+
     private string $base;
 
     private string $sentinel = 'synthetic-entry-password-never-to-agent';
@@ -123,7 +125,8 @@ final class LinksTest extends TestCase
         DB::table('workspaces')->insert(['id' => $this->workspace, 'name' => 'Test']);
         DB::table('members')->insert(['workspace_id' => $this->workspace, 'user_id' => $this->owner->id, 'role' => 'owner']);
         DB::table('projects')->insert(['id' => $project, 'workspace_id' => $this->workspace, 'name' => 'Shop']);
-        DB::table('environments')->insert(['id' => $this->environment, 'project_id' => $project, 'name' => 'stage']);
+        DB::table('environments')->insert(['id' => $this->environment, 'workspace_id' => $this->workspace, 'name' => 'stage']);
+        $this->project = $project;
         $this->base = '/workspaces/'.$this->workspace;
         $this->actingAs($this->owner)->withSession(['mfa_at' => time(), 'login_at' => time(), 'confirmed_at' => time(), 'auth_revision' => $this->owner->credentialRevision()]);
     }
@@ -145,7 +148,7 @@ final class LinksTest extends TestCase
 
     private function entry(): string
     {
-        return app(Catalog::class)->create(['environment_id' => $this->environment, 'name' => 'Shop admin', 'alias' => 'shop-admin', 'type' => 'login',
+        return app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Shop admin', 'alias' => 'shop-admin', 'type' => 'login',
             'secret' => json_encode(['username' => 'admin', 'password' => $this->sentinel])]);
     }
 

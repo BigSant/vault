@@ -2,7 +2,7 @@
 
 A credential store with an English web UI and action tools for LLM clients, primarily **ai-os**. A human views values after authentication; an agent gets only the aliases, action names and states it is allowed. The password is used by a separate executor.
 
-It provides a workspace → project → environment structure, entry types and tags, search, versions, import, archive, destruction, multiple owners, MFA, reveal audit, temporary agent permissions, human approvals, an API, a fixed CLI recipe and isolated browser login with MFA. OpenBao stores the encrypted values; MySQL stores the metadata. Backups are encrypted and restored in a separate environment.
+It provides workspaces with projects and a shared list of environments, entry types and tags, search, versions, import, archive, destruction, multiple owners, MFA, reveal audit, temporary agent permissions, human approvals, an API, a fixed CLI recipe and isolated browser login with MFA. OpenBao stores the encrypted values; MySQL stores the metadata. Backups are encrypted and restored in a separate environment.
 
 ## Getting started
 
@@ -17,7 +17,7 @@ bin/vault install
 
 Open **https://vault.local/**. The first owner needs the activation code from the private `data/security/app/bootstrap.code` file. Enter its contents directly in the web UI, not in a chat. Create a password and register a TOTP authenticator. Readiness address: `https://vault.local/health.php` (200 only when the DB is reachable and OpenBao is unsealed).
 
-1. Create a project: the local, test, stage and prod environments appear automatically.
+1. Create a project. The workspace starts with the environments local, test, stage and prod (Setup › Environments); every project uses that one list.
 2. Add an entry and choose its entry type. The alias is the name visible to the agent; do not keep sensitive data in it.
 3. In "Access", create an agent identity and grants for specific entries and actions. The default connector configuration is empty – the agent has no actions.
 4. Connect [ai-os or MCP/CLI](docs/integrations.md). The operator describes the specific external addresses and safe recipes in the private configuration.

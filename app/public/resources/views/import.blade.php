@@ -14,24 +14,31 @@
 <div class="deck import-deck">
 <section aria-labelledby="paste">
 <h2 id="paste">Paste entries</h2>
-@if($environments->isEmpty() || $types->isEmpty())
+@if($projects->isEmpty() || $environments->isEmpty() || $types->isEmpty())
 <div class="empty capped">
-    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#{{ $firstProjectId ? 'p-'.$firstProjectId : 'add-project' }}">{{ $firstProjectId ? 'Add an environment to a project in Setup' : 'Add a project in Setup, then an environment' }}</a>.</p>@endif
+    @if($projects->isEmpty())<p>No projects in this workspace yet. <a href="/workspaces/{{ $space->id }}/structure#add-project">Add a project in Setup</a> first.</p>@endif
+    @if($environments->isEmpty())<p>No environments in this workspace yet. <a href="/workspaces/{{ $space->id }}/environments#add-environment">Add an environment in Setup</a> first.</p>@endif
     @if($types->isEmpty())<p>No entry types in this workspace yet. <a href="/workspaces/{{ $space->id }}/types">Add an entry type in Setup</a> first.</p>@endif
 </div>
 @else
 <form class="action" method="post" action="/workspaces/{{ $space->id }}/import">@csrf
     <label class="stack"><span>Entries (JSON) <small>Up to 50 entries per import.</small></span><textarea name="import" rows="10" required spellcheck="false" autocomplete="off"></textarea></label>
     <details id="environment-ids" class="import-ref capped">
-        <summary id="environment-ids-title">Environment IDs</summary>
+        <summary id="environment-ids-title">Project and environment IDs</summary>
         <div class="inner">
             <div class="scroll"><table class="list import-ids" aria-labelledby="environment-ids-title">
-                <thead><tr><th scope="col">Project / environment</th><th scope="col">Environment ID</th></tr></thead>
+                <thead><tr><th scope="col">Project or environment</th><th scope="col">ID</th></tr></thead>
                 <tbody>
+                @foreach($projects as $p)
+                    <tr>
+                        <td class="env-name"><span><small class="k">Project</small> {{ $p->name }}</span></td>
+                        <td class="env-id"><span class="controls"><code id="proj-{{ $p->id }}">{{ $p->id }}</code> <button type="button" data-copy="proj-{{ $p->id }}" data-copy-name="project ID" aria-label="Copy project ID for {{ $p->name }}">Copy ID</button></span></td>
+                    </tr>
+                @endforeach
                 @foreach($environments as $env)
                     <tr>
-                        <td class="env-name"><span>{{ $env->project }} @include('sign', ['name' => $env->name, 'production' => $env->production])</span></td>
-                        <td class="env-id"><span class="controls"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->project }} / {{ $env->name }}">Copy ID</button></span></td>
+                        <td class="env-name"><span><small class="k">Environment</small> @include('sign', ['name' => $env->name, 'production' => $env->production])</span></td>
+                        <td class="env-id"><span class="controls"><code id="env-{{ $env->id }}">{{ $env->id }}</code> <button type="button" data-copy="env-{{ $env->id }}" data-copy-name="environment ID" aria-label="Copy environment ID for {{ $env->name }}">Copy ID</button></span></td>
                     </tr>
                 @endforeach
                 </tbody>
@@ -71,9 +78,10 @@
 <div class="scroll capped"><table class="list import-format" aria-labelledby="format">
     <thead><tr><th scope="col">Field</th><th scope="col">Required</th><th scope="col">Description</th></tr></thead>
     <tbody>
-        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">@if($example)UUID from <a href="#environment-ids">Environment IDs</a>.@else UUID of a workspace environment.@endif</td></tr>
+        <tr><td class="key"><code>project_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">@if($example)UUID from <a href="#environment-ids">Project and environment IDs</a>.@else UUID of a workspace project.@endif</td></tr>
+        <tr><td class="key"><code>environment_id</code></td><td class="req"><span class="chip">required</span></td><td class="desc">@if($example)UUID from <a href="#environment-ids">Project and environment IDs</a>.@else UUID of a workspace environment.@endif</td></tr>
         <tr><td class="key"><code>name</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Display name, up to 160 characters.</td></tr>
-        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip">required</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>).</td></tr>
+        <tr><td class="key"><code>alias</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Agent-visible name, up to 100 characters (letters, digits, spaces, <code>.</code>, <code>_</code>, <code>-</code>). Made from the name when left out.</td></tr>
         <tr><td class="key"><code>type</code></td><td class="req"><span class="chip">required</span></td><td class="desc">@if($example)Lowercase key from <a href="#type-keys">Type and field keys</a>.@else Lowercase workspace entry type key.@endif</td></tr>
         <tr><td class="key"><code>secret_fields</code></td><td class="req"><span class="chip">required</span></td><td class="desc">JSON object mapping field keys to string values.</td></tr>
         <tr><td class="key"><code>tags</code></td><td class="req"><span class="chip muted">optional</span></td><td class="desc">Comma-separated tags, up to 200 characters.</td></tr>

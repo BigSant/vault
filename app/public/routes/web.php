@@ -64,7 +64,7 @@ Route::middleware('vault.auth')->group(function () {
     Route::post('/workspaces/{workspace}/projects', [Workspace::class, 'project']);
     Route::post('/workspaces/{workspace}/environments', [Workspace::class, 'environment']);
     Route::get('/workspaces/{workspace}/structure', [Workspace::class, 'structurePage'])->whereUuid('workspace');
-    Route::post('/workspaces/{workspace}/template', [Workspace::class, 'template'])->whereUuid('workspace');
+    Route::get('/workspaces/{workspace}/environments', [Workspace::class, 'environmentsPage'])->whereUuid('workspace');
     Route::post('/workspaces/{workspace}/projects/{project}', [Workspace::class, 'renameProject'])->whereUuid(['workspace', 'project']);
     Route::post('/workspaces/{workspace}/projects/{project}/delete', [Workspace::class, 'deleteProject'])->whereUuid(['workspace', 'project']);
     Route::post('/workspaces/{workspace}/environments/{environment}', [Workspace::class, 'updateEnvironment'])->whereUuid(['workspace', 'environment']);

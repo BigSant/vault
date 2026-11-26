@@ -93,10 +93,11 @@ def run():
     workspace = urllib.parse.parse_qs(urllib.parse.urlsplit(human.url).query)['workspace'][0]
     human.request('/workspaces/'+workspace+'/projects', {'name': 'Target'})
     human.request('/entries/new?workspace='+workspace)
-    environment = re.search(r'<option value="([a-f0-9-]+)"[^>]*>Target / stage</option>', human.last)[1]
+    project = re.search(r'<option value="([a-f0-9-]+)"[^>]*>Target</option>', human.last)[1]
+    environment = re.search(r'<option value="([a-f0-9-]+)"[^>]*>stage</option>', human.last)[1]
     ids = {}
     for typ, payload in [('api_key', {'token': 'synthetic-token'}), ('login', {'username': 'synthetic-user-sensitive', 'password': 'synthetic-password'}), ('dynamic_database', {'role':'vault-probe'})]:
-        human.request('/entries', {'environment_id': environment, 'name': 'Private '+typ, 'alias': 'fixture-'+typ, 'type': typ, 'secret': json.dumps(payload)})
+        human.request('/entries', {'project_id': project, 'environment_id': environment, 'name': 'Private '+typ, 'alias': 'fixture-'+typ, 'type': typ, 'secret': json.dumps(payload)})
         ids[typ] = human.url.rsplit('/', 1)[-1]
         assert all(value not in human.last for value in payload.values()), 'plaintext in initial entry page'
         human.request('/entries/'+ids[typ]+'/reveal', {})
