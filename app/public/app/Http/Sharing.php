@@ -171,7 +171,7 @@ final class Sharing
 
         return redirect('/workspaces/'.$workspace.'/agents#agent-'.$id)->with('notice', match (true) {
             $d['links'] === '1' => 'One-time links allowed for '.$machine->name.'.',
-            $open > 0 => 'One-time links stopped for '.$machine->name.'. '.$open.' of its links can still be opened: burn them on Links if needed.',
+            $open > 0 => 'One-time links stopped for '.$machine->name.'. '.$open.' of its links can still be opened: burn '.($open === 1 ? 'it' : 'them').' on Links if needed.',
             default => 'One-time links stopped for '.$machine->name.'.',
         });
     }

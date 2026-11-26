@@ -23,7 +23,7 @@
 <form class="action plain" method="post" action="/workspaces/{{ $space->id }}/onetimesecret/check">@csrf
     <div class="form-foot"><p class="note">Signs in to Onetime Secret with the saved email and token. Nothing is created.</p><button>Check account</button></div>
 </form>
-<form class="action plain" method="post" action="/workspaces/{{ $space->id }}/onetimesecret/remove" data-confirm="Remove the Onetime Secret account? No one can make one-time links until an account is set up again.">@csrf
+<form class="action plain" method="post" action="/workspaces/{{ $space->id }}/onetimesecret/remove" data-confirm="Remove the Onetime Secret account?@if($open) {{ $open }} {{ Str::plural('link', $open) }} made in it {{ $open === 1 ? 'is' : 'are' }} still open, and Vault can then no longer check or burn {{ $open === 1 ? 'it' : 'them' }}.@endif No one can make one-time links until an account is set up again.">@csrf
     <div class="form-foot"><p class="note">Deletes the token from OpenBao. Links already out end with their lifetime.</p><button class="stop">Remove account</button></div>
 </form>
 @else
@@ -38,7 +38,7 @@
     <label><span>Default lifetime</span><select name="default_lifetime">@foreach($lifetimes as $seconds => $name)<option value="{{ $seconds }}" @selected((int) $value('default_lifetime', 86400) === $seconds)>{{ $name }}</option>@endforeach</select></label>
     <div class="field"><label for="ots-max"><span>Longest lifetime</span></label><select id="ots-max" name="max_lifetime" aria-describedby="ots-max-hint">@foreach($lifetimes as $seconds => $name)<option value="{{ $seconds }}" @selected((int) $value('max_lifetime', 604800) === $seconds)>{{ $name }}</option>@endforeach</select><small class="hint" id="ots-max-hint">People and agents choose up to this. The account's plan may allow less; Onetime Secret then refuses the link.</small></div>
     {{-- Shown while links of the current account are open: moving to another region or email leaves them to their lifetime. --}}
-    @if($open)<div class="field"><label class="check"><input type="checkbox" name="orphan" value="1" aria-describedby="ots-orphan-hint"> Change anyway</label><small class="hint" id="ots-orphan-hint">{{ $open }} one-time {{ Str::plural('link', $open) }} made in this account {{ $open === 1 ? 'is' : 'are' }} still open. In another region or with another email, Vault can no longer check or burn {{ $open === 1 ? 'it' : 'them' }}; a new token for the same account changes nothing.</small></div>@endif
+    @if($open)<div class="field check-field"><label class="check"><input type="checkbox" name="orphan" value="1" aria-describedby="ots-orphan-hint"> Change anyway</label><small class="hint" id="ots-orphan-hint">{{ $open }} one-time {{ Str::plural('link', $open) }} made in this account {{ $open === 1 ? 'is' : 'are' }} still open. In another region or with another email, Vault can no longer check or burn {{ $open === 1 ? 'it' : 'them' }}; a new token for the same account changes nothing.</small></div>@endif
     @include('confirm-inline', ['verb' => 'save the account'])
     <div class="form-foot"><p class="note">A link that is already out keeps its lifetime.</p><button class="go">Save account</button></div>
 </form>

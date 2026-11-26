@@ -210,7 +210,7 @@ final class Links
     {
         $d = Validator::make($input, [
             'text' => 'nullable|string|max:'.self::MAX_TEXT,
-            'lifetime' => 'nullable',
+            'lifetime' => 'nullable|integer',
             'passphrase' => 'nullable|string|max:200',
             'note' => 'nullable|string|max:120',
         ])->validate();
@@ -254,7 +254,8 @@ final class Links
             if (self::refused($e)) {
                 DB::table('links')->where('id', $id)->delete();
             }
-            throw ValidationException::withMessages(['text' => $e->reason()]);
+            // A plan limit is about the lifetime; anything else about sending the content.
+            throw ValidationException::withMessages([($e->entitlement() || in_array($e->status, [400, 422], true) ? 'lifetime' : 'text') => $e->reason(true)]);
         }
         $this->access->audit($workspace, 'link.create', $id);
 
@@ -509,6 +510,11 @@ final class Links
         }
         if (DB::table('links')->where('id', $link->id)->where('state', 'sending')->update(['state' => 'active', 'checked_at' => null,
             'expires_at' => \Illuminate\Support\Carbon::parse($link->updated_at)->addSeconds((int) $link->lifetime), 'updated_at' => now()])) {
+            // It was sent: on record like any link, and its request finished.
+            $this->access->audit($link->workspace_id, 'link.create', $link->id, 'ok', $link->machine_id ? 'machine:'.$link->machine_id : 'user:'.$link->user_id);
+            if ($link->operation_id) {
+                DB::table('operations')->where('id', $link->operation_id)->whereIn('state', ['running', 'failed', 'expired'])->update(['state' => 'succeeded', 'updated_at' => now()]);
+            }
             try {
                 $this->checkLink(DB::table('links')->where('id', $link->id)->first());
             } catch (OneTimeSecretError) {
@@ -627,14 +633,14 @@ final class Links
     /** The content an owner approves, and the passphrase with it, sealed so a send can tell they did not change. */
     private static function seal(string $template, ?string $passphrase): string
     {
-        return hash_hmac('sha256', json_encode(['seal', $template, $passphrase]), (string) config('app.key'));
+        return hash_hmac('sha256', json_encode(['seal', $template, $passphrase], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     /** What a retry must repeat exactly: keyed with the application key, so the digest says nothing about the content. */
     private static function digest(?string $entry, array $d): string
     {
         // The lifetime as it was asked for (null: the default), so a retry still matches after the settings change.
-        return hash_hmac('sha256', json_encode([$entry, $d['text'], $d['lifetime'] === null || $d['lifetime'] === '' ? null : (string) $d['lifetime'], $d['passphrase'], $d['note']]), (string) config('app.key'));
+        return hash_hmac('sha256', json_encode([$entry, $d['text'], $d['lifetime'] === null || $d['lifetime'] === '' ? null : (string) $d['lifetime'], $d['passphrase'], $d['note']], JSON_THROW_ON_ERROR), (string) config('app.key'));
     }
 
     /** A retry with this request_id: the same link when it asks for the same thing, 409 otherwise. */
@@ -653,8 +659,6 @@ final class Links
     public function createByMachine(object $machine, array $input): array
     {
         abort_unless($machine->links, 403);
-        $settings = $this->ready($machine->workspace_id);
-        abort_unless($settings, 409);
         $requestId = $input['request_id'] ?? null;
         abort_unless(is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,80}$/D', $requestId), 422);
         $entryId = $input['entry_id'] ?? null;
@@ -669,6 +673,8 @@ final class Links
         if ($prior = $this->retry($machine, $requestId, $digest)) {
             return $prior;
         }
+        $settings = $this->ready($machine->workspace_id);
+        abort_unless($settings, 409);
         $lifetime = $this->lifetime($settings, $d['lifetime']);
         $template = null;
         $fields = [];
@@ -719,8 +725,9 @@ final class Links
             // The content waits in OpenBao until an owner allows it; the values are put in only when it is sent.
             $this->secrets->put('links/'.$id, ['text' => $template, 'passphrase' => $d['passphrase']]);
             app(Operations::class)->open($machine, $entryId, self::ACTION, $requestId, function (object $op) use ($id) {
-                DB::table('links')->where('id', $id)->where('state', 'reserved')->update(['version' => $op->version, 'operation_id' => $op->id,
-                    'state' => 'pending', 'updated_at' => now()]);
+                // Cancelled by a Stop at this moment: no request either (the whole transaction goes back).
+                abort_unless(DB::table('links')->where('id', $id)->where('state', 'reserved')->update(['version' => $op->version, 'operation_id' => $op->id,
+                    'state' => 'pending', 'updated_at' => now()]), 409);
             });
             // The request_id had already opened a request that is not this link's.
             abort_unless(DB::table('links')->where('id', $id)->where('state', 'pending')->exists(), 409);
@@ -786,6 +793,8 @@ final class Links
         if ($link->state === 'pending' && $link->operation_id) {
             app(Operations::class)->status($machine, $link->operation_id);
             $this->settle($machine->workspace_id);
+        } elseif (in_array($link->state, ['sending', 'reserved'], true)) {
+            $this->settle($machine->workspace_id);
         } elseif (in_array($link->state, ['active', 'previewed'], true) && (! $link->checked_at || strtotime($link->checked_at) <= time() - self::CHECK_EVERY)) {
             try {
                 $this->checkLink($link);
@@ -798,7 +807,8 @@ final class Links
         // The link is handed out only while the agent may have it: links allowed, and for an entry's values its grant.
         $allowed = DB::table('machines')->where('id', $machine->id)->value('links')
             && (! $link->entry_id || app(Operations::class)->grantRows($machine)->where('entries.id', $link->entry_id)->where('grants.action', self::ACTION)->exists());
-        if ($allowed && in_array($link->state, ['active', 'previewed'], true)) {
+        // Past its lifetime the link is dead at Onetime Secret, whatever the last answer said.
+        if ($allowed && in_array($link->state, ['active', 'previewed'], true) && (! $link->expires_at || strtotime($link->expires_at) > time())) {
             $url = $this->secrets->find('links/'.$link->id)['url'] ?? null;
         }
 

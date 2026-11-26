@@ -18,10 +18,10 @@ final class OneTimeSecretError extends \RuntimeException
     }
 
     /** One sentence for people; never the service's own message, which could echo what was sent. */
-    public function reason(): string
+    public function reason(bool $creating = false): string
     {
         return match (true) {
-            $this->entitlement() => 'The Onetime Secret plan of this account does not allow that. Choose a shorter lifetime.',
+            $this->entitlement() => 'The Onetime Secret plan of this account does not allow that.'.($creating ? ' Choose a shorter lifetime.' : ''),
             $this->status === -1 => 'Vault cannot check this link: it was made in an earlier Onetime Secret account, or its receipt is gone.',
             $this->status === 0 => 'Onetime Secret could not be reached. Try again later.',
             in_array($this->status, [401, 403], true) => 'Onetime Secret did not accept the account email and API token. An owner can check them in Setup.',

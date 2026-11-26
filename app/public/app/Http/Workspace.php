@@ -333,7 +333,7 @@ final class Workspace
     {
         $open = Links::openForEntry($entry);
 
-        return $open ? $done.' '.$open.' one-time '.Str::plural('link', $open).' with its values can still be opened: burn them on Links if needed.' : null;
+        return $open ? $done.' '.$open.' one-time '.Str::plural('link', $open).' with its values can still be opened: burn '.($open === 1 ? 'it' : 'them').' on Links if needed.' : null;
     }
 
     private function workspaceEnvironments(string $workspace)
@@ -619,9 +619,10 @@ final class Workspace
         $open = $kind === 'machines' ? Links::openOf($id)
             : ($row->action === Links::ACTION ? DB::table('links')->where('machine_id', $row->machine_id)->where('entry_id', $row->entry_id)->whereIn('state', ['sending', 'active', 'previewed'])->count() : 0);
         $what = $kind === 'machines' ? 'Agent '.$machine->name.' revoked. '.$open.' of its one-time links' : 'Grant revoked. '.$open.' one-time '.Str::plural('link', $open).' it made';
+        $what = $open === 1 && $kind === 'machines' ? 'Agent '.$machine->name.' revoked. 1 of its one-time links' : $what;
 
         return redirect('/workspaces/'.$workspace.($kind === 'machines' ? '/agents' : '/grants'))
-            ->with('notice', $open ? $what.' can still be opened: burn them on Links if needed.' : null);
+            ->with('notice', $open ? $what.($open === 1 ? ' can still be opened: burn it on Links if needed.' : ' can still be opened: burn them on Links if needed.') : null);
     }
 
     public function decision(Request $r, string $workspace, string $id)

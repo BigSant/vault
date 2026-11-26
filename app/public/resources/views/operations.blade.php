@@ -97,13 +97,14 @@
             }
             $rid = substr($o->id, 0, 8);
             // A one-time link: which fields it would hold, how long it lives and whether a passphrase guards it.
-            $linkWhat = ($o->link_lifetime ?? null) !== null ? 'fields '.(implode(', ', json_decode((string) $o->link_fields, true) ?: []) ?: 'none').' · '
-                .(\App\Vault\OneTimeSecret::LIFETIMES[$o->link_lifetime] ?? $o->link_lifetime.' s').($o->link_passphrase ? ' · passphrase' : ' · no passphrase') : null;
+            $linkParts = ($o->link_lifetime ?? null) !== null ? ['fields '.(implode(', ', json_decode((string) $o->link_fields, true) ?: []) ?: 'none'),
+                \App\Vault\OneTimeSecret::LIFETIMES[$o->link_lifetime] ?? $o->link_lifetime.' s', $o->link_passphrase ? 'passphrase' : 'no passphrase'] : null;
+            $linkWhat = $linkParts ? implode(' · ', $linkParts) : null;
             $what = $o->agent.' runs '.$o->action.' on '.$o->entry.' — '.$o->project.' / '.$o->environment.($linkWhat ? ' ('.$linkWhat.')' : '').', request '.$rid;
         @endphp
         <tr class="{{ $stripes[$state] ?? 'is-idle' }}" data-request="{{ $o->id }}" data-state="{{ $state }}"@unless($finished) data-what="{{ $o->action }} on {{ $o->entry }} (request {{ $rid }})" data-expires="{{ strtotime((string) $o->expires_at) }}"@endunless>
             <td class="who" data-label="Agent"><b>{{ $o->agent }}</b></td>
-            <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{!! str_replace('.', '.<wbr>', e($o->action)) !!}</code>@if($linkWhat)<span class="link-what">{{ $linkWhat }}</span>@endif<small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
+            <td class="name action" data-label="Action"><small class="k">{{ $finished ? 'requested' : 'requests' }}</small> <code>{!! str_replace('.', '.<wbr>', e($o->action)) !!}</code>@if($linkParts)<span class="link-what">{{ $linkParts[0] }} · <span class="nobreak">{{ $linkParts[1] }}</span> · <span class="nobreak">{{ $linkParts[2] }}</span></span>@endif<small class="rid" title="Request {{ $o->id }}">Request {{ $rid }}</small></td>
             @empty($hideEntry)<td class="name entry" data-label="Entry"><a href="/entries/{{ $o->entry_id }}">{{ $o->entry }}</a><span class="k" aria-hidden="true">&nbsp;·</span><small>{{ $o->project }}&nbsp;/ @include('sign', ['production' => $o->production, 'name' => $o->environment])</small></td>@endempty
             {{-- Both waiting states carry the amber lamp; a running request pulses. --}}
             <td class="state" data-label="State">@if(in_array($state, ['pending', 'running', 'requires_user_action'], true))<span class="lamp {{ $state === 'running' ? 'run' : 'warn' }}" aria-hidden="true"></span> @endif @include('outcome', ['outcome' => $state])</td>

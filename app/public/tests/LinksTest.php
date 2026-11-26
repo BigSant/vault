@@ -25,6 +25,12 @@ final class LinksTest extends TestCase
     /** The receipt state the fake returns. */
     private string $receiptState = 'new';
 
+    /** When set, conceal answers this [status, error_type]. */
+    private ?array $concealError = null;
+
+    /** view_count the fake's receipt reports. */
+    private int $views = 0;
+
     /** The receipt state the fake reports after a burn. */
     private string $burnState = 'burned';
 
@@ -62,10 +68,11 @@ final class LinksTest extends TestCase
                 }
 
                 return match (true) {
+                    $path === '/api/v2/secret/conceal' && $this->concealError => Http::response(['error_type' => $this->concealError[1], 'message' => 'echo of input'], $this->concealError[0]),
                     $path === '/api/v2/secret/conceal' => Http::response(['record' => ['secret' => ['identifier' => 'sec'.count($this->ots).'abcdefgh'], 'receipt' => ['identifier' => 'rcpt'.count($this->ots).'abcdefgh']]]),
                     $path === '/api/v2/receipt/recent' => Http::response(['records' => []]),
                     str_ends_with($path, '/burn') => Http::response(['record' => ['state' => $this->burnState]]),
-                    str_starts_with($path, '/api/v2/receipt/') => Http::response(['record' => ['state' => $this->receiptState]]),
+                    str_starts_with($path, '/api/v2/receipt/') => Http::response(['record' => ['state' => $this->receiptState], 'details' => ['view_count' => $this->views]]),
                     default => Http::response([], 404),
                 };
             }
@@ -564,7 +571,7 @@ final class LinksTest extends TestCase
         [$machine, $token] = $this->agent();
         $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'open-link-1'])->assertOk();
         $this->post($this->base.'/revoke/machines/'.$machine)->assertRedirect()
-            ->assertSessionHas('notice', 'Agent mailer revoked. 1 of its one-time links can still be opened: burn them on Links if needed.');
+            ->assertSessionHas('notice', 'Agent mailer revoked. 1 of its one-time links can still be opened: burn it on Links if needed.');
     }
 
     public function test_a_changed_draft_or_template_is_never_sent(): void
@@ -622,6 +629,32 @@ final class LinksTest extends TestCase
         $id = DB::table('links')->value('id');
         $this->assertArrayNotHasKey('url', end($this->backend['/v1/secret/data/links/'.$id]));
         $this->post('/entries/'.$entry.'/archive')->assertRedirect()
-            ->assertSessionHas('notice', 'Entry archived. 1 one-time link with its values can still be opened: burn them on Links if needed.');
+            ->assertSessionHas('notice', 'Entry archived. 1 one-time link with its values can still be opened: burn it on Links if needed.');
+    }
+
+    public function test_plan_limits_and_visits_read_as_such(): void
+    {
+        $this->setUpAccount();
+        [, $token] = $this->agent();
+        $this->concealError = [403, 'EntitlementRequired'];
+        $this->withToken($token)->postJson('/api/v1/links', ['text' => 'x', 'request_id' => 'plan-limit-1'])->assertStatus(422);
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertStatus(422)
+            ->assertSeeText('The Onetime Secret plan of this account does not allow that. Choose a shorter lifetime.')->assertDontSee('echo of input');
+        $this->assertSame(0, DB::table('links')->count());
+        $this->concealError = null;
+        $this->post($this->base.'/links', ['text' => 'synthetic'])->assertOk();
+        $this->views = 1;
+        $this->post($this->base.'/links/check')->assertRedirect();
+        $this->assertSame('previewed', DB::table('links')->value('state'));
+        $this->assertTrue(DB::table('audit')->where('event', 'link.previewed')->exists());
+    }
+
+    public function test_revoking_a_link_grant_names_its_open_links_on_grants(): void
+    {
+        [$machine, , , $op] = $this->pendingLink();
+        $this->post($this->base.'/operations/'.$op.'/decision', ['decision' => 'approve'])->assertRedirect();
+        $grant = DB::table('grants')->where('machine_id', $machine)->value('id');
+        $this->followingRedirects()->post($this->base.'/revoke/grants/'.$grant)
+            ->assertSeeText('Grant revoked. 1 one-time link it made can still be opened: burn it on Links if needed.');
     }
 }

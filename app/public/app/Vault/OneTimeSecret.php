@@ -68,7 +68,7 @@ final class OneTimeSecret
         $record = $json['record'] ?? [];
         $state = self::STATES[$record['state'] ?? ''] ?? throw new OneTimeSecretError(502);
         // The service counts a visit that did not reveal the content apart from the state.
-        $visited = (int) ($json['details']['view_count'] ?? 0) > 0 || ! empty($record['first_access']) || in_array($record['is_previewed'] ?? null, [true, 'true', '1', 1], true);
+        $visited = (int) ($json['details']['view_count'] ?? 0) > 0 || ! empty($json['details']['first_access']) || ! empty($record['first_access']) || in_array($record['is_previewed'] ?? null, [true, 'true', '1', 1], true);
 
         return $state === 'active' && $visited ? 'previewed' : $state;
     }

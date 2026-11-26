@@ -43,7 +43,8 @@
             $open = in_array($l->state, ['reserved', 'pending', 'active', 'previewed'], true);
             // A link of an earlier account cannot be burned from here (only one waiting for approval can still be cancelled).
             $mine = $l->region.'|'.$l->account === $account || in_array($l->state, ['reserved', 'pending'], true);
-            $canBurn = $open && $mine && ($isOwner || $l->user_id === auth()->id());
+            $over = $l->expires_at && strtotime($l->expires_at) <= time();
+            $canBurn = $open && ! $over && $mine && ($isOwner || $l->user_id === auth()->id());
             $burnName = in_array($l->state, ['reserved', 'pending'], true) ? 'Cancel link '.$title : 'Burn link '.$title;
         @endphp
         <tr class="{{ $stripes[$l->state] ?? 'is-idle' }}">
@@ -56,6 +57,7 @@
             {{-- Open: when the lifetime ends. Ended: when, as far as Vault knows (the lifetime's end for an expired link, else the check that found it ended). --}}
             @php [$endWord, $endAt] = match (true) {
                 in_array($l->state, ['reserved', 'pending', 'sending'], true) => [null, null],
+                $open && $l->expires_at && strtotime($l->expires_at) <= time() => ['Expired, checking ·', $l->expires_at],
                 $open => ['Expires', $l->expires_at],
                 $l->state === 'expired' && $l->expires_at => ['Expired', min($l->expires_at, $l->updated_at)],
                 default => ['Ended', $l->updated_at],
