@@ -24,13 +24,13 @@ const aliasSlug = value => String(value).normalize('NFKD').replace(/[\u0300-\u03
     follow();
   }
 }
-// Searchable choices (select[data-search], the entry form's Project and Environment): a text field that filters the
+// Searchable choices (select[data-search], the entry form's Project, Environment and Type): a text field that filters the
 // options as you type, with the matches in a list under it (combobox + listbox). Arrow keys move, Enter or a click
 // chooses, Escape closes and restores the choice. The select stays in the form, hidden, and carries the value; without
 // script it is the plain select. Matching ignores case and accents ("sa" finds "Šaltinis").
 const fold = text => String(text).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
 document.querySelectorAll('select[data-search]').forEach((select, n) => {
-  const options = [...select.options].filter(o => o.value !== '');
+  let options = [...select.options].filter(o => o.value !== '');
   const prompt = select.options[0]?.value === '' ? select.options[0].text : 'Choose one';
   const box = document.createElement('span'); box.className = 'search-select';
   const input = document.createElement('input');
@@ -64,6 +64,11 @@ document.querySelectorAll('select[data-search]').forEach((select, n) => {
     select.dispatchEvent(new Event('change', { bubbles: true })); valid(); close();
   };
   input.value = chosen()?.text ?? ''; valid();
+  // New options in the select ("Reload types"): the list and the field follow them.
+  select.addEventListener('vault:options', () => {
+    options = [...select.options].filter(o => o.value !== '');
+    input.value = chosen()?.text ?? ''; valid(); if (!list.hidden) render(false);
+  });
   input.addEventListener('focus', () => open(true));
   input.addEventListener('click', () => { if (list.hidden) open(true); });
   input.addEventListener('input', () => { if (select.value && input.value !== chosen()?.text) { select.value = ''; valid(); } open(false); });
@@ -375,6 +380,7 @@ document.querySelectorAll('[data-reload-types]').forEach(button => {
     if (select) {
       type.replaceChildren(...[...nextType.options].map(option => document.importNode(option, true)));
       type.value = [...type.options].some(option => option.value === chosen) ? chosen : '';
+      type.dispatchEvent(new Event('vault:options'));
     }
     rows.replaceChildren(...[...nextRows.childNodes].map(node => document.importNode(node, true)));
     const placed = new Set();
