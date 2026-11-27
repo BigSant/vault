@@ -130,12 +130,14 @@ without opening the browser to the site:
 - `"static_paths": ["/themes/", "/js/", "/img/", "/modules/"]` — a **GET** that is **not a navigation**, whose
   type is stylesheet, script, image, font, media, text track or manifest (never "other": beacons, prefetch), to a
   registered origin (`url` plus `origins`), whose path starts with one of these prefixes (each starts and ends with
-  `/`) and ends with an allowed
+  `/` and has at least one segment: `"/"` alone is refused, and so is a `.` or `..` segment) and ends with an allowed
   file extension, is allowed without listing it. Optional `"static_extensions"` narrows the built-in list (`.css`,
-  `.js`, `.mjs`, images, fonts, `.vtt`, `.webmanifest`); a path with `%`, `//` or another extension never matches.
+  `.js`, `.mjs`, images, fonts, `.vtt`, `.webmanifest`); a path with `%`, `//`, a `.`/`..` segment or another extension never matches.
   The query must be empty, or only the `"static_query"` parameters in their shapes (e.g. `{"v": "version"}`,
-  each at most once). Such a file is fetched **without cookies or credentials** (its own request context, a new one
-  per file) and its `Set-Cookie`, `Location` and `Content-Disposition` are dropped; one that redirects is dropped,
+  each at most once). Such a file is fetched **without cookies, credentials or any header of the page** (its own
+  request context, a new one per file, with only an `Accept` the broker sets: no `Referer`, so a back-office URL and
+  its token never reach the static host's log, no `Origin`) and its `Set-Cookie`, `Location`, `Refresh` and
+  `Content-Disposition` are dropped; one that redirects is dropped,
   never followed. Any other static-typed GET (outside the paths, another origin, an analytics pixel, a back-office
   URL dressed as an image) is dropped before it leaves, without failing the login. Never covered: documents and
   navigations, frames, XHR/fetch, EventSource, WebSocket, downloads, popups, and every method but GET; those still
@@ -145,14 +147,49 @@ without opening the browser to the site:
 - `"variable_query": {"rand": "digits:13"}` on one `allowed_requests` rule — the named query parameters may differ,
   each at most once and only in its shape; the method, scheme, host, port, path and every other parameter must still
   be exactly the rule's (raw, undecoded). Shapes are a fixed vocabulary, never a pattern: `digits` / `digits:N`
-  (1–N digits, N ≤ 20), `hex:N` (exactly N lowercase hex digits, 8 ≤ N ≤ 64) and `version` (`8`, `8.1.2`, at most
-  four parts). A percent-encoded or `+` key or value never matches. It exists for a nonce or a token the site makes,
+  (1–N digits, N ≤ 20), `hex:N` (exactly N lowercase hex digits, 8 ≤ N ≤ 64), `token` / `token:N` (16–N base64url
+  characters `A-Z a-z 0-9 - _`, 16 ≤ N ≤ 128, 64 when left out: a CSRF token such as Symfony's `_token`) and
+  `version` (`8`, `8.1.2`, at most four parts). A percent-encoded or `+` key or value never matches. It exists for a nonce or a token the site makes,
   e.g. PrestaShop's `index.php?rand=<ms>` login XHR (`digits:13`) and
-  `index.php?controller=AdminDashboard&token=<md5>` after it (`hex:32`).
+  `index.php?controller=AdminDashboard&token=<md5>` after it (`hex:32`). A `token` value is opaque: only the URL check
+  below stands between it and an encoded entry value, so prefer `ignore_requests` for a request the login does not need.
+- `"ignore_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php/common/notifications"}]` — a
+  request from the main frame, not a navigation, with this method, scheme, host, port and path (any query; the
+  `url` itself has none and is on a registered origin) is **aborted before it leaves, without failing** the login.
+  For what a page fires on its own and the login does not need: PrestaShop 8 fetches the wishlist module on every
+  front-office page (`GET /module/blockwishlist/action`) and its dashboard POSTs notifications and loads its widgets
+  by XHR on document-ready. A request that is both listed and ignored is sent (listed wins).
 
-Every request URL (navigation, XHR, static, a redirect target) is also checked for the entry's values (all fields
-but the username; plain, percent-, hex- or base64-encoded, reversed): one that carries a value is denied and the
-operation fails. This is a best-effort check, not a guarantee.
+**After the login is confirmed** (`success_selector` has `success_text`) nothing more leaves the browser: every
+further request (a dashboard timer, a late XHR) is aborted silently, and nothing the page still does fails the
+operation; the state is then read and the browser closed. Before that point, any request that is neither listed,
+static, nor ignored fails the operation.
+
+Every request URL (navigation, XHR, static, a redirect target) is also checked for the entry's values: one that
+carries a value, or is longer than 8192 characters, is denied and the operation fails. This is a best-effort check,
+not a guarantee.
+
+**Which values are looked for**: the password (it is typed into the page) and every field of the entry type whose
+kind is *Secret (masked)* or *Multi-line text* (Setup › Entry types). The username and every *Text* field (an admin
+URL, a shop name) are not: they are not secrets, and a URL field such as `https://shop.example/admin123` would
+otherwise refuse the very first navigation. Keep anything secret in a secret field. (An older application that does
+not name the secret fields makes the broker check every field but the username.)
+
+**What the check recognises, exactly** (`broker/leak.py`), in a URL and in the exported cookies and items:
+
+- each text on its own, and up to four layers of: reversal, percent-decoding, `+`-as-space decoding, JSON (every
+  string, key and value of an array or object), base64 (standard and URL-safe alphabet, with or without padding, at
+  each of the four alignments inside a longer token, a dangling last character trimmed) and hex (both nibble
+  alignments); bytes that are not UTF-8 are searched as they are (invalid bytes dropped), and only their printable
+  ASCII runs of 8 characters or more are decoded further;
+- a value equal to one of those (any length; a value of one or two characters is found only this way), containing
+  it, or containing its reversal (three characters or more);
+- a value of 8 characters or more cut once into two parts of at least 4, where one text (or one of its tokens split at
+  whitespace and `& ; : , | = ? # / . " '`) ends with the first part and another begins with the second.
+
+Not recognised, among others: a value split into three or more parts, interleaved, encrypted, compressed, or encoded
+in any other way. Each text has its own budget (candidates and bytes, in proportion to its length); a text that
+exhausts it counts as carrying a value (the state or request is refused): the check never stops silently.
 
 What this leaves open, plainly: a static file goes only to a registered origin, under an operator path, without the
 session and with a query of a few digits; it cannot change state with the logged-in session or read data back. A
@@ -172,43 +209,54 @@ a run never sees anything.
 "shop.customer-session": {
   "kind": "storage_state", "url": "https://shop.example/en/login", "origins": [],
   "username_selector": "#field-email", "password_selector": "#field-password", "submit_selector": "#submit-login",
-  "static_paths": ["/themes/", "/js/", "/img/", "/modules/"], "static_query": {"v": "version"},
+  "static_paths": ["/themes/", "/js/", "/img/", "/modules/"],
   "allowed_requests": [{"method": "POST", "url": "https://shop.example/en/login?back=my-account"},
                        {"method": "GET", "url": "https://shop.example/en/my-account"}],
-  "success_selector": "#account-state", "success_text": "connected",
+  "ignore_requests": [{"method": "GET", "url": "https://shop.example/module/blockwishlist/action"}],
+  "success_selector": "#main .page-header h1", "success_text": "Your account",
   "entry_types": ["prestashop_customer"], "ttl_seconds": 900
 },
 "shop.admin-session": {
   "kind": "storage_state", "url": "https://shop.example/admin123/index.php?controller=AdminLogin",
   "username_selector": "#email", "password_selector": "#passwd", "submit_selector": "#submit_login",
-  "static_paths": ["/admin123/themes/", "/js/", "/img/"], "static_query": {"v": "version"},
+  "static_paths": ["/admin123/themes/", "/js/", "/img/", "/modules/"], "static_query": {"v": "version"},
   "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": {"rand": "digits:13"}},
                        {"method": "GET", "url": "https://shop.example/admin123/index.php?controller=AdminDashboard", "variable_query": {"token": "hex:32"}}],
-  "success_selector": "#header_employee_box", "success_text": "...",
-  "storage_keys": [],
+  "ignore_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php/common/notifications"},
+                      {"method": "GET", "url": "https://shop.example/admin123/index.php"}],
+  "success_selector": "#header_employee_box", "success_text": "account_circle",
   "entry_types": ["prestashop_admin"], "ttl_seconds": 900
 }
 ```
 
-The selectors and success check above are an illustration: take them from the shop's real theme and check them with a
-synthetic account first. The entry uses the `username` and `password` fields; its type must be one of `entry_types`
+Both were run against a stock `prestashop/prestashop:8` (8.2.9, default themes and modules, friendly URLs on): the
+login succeeds, the exported state opens the back office and *My account* in a fresh browser, and without the
+`ignore_requests` lines both fail (the wishlist fetch on the login page; the notifications POST and widget XHRs on
+the dashboard). The second ignore rule drops the dashboard's non-navigation XHRs to `index.php` (widgets, the address
+helper); the navigation to the dashboard is still the listed rule. `success_text` `account_circle` is the icon text of
+PrestaShop 8's employee menu. Other themes, modules or versions differ: check them with a synthetic account first. The entry uses the `username` and `password` fields; its type must be one of `entry_types`
 (otherwise the grant is refused and a run is 422). `ttl_seconds` is 1–1800 (default 900); `mfa_selector` is not
 allowed (runs are unattended; a connector with it cannot be granted).
 
 **What the file holds** (`{"cookies": [...], "origins": [...]}`), narrowed at the source:
 
 - cookies: only **HttpOnly** ones (a page script cannot write those; PrestaShop's session cookies are HttpOnly) plus
-  any the connector names in `"cookie_names"`, and only those that apply to a registered host. Each is exported
-  **host-only** for that exact host: a cookie the site set for a parent domain (`.shop.example`) is narrowed, so the
-  executor's browser never sends it to a sibling subdomain;
+  any the connector names in `"cookie_names"`, and only those for the **login host** (the host of `url`). Other
+  hosts that must get the session are named in `"cookie_hosts"` (each a registered host); a static-file origin in
+  `origins` gets none. Each cookie is exported **host-only** for its host (PrestaShop sets its main cookie for the
+  parent domain `.shop.example`: it is narrowed, so the executor's browser never sends it to a sibling subdomain) and
+  as a session cookie (`expires: -1`: the browser forgets it at close; the site's own lifetime still applies on its
+  side). A host-only and a parent-domain cookie with the same name and path cannot both be host-only for one host:
+  such a state is refused rather than one silently dropped;
 - localStorage: **none** by default; a connector names the keys it needs in `"storage_keys"` (registered origins
   only);
 - sessionStorage, IndexedDB and everything of other origins: never.
 
-On top of that the broker refuses (operation `failed`, no file) a state in which a cookie's or item's name or value,
-repeatedly percent-, `+`-, JSON-, base64- and hex-decoded and reversed, contains an entry value other than the
-username, also split in two across cookies and items. This check is **best effort**: it recognises the encodings
-above, not every encoding a page could invent. The boundary, plainly: the session is issued by the target site. If
+On top of that the broker refuses (operation `failed`, no file) a state in which a cookie's name, value or path or an
+item's name or value carries one of the values above, as the check above recognises it (also split in two across
+cookies and items). Only what the site set is checked, not the file's own JSON (its domain and field names would
+match ordinary passwords). This check is **best effort**: it recognises the encodings listed, not every encoding a
+page could invent. The boundary, plainly: the session is issued by the target site. If
 that site (or a script running in it during the login) is compromised, no output filter can guarantee what it encoded
 into the session; narrowing the source (HttpOnly cookies, no storage) is what keeps an ordinary page script out.
 
@@ -217,9 +265,12 @@ an executor does not create one-time links). Only an executor may be granted a `
 identity the action does not exist (404). Grants may be standing and without approval, since runs happen at night.
 Limits: one live handoff per entry (whoever asks, also at the same moment), 60 per executor per hour, the usual five
 open operations per identity, and at the broker four logins at a time (a lease whose file is ready does not count)
-and 16 live leases (429 beyond). When the broker refuses a start (busy, down, its directory not clean) the operation
-fails at once and the answer is 429 or 503 with no operation left running; retry with a new `request_id`. Only a
-timeout after the start was sent leaves the operation `running` for status to settle.
+and 16 live leases (429 beyond). When the broker refuses a start (busy, its directory not clean) or cannot be reached at
+all (connection refused, its name not resolved: a stopped broker container is not in Docker's DNS, a connect
+timeout) the operation fails at once and the answer is 429 or 503 with no operation left running; retry with a new
+`request_id`. Only a timeout after the start was sent leaves the operation `running` for status to settle. A retry of
+the same `request_id` while the first start is still on its way does not fail it. A handoff whose file the broker
+could not remove (or has not reported removed) keeps its entry reserved (429) until the removal is confirmed.
 
 **The executor's sequence** (CLI shown; HTTP and MCP are the same calls):
 
@@ -235,12 +286,15 @@ timeout after the start was sent leaves the operation `running` for status to se
 ```
 
 The answer never contains the path or a value: the executor derives the path from the fixed directory and its own
-operation ID; the directory is 2710, so it cannot list it and must open the file by name. `lease_expires_at` is RFC
-3339 UTC. Until `ready` is true the file is either absent or 0600 (unreadable for the group): it becomes 0640 only
+operation ID; the directory is 2710, so it cannot list it and must open the file by name. `expires_at` and
+`lease_expires_at` are RFC 3339 UTC; once the file is recorded, `expires_at` is the lease end + 10 s. Until `ready` is true the file is either absent or 0600 (unreadable for the group): it becomes 0640 only
 after it is complete, fsynced and recorded by the application; never read it earlier. Release as soon as the suite
 has loaded the state; otherwise the TTL removes it (state `expired`, at `lease_expires_at`). Revoking the grant or
-the identity, or changing the entry, removes it within about 1–6 s (`revoked`; the broker checks every live lease each
-second, with a 5 s timeout on the application's answer). A short application outage (a PHP restart, a stalled
+the identity, or changing the entry, removes it within about 1–2 s, at most about 11 s while the application answers slowly (`revoked`; the broker checks every live lease each
+second, all at once, each check bounded to 5 s, and that loop waits on nothing else). The final event (`removed`, with
+its reason) is sent to the application after every removal and repeated every 5 s until confirmed, so a short PHP
+outage delays the audit's `handoff.removed`, never loses it; a file whose answer to `written` came after the lease
+end is removed without ever being readable. A short application outage (a PHP restart, a stalled
 database) also ends every lease as `revoked`: the broker fails closed when it cannot confirm a lease; start a new
 run. A broker restart removes every file (`failed`). Use a new `request_id` per run; repeating one returns the same
 operation and never writes a second file. The process needs only search access through the `vault-handoff` group
@@ -249,6 +303,16 @@ operation and never writes a second file. The process needs only search access t
 **A state already read cannot be revoked.** Vault removes the file; whatever the executor loaded from it stays a
 valid session at the site until the site ends it (logout, its own expiry). To end such a session early, log it out
 at the site or change the account's password there.
+
+**The executor's own artifacts.** Playwright's trace (`trace: 'on'`, `'retain-on-failure'`), HAR recording and
+video keep request headers, including `Cookie`: a trace of a failed test is a live back-office session, and an LLM
+that reads traces to explain a failure gets it. For suites that start from a handed-off state: turn trace and HAR off,
+or keep them only for unauthenticated projects (or scrub `Cookie`/`Set-Cookie` before anything else reads them);
+never pass `storageState` content, traces or HAR to an agent; log out at the end of the suite (the session at
+PrestaShop outlives `release`); and shorten the back-office cookie lifetime in PrestaShop (*Advanced parameters ›
+Administration › Lifetime of back office cookies*). Entries for `storage_state` should hold only `username`,
+`password` and secret fields: a *Text* field is not looked for by the leak check, so do not put anything secret in
+one.
 
 ## Starting a connector
 

@@ -37,23 +37,30 @@ Executor (host process, never an LLM) → API: execute / status "ready" / releas
 - Handoff kinds (`storage_state`, `broker/handoff.py` for the shared directory, lease, release and cleanup) end with a
   file for an *executor* identity instead of a boolean. The broker creates `<operation-uuid>.json` with
   `O_CREAT|O_EXCL|O_NOFOLLOW` mode **0600**, writes and fsyncs it and the directory, then tells the application
-  (`POST /api/internal/operations/{id}/handoff`, broker key). Only on that record does it `fchmod` the file to 0640
-  (and fsync); without it, or on any failure, the file is unlinked without ever having been group-readable. `ready`
-  (status) and `release` both rest on that confirmation. The directory is checked before each write: not a symlink,
+  (`POST /api/internal/operations/{id}/handoff`, broker key). Only on that record, and only while the lease's monotonic
+  deadline has not passed, does it `fchmod` the file to 0640 (and fsync); without the record, past the deadline, or on
+  a failure before the `fchmod`, the file is unlinked without ever having been group-readable. (A failure *after* a
+  successful `fchmod`, e.g. of the following fsync, removes a file that was group-readable for that moment.) Once
+  `written` was sent, `removed` is always sent after the unlink, also when the answer to `written` was lost (the
+  application ignores it for a file it never recorded), and repeated every 5 s until the application confirms it;
+  the operation's result is kept until then. `ready` (status) and `release` both rest on that confirmation. The directory is checked before each write: not a symlink,
   owned by the broker, the `.vault-handoff` marker present, 2710 or stricter (the group may enter, not list), the
   configured group. Removal needs only the directory itself (no symlink), so a directory whose mode or group changed
   during a lease is still cleaned; a failed unlink is kept and retried by the reaper, and `handoff.removed` is
   recorded only on a confirmed unlink or ENOENT. The operation stays `running` with `lease_expires_at` (RFC 3339 UTC,
   one absolute deadline); release → `succeeded`, TTL → `expired`, revoked grant/identity/entry version → `revoked`
-  (the reaper checks every live operation each second, all at once; with the application's 5 s answer timeout a
-  revocation ends a lease within about 1–6 s; if the application does not answer, every lease ends as `revoked`,
-  fail closed). Broker start removes every `<uuid>.json` in the marked directory (nothing else) and refuses handoffs
-  until that succeeded; unknown operations read `failed`. The claim before dispatch extends the deadline to login
-  (180 s) + TTL. Only an executor may hold such a grant and only for the connector's `entry_types`; one live handoff
+  (the reaper checks every live operation each second, all at once, each check bounded to 5 s, and waits on nothing
+  else; a revocation ends a lease and removes its file within about 1–2 s, at most about 11 s while the application answers slowly (a check wave of up to 5 s, the 1 s pause, the next bounded check); if the application does not answer,
+  every lease ends as `revoked`, fail closed). Broker start removes every `<uuid>.json` in the marked directory
+  (nothing else) and refuses handoffs until that succeeded; an unknown operation reads `failed` with `known: false`,
+  which the application treats as lost only after it saw the start confirmed (`dispatched_at`) or 30 s after the
+  claim, so a concurrent retry of the same `request_id` cannot fail a start still on its way. The claim before
+  dispatch extends the deadline to login (180 s) + TTL; the `written` record narrows it to the lease end + 10 s. Only an executor may hold such a grant and only for the connector's `entry_types`; one live handoff
   per entry (the entry row lock is the transaction's first read after the identity's) and 60 per executor and hour.
   A lease whose file is ready holds no browser and does not count toward the broker's 4 active operations; leases
-  have their own cap (16). A clear broker refusal before start (429, 4xx, 503, connection refused) fails the
-  operation at once.
+  have their own cap (16); a lease whose file could not be removed keeps its slot, and its entry stays reserved in the
+  application (`handoff = written`), until the removal is confirmed. A clear broker refusal before start (429, 4xx,
+  503, a broker that cannot be resolved or connected to) fails the operation at once.
 - The audit records the action, subject, actor, time and outcome. Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.
 
 States: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Browser MFA is supplied by a human in the Vault web UI; the code is never passed to the agent. An operation ID is not a permission – only the machine identity that created the operation gets its state. ai-os additionally signs the handle with the workspace, agent, project and ticket context. A handoff adds the audit events `handoff.written` and `handoff.removed` (outcome `release`, `ttl`, `revoke`, `restart` or `error`), never with a value or path. A storageState the executor has already read stays usable at the site until the site ends that session: Vault can remove the file, not take back what was read.

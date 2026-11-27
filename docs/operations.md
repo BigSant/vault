@@ -29,7 +29,7 @@ the operation ID, which only the identity that started the operation gets. The g
 boundary**: every member can open any file whose operation ID it learns, so give it only to the executor's account,
 never to people or accounts an LLM agent can drive; separate executors that must not see each other's sessions need
 separate hosts (or environments with their own directory and group). Local/test use `data/handoff` and
-`app/.generated/test/data/handoff`, made by `prepare`: mode **0700** (only the Vault account; e.g. a test runner of
+`app/.generated/test/data/handoff`, made (and marked) by `prepare` when they do not exist yet: mode **0700** (only the Vault account; e.g. a test runner of
 the same user), or 2710 with the `vault-handoff` group when the current user is in it. Never group access without
 that group: with a shared primary group (`users`) every local user could read the files. On a server use `/run`
 (cleared at boot) from tmpfiles.d. Steps marked **root** need root; the rest run as the Vault operator account (the
@@ -43,12 +43,17 @@ one whose UID the containers use).
    so the bind mount finds it; a directory Docker had to create itself (root-owned, no marker) is refused.
 3. In the private `app/env/prod.env` set `VAULT_HANDOFF_DIRECTORY=/run/vault-handoff/prod` and
    `VAULT_HANDOFF_GID=<getent group vault-handoff | cut -d: -f3>`, then `VAULT_ENV=prod bin/vault prepare` (it checks
-   the directory and makes the marker) and recreate the broker (`make -C app up ENV=prod`).
+   the directory and its marker) and recreate the broker (`make -C app up ENV=prod`).
+
+`prepare` makes the marker only in a directory it has just created itself. A configured directory, or a default one
+that already existed, must carry a marker the administrator made (tmpfiles.d above, or `touch <dir>/.vault-handoff`
+as the Vault account): the broker deletes every `<uuid>.json` in a marked directory at start, so only a person who
+knows the directory holds nothing else may mark it. Without it `prepare` stops with that message.
 
 The broker writes only into a directory that is not a symlink, is owned by it, holds the marker `.vault-handoff` (a
 regular file it owns), gives others nothing and the group at most search (2710 or stricter), and has the group
 `VAULT_HANDOFF_GID`; it never replaces an existing file. Each file is `<operation-uuid>.json`: created 0600, made
-0640 only after the application recorded it. It is removed at release, at the TTL, within about 1–6 s of a
+0640 only after the application recorded it. It is removed at release, at the TTL, within about 1–2 s (at most about 11 s) of a
 revocation (or when the application does not answer), when the broker stops, and at broker start. Removal needs only
 the directory (no symlink in its place), so a file is removed even if the directory's mode or group was changed
 during a lease; a removal that fails is retried every second and recorded (`handoff.removed`) only once it
@@ -63,9 +68,14 @@ state already read cannot be revoked by Vault.
 ## Unattended timers
 
 `ops/` holds user systemd units: `vault-maintenance` (daily), `vault-links` (10 min) and `vault-backup` (daily 03:30).
-A backup that cannot start now (operations are active, e.g. a handoff lease, or another backup runs) exits 75 and the
-unit tries again 20 minutes later: 12 attempts in all, about 3 h 40 min; any other failure ends the unit at once. The
-retry is a loop in the unit, not `Restart=`, so it loads on systemd 249 (Ubuntu 22.04). Every unit fails when
+A backup that cannot start now (operations are active, e.g. a handoff lease, or another backup runs) exits 75 and the unit tries again 20 minutes later: 12 attempts in all, about 3 h
+40 min; any other failure ends the unit at once. After the twelfth busy attempt it writes `vault-backup: still busy
+after 12 attempts` to the journal and fails (75), so `systemctl --user --failed` shows it; hook `OnFailure=` to your
+own notifier if you have one. The unit has no start timeout (`TimeoutStartSec=infinity`: the waits are not work, and a
+timeout could kill an attempt while PHP and the broker are stopped). `bin/vault` turns SIGTERM into a normal exit, so
+a stopped unit still starts PHP and the broker again; and should the process be killed outright, `ExecStopPost` runs
+`bin/vault backup-resume`, which does the same (and `artisan up`) only when a backup left its marker
+(`data/<env>/.backup-quiesced`), never lifting a maintenance someone else set. Every unit fails when
 `VAULT_ENV` is missing instead of acting on `local`. They read `~/.config/vault/units.env`:
 
 ```dotenv
