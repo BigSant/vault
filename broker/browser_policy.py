@@ -12,14 +12,19 @@ STATIC_TYPES = frozenset({'stylesheet', 'image', 'media', 'font', 'script', 'tex
 STATIC_EXTENSIONS = frozenset({'.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif',
                                '.ico', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.vtt', '.webmanifest'})
 # The shapes a `variable_query` / `static_query` parameter may have. A fixed vocabulary: an operator names one, never
-# writes a pattern. `digits:N` and `hex:N` bound the length (digits: 1..N, hex: exactly N).
+# writes a pattern. `digits:N` and `hex:N` bound the length (digits: 1..N, hex: exactly N); `token:N` is 16..N
+# base64url characters (a CSRF token such as Symfony's `_token`), N from 16 to 128, 64 when left out. A token can
+# carry anything a page encodes into it: only the URL check (leak.py) stands between it and an encoded entry value.
 SHAPES = {
     'digits': (r'[0-9]{1,%d}', 1, 20),
     'hex': (r'[0-9a-f]{%d}', 8, 64),
+    'token': (r'[A-Za-z0-9_-]{16,%d}', 16, 128),
     'version': (r'[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}', None, None),
 }
 NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,31}')
-PATH_PREFIX = re.compile(r'/(?:[A-Za-z0-9._-]+/)*')
+# At least one segment: "/" alone would open the whole origin to static GETs.
+PATH_PREFIX = re.compile(r'/(?:[A-Za-z0-9._-]+/)+')
+DOT_SEGMENT = re.compile(r'(?:^|/)\.+(?:/|$)')
 
 
 def origin(url):
@@ -44,7 +49,7 @@ def shape(spec):
         return re.compile(pattern) if not size else None
     if not size:
         if name=='hex':return None
-        size=str(high)
+        size=str(64 if name=='token' else high)
     if not size.isdigit() or not low<=int(size)<=high:return None
     return re.compile(pattern%int(size))
 
@@ -105,10 +110,31 @@ def request_allowed(action,url,method):
     return any(isinstance(rule,dict) and rule_matches(rule,url,method) for rule in rules)
 
 
+def ignored(action,url,method):
+    """A request the connector's `ignore_requests` names: same method, scheme, host, port and path (any query). It is
+    aborted before it leaves, without failing the login (a dashboard's notification poll, a wishlist fetch)."""
+    rules=action.get('ignore_requests',[])
+    if not isinstance(rules,list) or origin(url) not in registered(action):return False
+    actual=urlsplit(urldefrag(url)[0])
+    for rule in rules:
+        if not isinstance(rule,dict) or rule.get('method')!=method or not isinstance(rule.get('url'),str):continue
+        wanted=urlsplit(rule['url'])
+        if wanted.query or wanted.fragment or origin(rule['url']) is None:continue
+        if (wanted.scheme,wanted.netloc,wanted.path)==(actual.scheme,actual.netloc,actual.path):return True
+    return False
+
+
+def ignore_config_valid(action):
+    """`ignore_requests`: absent, or a list of {method, url} with an absolute URL without query on a registered origin."""
+    rules=action.get('ignore_requests',[])
+    return isinstance(rules,list) and all(isinstance(r,dict) and set(r)=={'method','url'} and r['method'] in ('GET','POST','HEAD')
+        and isinstance(r['url'],str) and origin(r['url']) in registered(action) and not urlsplit(r['url']).query and '#' not in r['url'] for r in rules)
+
+
 def static_config(action):
     """(path prefixes, extensions, query shapes) when the connector configured static paths validly, else None."""
     paths=action.get('static_paths')
-    if not isinstance(paths,list) or not paths or not all(isinstance(p,str) and PATH_PREFIX.fullmatch(p) and '/../' not in p+'/' and '/./' not in p+'/' for p in paths):
+    if not isinstance(paths,list) or not paths or not all(isinstance(p,str) and PATH_PREFIX.fullmatch(p) and not DOT_SEGMENT.search(p) for p in paths):
         return None
     extensions=action.get('static_extensions',sorted(STATIC_EXTENSIONS))
     if not isinstance(extensions,list) or not extensions or not all(isinstance(e,str) and e in STATIC_EXTENSIONS for e in extensions):
@@ -132,7 +158,7 @@ def static_allowed(action,url,method,resource_type,navigation):
     paths,extensions,query=static_config(action)
     parsed=urlsplit(urldefrag(url)[0])
     path=parsed.path
-    if '%' in path or '//' in path or len(path)>512:return False
+    if '%' in path or '//' in path or len(path)>512 or DOT_SEGMENT.search(path):return False
     if not any(path.startswith(prefix) for prefix in paths):return False
     if not any(path.lower().endswith(extension) for extension in extensions):return False
     return query_matches('',parsed.query,query)

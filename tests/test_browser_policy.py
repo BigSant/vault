@@ -112,3 +112,33 @@ class VariableQueryTests(unittest.TestCase):
                          {'rand':'version:3'},{'ra-nd':'digits'},{}):
             action={'url':'https://shop.invalid/a','allowed_requests':[{'method':'POST','url':'https://shop.invalid/b','variable_query':variable}]}
             self.assertFalse(policy.request_allowed(action,'https://shop.invalid/b?rand=1','POST'),variable)
+
+
+class RoundThreeTests(unittest.TestCase):
+    action={'url':'https://shop.invalid/admin1/index.php?controller=AdminLogin','static_paths':['/img/'],
+            'allowed_requests':[{'method':'POST','url':'https://shop.invalid/admin1/index.php/common/notifications','variable_query':{'_token':'token','rand':'digits:13'}}]}
+    def test_a_prefix_needs_a_segment_and_no_dot_segment(self):
+        for paths in (['/'],['/./'],['/../'],['/img/../'],['/img/./'],['/a/.../'],['/../img/']):
+            action=dict(self.action,static_paths=paths)
+            self.assertIsNone(policy.static_config(action),paths)
+            self.assertFalse(policy.static_allowed(action,'https://shop.invalid/x.png','GET','image',False),paths)
+        for url in ('https://shop.invalid/img/../admin1/x.png','https://shop.invalid/img/./x.png','https://shop.invalid/img/a/../../x.png'):
+            self.assertFalse(policy.static_allowed(self.action,url,'GET','image',False),url)
+        self.assertTrue(policy.static_allowed(self.action,'https://shop.invalid/img/a..b.png','GET','image',False))
+    def test_a_symfony_token_shape(self):
+        url='https://shop.invalid/admin1/index.php/common/notifications?_token=BYOThSjgJf8LRsc3hJpVmYwYWBfWm5hEUoWRhBXw56Q&rand=1795740040014'
+        self.assertTrue(policy.request_allowed(self.action,url,'POST'))
+        for bad in ('short','a'*65,'a+b'*8,'a%3Db'*6,'a.b'*8):
+            self.assertFalse(policy.request_allowed(self.action,url.replace('BYOThSjgJf8LRsc3hJpVmYwYWBfWm5hEUoWRhBXw56Q',bad),'POST'),bad)
+        for spec,ok in (('token',True),('token:16',True),('token:128',True),('token:15',False),('token:129',False),('token:x',False)):
+            self.assertEqual(ok,policy.shape(spec) is not None,spec)
+    def test_ignore_requests(self):
+        action=dict(self.action,ignore_requests=[{'method':'GET','url':'https://shop.invalid/module/blockwishlist/action'}])
+        self.assertTrue(policy.ignore_config_valid(action))
+        self.assertTrue(policy.ignored(action,'https://shop.invalid/module/blockwishlist/action?action=getAllWishlist','GET'))
+        for url,method in (('https://shop.invalid/module/blockwishlist/action','POST'),('https://shop.invalid/module/blockwishlist/other','GET'),
+                           ('https://evil.invalid/module/blockwishlist/action','GET')):
+            self.assertFalse(policy.ignored(action,url,method),(url,method))
+        for rules in ('x',[{'method':'GET'}],[{'method':'PUT','url':'https://shop.invalid/a'}],[{'method':'GET','url':'https://shop.invalid/a?x=1'}],
+                      [{'method':'GET','url':'https://evil.invalid/a'}],[{'method':'GET','url':'https://shop.invalid/a','extra':1}]):
+            self.assertFalse(policy.ignore_config_valid(dict(self.action,ignore_requests=rules)),rules)

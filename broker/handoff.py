@@ -6,7 +6,9 @@ the executor reads it through its group. The directory is 2710 (the group may on
 must know the operation ID to open a file. Nothing here logs or returns a path or a value.
 
 A file is created 0600 and becomes group-readable (0640) only through Pending.publish(), which the caller runs after
-the application has recorded it. Until then nobody but the broker can open it; a failure before publish removes it.
+the application has recorded it and while the lease has time left. Until then nobody but the broker can open it; a
+failure before publish removes it. A failure inside publish after the fchmod (the fsync) removes a file that was
+group-readable for that moment.
 """
 import os
 import re
@@ -88,7 +90,7 @@ class Pending:
         self._fd, self._out, self._name = fd, out, name
 
     def publish(self):
-        """0640 and fsync, then the directory is done with. On failure the file is removed (never left half-shown)."""
+        """0640 and fsync, then the directory is done with. On failure the file is removed (never left readable)."""
         try:
             os.fchmod(self._out, MODE)
             os.fsync(self._out)
