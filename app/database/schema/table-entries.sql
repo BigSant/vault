@@ -10,7 +10,10 @@ CREATE TABLE `entries` (
   `rotate_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
+  `project_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`id`),
   KEY `entries_environment_id_foreign` (`environment_id`),
-  CONSTRAINT `entries_environment_id_foreign` FOREIGN KEY (`environment_id`) REFERENCES `environments` (`id`)
+  KEY `entries_project_id_index` (`project_id`),
+  CONSTRAINT `entries_environment_id_foreign` FOREIGN KEY (`environment_id`) REFERENCES `environments` (`id`),
+  CONSTRAINT `entries_project_id_foreign` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

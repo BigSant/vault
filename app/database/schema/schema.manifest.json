@@ -19,12 +19,28 @@
       "file": "table-entries.sql"
     },
     {
+      "name": "entry_changes",
+      "file": "table-entry_changes.sql"
+    },
+    {
+      "name": "entry_types",
+      "file": "table-entry_types.sql"
+    },
+    {
       "name": "environments",
       "file": "table-environments.sql"
     },
     {
       "name": "grants",
       "file": "table-grants.sql"
+    },
+    {
+      "name": "link_settings",
+      "file": "table-link_settings.sql"
+    },
+    {
+      "name": "links",
+      "file": "table-links.sql"
     },
     {
       "name": "machines",

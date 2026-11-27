@@ -61,7 +61,12 @@ succeeded. At start the broker removes every `<uuid>.json` in the marked directo
 configured path (no marker) loses no file. Until that startup cleanup has succeeded the broker refuses every handoff
 (503, the operation fails at once) and says so once on its stderr, without a path (`docker logs vault-<env>-broker`);
 it retries every 10 s. Backups never include this directory. A broker that is down cannot remove files until it
-starts again; the tmpfiles age (1 h) is only a daily backstop. The session in a file is a credential: anyone in the
+starts again; the tmpfiles age (1 h) is only a daily backstop. The broker also keeps `.vault-undelivered` (0600) there:
+the IDs and reasons of final events (`removed`) the application has not confirmed yet, never a value or session data,
+so that a broker restart does not lose them. On the server the directory is under `/run`, so a host reboot empties it;
+the application then settles those operations itself: the next status of the operation, or `vault:links` within 10
+minutes, finds that the broker no longer knows it, fails it and records the removal (the restarted broker's cleanup
+has removed every file). The session in a file is a credential: anyone in the
 group who learns the operation ID, root and anyone with the Docker socket can use it until the site ends it, and a
 state already read cannot be revoked by Vault.
 
@@ -75,7 +80,11 @@ own notifier if you have one. The unit has no start timeout (`TimeoutStartSec=in
 timeout could kill an attempt while PHP and the broker are stopped). `bin/vault` turns SIGTERM into a normal exit, so
 a stopped unit still starts PHP and the broker again; and should the process be killed outright, `ExecStopPost` runs
 `bin/vault backup-resume`, which does the same (and `artisan up`) only when a backup left its marker
-(`data/<env>/.backup-quiesced`), never lifting a maintenance someone else set. Every unit fails when
+(`data/<env>/.backup-quiesced`), never lifting a maintenance someone else set, and only after it took the backup lock
+(`data/<env>/.backup.lock`) itself: while another backup (a manual one) holds it, the marker is that backup's and
+`backup-resume` does nothing. The backup records each step before running it (`artisan down`, `docker stop`), so a
+SIGTERM inside one is still undone, and removes the marker only after PHP, the broker and `artisan up` came back.
+Every unit fails when
 `VAULT_ENV` is missing instead of acting on `local`. They read `~/.config/vault/units.env`:
 
 ```dotenv
@@ -87,8 +96,10 @@ Copy the units to `~/.config/systemd/user/`, then `systemctl --user daemon-reloa
 vault-maintenance.timer vault-links.timer vault-backup.timer`. For timers to run without a login session, **root**
 `loginctl enable-linger <vault account>`. Schedule backups outside the executor's night window (a backup refuses while
 operations run and stops PHP and the broker for a moment). Backups accumulate in `backups/`; prune old ones by your
-retention policy, keeping verified ones. `vault:maintenance` (in `vault-maintenance`) also asks the broker to remove
-the file of every handoff that is over and records its removal once the broker confirms it.
+retention policy, keeping verified ones. `vault:links` (every 10 minutes) and `vault:maintenance` (daily) also ask the
+broker to remove the file of every handoff that is over, past its end or no longer known to the broker, and record its
+removal once the broker confirms it: an entry stays reserved (429) after a lost final event for at most about 10
+minutes.
 
 ## Unsealing after a reboot
 
@@ -128,9 +139,9 @@ For a full restore, prepare containers with **an empty database and an uninitial
 VAULT_ENV=local bin/vault restore /private/path/backup.vault
 ```
 
-The command refuses to overwrite an existing DB schema or initialized OpenBao instance. It restores SQL, the snapshot and configuration, clears sessions and cache, and revokes all machine tokens and grants. Owner passwords and TOTP survive. Issue new identities and grants to agents. On failure, the target stays stopped to prevent use of a partial restore. Repair the empty target or start with a fresh one. There is no `--force` option to overwrite an existing Vault. `tests/restore_empty.py` exercises this procedure in disposable containers and a temporary DB.
+The command refuses to overwrite an existing DB schema or initialized OpenBao instance. It restores SQL, the snapshot and configuration, clears sessions and cache, revokes all machine tokens and grants, and marks every recorded handoff file as removed (the new host has none, so no entry stays reserved for one). Owner passwords and TOTP survive. Issue new identities and grants to agents. On failure, the target stays stopped to prevent use of a partial restore. Repair the empty target or start with a fresh one. There is no `--force` option to overwrite an existing Vault. `tests/restore_empty.py` exercises this procedure in disposable containers and a temporary DB.
 
-Every table in the DDE table registry uses `empty skip`. General dataset and SQL exports intentionally omit identities, the catalog and audit data. **Use only a full encrypted Vault backup to restore Vault.** A standalone SQL dump is insufficient. The schema snapshot is versioned in `app/database/schema/`. Laravel migrations change the schema. `DATABASE_MIGRATIONS=off` disables DDE migrations only.
+Every table in the DDE table registry uses `empty skip`. General dataset and SQL exports intentionally omit identities, the catalog and audit data. **Use only a full encrypted Vault backup to restore Vault.** A standalone SQL dump is insufficient. The schema snapshot in `app/database/schema/` (one `SHOW CREATE TABLE` per table, no rows) is regenerated from a migrated test database whenever a migration changes the schema; the Laravel migrations are what changes it. `DATABASE_MIGRATIONS=off` disables DDE migrations only.
 
 ## Rotation, access and maintenance
 

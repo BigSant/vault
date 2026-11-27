@@ -133,8 +133,9 @@ without opening the browser to the site:
   `/` and has at least one segment: `"/"` alone is refused, and so is a `.` or `..` segment) and ends with an allowed
   file extension, is allowed without listing it. Optional `"static_extensions"` narrows the built-in list (`.css`,
   `.js`, `.mjs`, images, fonts, `.vtt`, `.webmanifest`); a path with `%`, `//`, a `.`/`..` segment or another extension never matches.
-  The query must be empty, or only the `"static_query"` parameters in their shapes (e.g. `{"v": "version"}`,
-  each at most once). Such a file is fetched **without cookies, credentials or any header of the page** (its own
+  The query must be empty, or only the `"static_query"` parameters in their shapes, each at most once; a static
+  query takes only `digits` / `digits:N` and `version` (e.g. `{"v": "version"}`): `hex` and `token` are refused there
+  (the connector fails), since a page script chooses a static URL. Such a file is fetched **without cookies, credentials or any header of the page** (its own
   request context, a new one per file, with only an `Accept` the broker sets: no `Referer`, so a back-office URL and
   its token never reach the static host's log, no `Origin`) and its `Set-Cookie`, `Location`, `Refresh` and
   `Content-Disposition` are dropped; one that redirects is dropped,
@@ -158,32 +159,46 @@ without opening the browser to the site:
   `url` itself has none and is on a registered origin) is **aborted before it leaves, without failing** the login.
   For what a page fires on its own and the login does not need: PrestaShop 8 fetches the wishlist module on every
   front-office page (`GET /module/blockwishlist/action`) and its dashboard POSTs notifications and loads its widgets
-  by XHR on document-ready. A request that is both listed and ignored is sent (listed wins).
+  by XHR on document-ready. It is decided before anything is fetched, so an ignored path under `static_paths` is
+  dropped, never fetched as a static file. A request that is both listed and ignored is sent (listed wins). A
+  navigation, or a request from a frame, is never ignored (it fails the operation as before), and an ignored URL that
+  carries an entry value still fails the operation (the URL check below comes first).
 
-**After the login is confirmed** (`success_selector` has `success_text`) nothing more leaves the browser: every
-further request (a dashboard timer, a late XHR) is aborted silently, and nothing the page still does fails the
-operation; the state is then read and the browser closed. Before that point, any request that is neither listed,
-static, nor ignored fails the operation.
+**After the login is confirmed** (`success_selector` has `success_text`) no new request is sent: one the page makes
+later (a dashboard timer, a late XHR), and one that was still waiting for the application's confirmation at that
+moment, is aborted silently, and nothing the page still does fails the operation. A request that had already been
+sent is waited for (at most 15 s, else the operation fails), so the state is read after the site's last answer,
+never while a request is on its way; then the browser is closed. Before that point, any request that is neither
+listed, static, nor ignored fails the operation.
 
 Every request URL (navigation, XHR, static, a redirect target) is also checked for the entry's values: one that
 carries a value, or is longer than 8192 characters, is denied and the operation fails. This is a best-effort check,
 not a guarantee.
 
-**Which values are looked for**: the password (it is typed into the page) and every field of the entry type whose
-kind is *Secret (masked)* or *Multi-line text* (Setup › Entry types). The username and every *Text* field (an admin
+**Which values are looked for**: every stored field of the entry except the username and the entry type's *Text*
+fields: the password (it is typed into the page), every *Secret (masked)* and *Multi-line text* field (Setup › Entry
+types), and a field the type no longer has whose value is still stored. The username and the *Text* fields (an admin
 URL, a shop name) are not: they are not secrets, and a URL field such as `https://shop.example/admin123` would
 otherwise refuse the very first navigation. Keep anything secret in a secret field. (An older application that does
-not name the secret fields makes the broker check every field but the username.)
+not name the fields makes the broker check every field but the username.)
 
 **What the check recognises, exactly** (`broker/leak.py`), in a URL and in the exported cookies and items:
 
 - each text on its own, and up to four layers of: reversal, percent-decoding, `+`-as-space decoding, JSON (every
   string, key and value of an array or object), base64 (standard and URL-safe alphabet, with or without padding, at
-  each of the four alignments inside a longer token, a dangling last character trimmed) and hex (both nibble
-  alignments); bytes that are not UTF-8 are searched as they are (invalid bytes dropped), and only their printable
-  ASCII runs of 8 characters or more are decoded further;
-- a value equal to one of those (any length; a value of one or two characters is found only this way), containing
-  it, or containing its reversal (three characters or more);
+  each of the four alignments inside a token of 4 characters or more, a dangling last character trimmed; and a whole
+  text of 2–3 characters, which is what one or two bytes encode to) and hex (any run of 4 or more hex digits, odd or
+  even, at both nibble alignments, so a value after one stray hex digit is found); bytes that are not UTF-8 are
+  searched as they are (invalid bytes dropped), and only their printable ASCII runs of 8 characters or more are
+  decoded further;
+- a value equal to one of those (any length; a value of one or two characters is found only this way);
+- a value of 3–5 characters as a whole word of one of those: not directly next to a letter or digit (`pin:7788;`
+  or `/7788/`, not `a17788b`), so that a short value is not found by chance inside a long hex or base64 session
+  token (measured on 300 random 1 200-character hex session cookies: a random 3-letter value refused 1, 3 digits or
+  4–5 characters none; a whole-word match in decoded bytes stays possible). A short value that is an ordinary word of
+  the site (`login`, `index`, `https`) is still found wherever the site uses that word and refuses every such login
+  (`failed`, reason `leak`): keep such a value out of secret fields;
+- a value of 6 characters or more contained in one of those, or its reversal contained in one;
 - a value of 8 characters or more cut once into two parts of at least 4, where one text (or one of its tokens split at
   whitespace and `& ; : , | = ? # / . " '`) ends with the first part and another begins with the second.
 
@@ -192,7 +207,7 @@ in any other way. Each text has its own budget (candidates and bytes, in proport
 exhausts it counts as carrying a value (the state or request is refused): the check never stops silently.
 
 What this leaves open, plainly: a static file goes only to a registered origin, under an operator path, without the
-session and with a query of a few digits; it cannot change state with the logged-in session or read data back. A
+session and with a query of only the `static_query` numbers or versions (at most 20 digits each); it cannot change state with the logged-in session or read data back. A
 page script can still choose the *file name* under a static path, so a hostile page could encode a short value into
 a path in a way the URL check does not recognise and send it to a registered origin. Register only origins that are
 the site itself (they receive the password at login anyway), keep `static_paths` narrow, and treat a page that runs
@@ -247,7 +262,9 @@ allowed (runs are unattended; a connector with it cannot be granted).
   parent domain `.shop.example`: it is narrowed, so the executor's browser never sends it to a sibling subdomain) and
   as a session cookie (`expires: -1`: the browser forgets it at close; the site's own lifetime still applies on its
   side). A host-only and a parent-domain cookie with the same name and path cannot both be host-only for one host:
-  such a state is refused rather than one silently dropped;
+  such a state is refused rather than one silently dropped. A **partitioned** cookie (`Partitioned`, CHIPS) that would
+  be exported refuses the state too (`failed`, reason `state`): the file format cannot keep its partition, and without
+  it the executor's browser would send it as an ordinary cookie;
 - localStorage: **none** by default; a connector names the keys it needs in `"storage_keys"` (registered origins
   only);
 - sessionStorage, IndexedDB and everything of other origins: never.
@@ -269,7 +286,10 @@ and 16 live leases (429 beyond). When the broker refuses a start (busy, its dire
 all (connection refused, its name not resolved: a stopped broker container is not in Docker's DNS, a connect
 timeout) the operation fails at once and the answer is 429 or 503 with no operation left running; retry with a new
 `request_id`. Only a timeout after the start was sent leaves the operation `running` for status to settle. A retry of
-the same `request_id` while the first start is still on its way does not fail it. A handoff whose file the broker
+the same `request_id` while the first start is still on its way does not fail it: a status the broker does not know
+the operation for counts as "still on its way" for 30 s from the claim, until the start is confirmed (the broker's
+answer to the start, a status in which it knows the operation, or its `written` report); after the confirmation an
+unknown operation is a broker restart and fails at once. A handoff whose file the broker
 could not remove (or has not reported removed) keeps its entry reserved (429) until the removal is confirmed.
 
 **The executor's sequence** (CLI shown; HTTP and MCP are the same calls):
@@ -292,13 +312,23 @@ after it is complete, fsynced and recorded by the application; never read it ear
 has loaded the state; otherwise the TTL removes it (state `expired`, at `lease_expires_at`). Revoking the grant or
 the identity, or changing the entry, removes it within about 1–2 s, at most about 11 s while the application answers slowly (`revoked`; the broker checks every live lease each
 second, all at once, each check bounded to 5 s, and that loop waits on nothing else). The final event (`removed`, with
-its reason) is sent to the application after every removal and repeated every 5 s until confirmed, so a short PHP
-outage delays the audit's `handoff.removed`, never loses it; a file whose answer to `written` came after the lease
-end is removed without ever being readable. A short application outage (a PHP restart, a stalled
+its reason) is sent to the application after every removal and repeated every 5 s (at most 8 at a time) until
+confirmed; the broker keeps the unconfirmed ones (IDs and reasons only) in its handoff directory, so a broker restart
+does not lose them. A host reboot empties that directory: then the application settles the operation itself, at its
+next status or within 10 minutes (`vault:links`), when the broker no longer knows it; until then the entry stays
+reserved (429). A file whose answer to `written` came after the lease end is removed without ever being readable. A short application outage (a PHP restart, a stalled
 database) also ends every lease as `revoked`: the broker fails closed when it cannot confirm a lease; start a new
 run. A broker restart removes every file (`failed`). Use a new `request_id` per run; repeating one returns the same
 operation and never writes a second file. The process needs only search access through the `vault-handoff` group
 (docs/operations.md) and its own client config file.
+
+**Why a run failed.** The answer says only `failed`; the activity log (`operation.failure`) records one coarse reason,
+never a value, URL or selector: `policy` (a request, frame, popup, download or WebSocket the connector does not
+allow), `leak` (a request URL or the session state carried an entry value, or could not be checked completely),
+`unauthorized` (the application withdrew the operation during the login), `login` (a selector, a page timeout, the
+success text), `state` (a partitioned or duplicate cookie, an empty or too large state), `connector` (the connector
+is not valid for its kind), `handoff` (the file could not be written, recorded or removed), `restart` (the broker
+restarted) or `error`.
 
 **A state already read cannot be revoked.** Vault removes the file; whatever the executor loaded from it stays a
 valid session at the site until the site ends it (logout, its own expiry). To end such a session early, log it out
