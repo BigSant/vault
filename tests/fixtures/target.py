@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlsplit
 import json
 import secrets
 from collections import Counter
+import sys
 import threading
 COUNTS=Counter()
 # Set when slow.js reaches this server; gate.js waits for it (the admin dashboard, tests/integration.py).
@@ -23,10 +24,17 @@ ADMIN_JS=('document.querySelector("#submit_login").onclick=()=>{const x=new XMLH
     '+"&passwd="+encodeURIComponent(document.querySelector("#passwd").value));};')
 
 
+# The synthetic entry values, as they could appear in a request line (plain, base64, percent-encoded). A request line
+# that carries one is counted (url-leak), never logged.
+VALUES=('synthetic-password','c3ludGhldGljLXBhc3N3b3Jk','synthetic%2Dpassword','synthetic-token')
+
+
 class Target(BaseHTTPRequestHandler):
-    # Request lines go to stderr (docker logs vault-test-fixture): the integration test checks that no entry value
-    # ever reached the target in a URL.
-    pass
+    def log_message(self, format, *args):
+        # A fixed line per request: the method and the path without its query (a back-office token, a nonce), never
+        # the request line itself. docker logs vault-test-fixture shows the routes the browser reached.
+        COUNTS['url-leak']+=any(value in self.requestline for value in VALUES)
+        print('fixture:', self.command, urlsplit(self.path).path, file=sys.stderr, flush=True)
 
     def respond(self, status, body, cookie=None):
         self.send_response(status)
@@ -133,7 +141,7 @@ class Target(BaseHTTPRequestHandler):
         return self.respond(401,'denied')
 
     def do_GET(self):
-        COUNTS[urlsplit(self.path).path if self.path.startswith('/ps/') else self.path]+=1
+        COUNTS[urlsplit(self.path).path]+=1
         if self.path.startswith('/ps/'):return self.shop_get()
         if self.path.startswith('/login') and self.headers.get('Cookie'):COUNTS['cookie-leak']+=1
         if self.path=='/counts':
@@ -176,7 +184,7 @@ class Target(BaseHTTPRequestHandler):
             self.respond(404, 'not found')
 
     def do_POST(self):
-        COUNTS[self.path]+=1
+        COUNTS[urlsplit(self.path).path]+=1
         data = parse_qs(self.rfile.read(min(int(self.headers.get('Content-Length', '0')), 4096)).decode())
         if self.path.startswith('/ps/'):
             COUNTS[urlsplit(self.path).path+' POST']+=1

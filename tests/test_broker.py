@@ -454,9 +454,13 @@ class FakeResponse:
 
 
 class FakeRoute:
-    def __init__(self,request,response=None):self.request,self.response,self.outcome,self.fulfilled=request,response or FakeResponse(),None,None
+    def __init__(self,request,response=None,error=None):
+        self.request,self.response,self.outcome,self.fulfilled,self.error,self.sent=request,response or FakeResponse(),None,None,error,None
     async def abort(self):self.outcome='abort'
-    async def fetch(self,**_):self.outcome='fetched';return self.response
+    async def fetch(self,**kwargs):
+        self.sent=kwargs
+        if self.error:raise self.error
+        self.outcome='fetched';return self.response
     async def fulfill(self,**kwargs):self.outcome='fulfill';self.fulfilled=kwargs
 
 
@@ -1184,3 +1188,128 @@ class ApiKeyTests(unittest.IsolatedAsyncioTestCase):
                 for headers in ({},{'Authorization':'Bearer wrong'},{'Authorization':'synthetic-broker-key'}):
                     self.assertEqual(401,(await client.get('/operations/'+str(uuid.uuid4()),headers=headers)).status_code,headers)
                 self.assertEqual(200,(await client.get('/operations/'+str(uuid.uuid4()),headers={'Authorization':'Bearer synthetic-broker-key'})).status_code)
+
+
+class RoundSixRouterTests(RouterTests):
+    """Review round 6: what was checked is what is sent; an answer that failed half-way refuses the handoff; the
+    guards that survived mutation."""
+    FORM={'content-type':'application/x-www-form-urlencoded'}
+
+    def login(self,body=b'password=x',headers=None,**kwargs):
+        return FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(self.FORM,**(headers or {})),body=body,**kwargs)
+
+    async def test_the_checked_headers_and_body_are_sent_with_an_explicit_cookie(self):
+        route=await self.go(self.login(headers={':authority':'shop.invalid','x-a':'1','cookie':'PrestaShop-1=session'}))
+        self.assertEqual('fulfill',route.outcome)
+        self.assertEqual(b'password=x',route.sent['post_data'])
+        self.assertNotIn(':authority',route.sent['headers']);self.assertEqual('1',route.sent['headers']['x-a'])
+        self.assertEqual('PrestaShop-1=session',route.sent['headers']['cookie'])
+        # The browser sent no Cookie: an empty one is sent, so the shared store is not read at send time.
+        route=await self.go(self.login())
+        self.assertEqual('',route.sent['headers']['cookie'])
+
+    async def test_an_answer_that_failed_half_way_refuses_the_handoff(self):
+        route=FakeRoute(self.login(),error=RuntimeError('net::ERR_CONNECTION_RESET'))
+        await self.router.route(route)
+        self.assertEqual('abort',route.outcome);self.assertEqual('state',self.op['failure'])
+        # Also after the login is confirmed (a request already sent), and only for a handoff.
+        self.op.clear();self.op['id']=str(uuid.uuid4());self.op['done']=True
+        await self.router.route(FakeRoute(self.login(),error=RuntimeError('reset')))
+        self.assertNotIn('failure',self.op)  # a new request after done is never even sent
+        self.op.pop('done')
+        router=server.Router(self.op,dict(self.action,kind='browser'),[PASSWORD],None,lambda:'main')
+        await router.route(FakeRoute(self.login(),error=RuntimeError('reset')));self.assertNotIn('failure',self.op)
+
+    async def test_header_names_are_checked_too(self):
+        route=await self.go(self.login(headers={'x-'+PASSWORD:'1'}))
+        self.assertEqual('abort',route.outcome);self.assertEqual('leak',self.op['failure'])
+
+    async def test_a_credential_field_is_its_exact_decoded_name(self):
+        action=dict(self.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login','credential_fields':['user[password]']}])
+        router=server.Router(self.op,action,[PASSWORD],None,lambda:'main')
+        route=FakeRoute(self.login(body=('user%5Bpassword%5D='+PASSWORD).encode()));await router.route(route)
+        self.assertEqual('fulfill',route.outcome)
+        for body in ('password2='+PASSWORD,'user%5Bpassword%5D2='+PASSWORD,'user='+PASSWORD):
+            self.op.clear();self.op['id']=str(uuid.uuid4())
+            route=FakeRoute(self.login(body=body.encode()));await router.route(route)
+            self.assertEqual('abort',route.outcome,body);self.assertEqual('leak',self.op['failure'],body)
+        self.op.clear();self.op['id']=str(uuid.uuid4())
+        route=await self.go(self.login(body=('password2='+PASSWORD).encode()))
+        self.assertEqual('abort',route.outcome)
+
+    async def test_partitioned_cookies_named_parent_domain_or_on_one_line(self):
+        cases=[(dict(self.action,cookie_names=['visible']),'https://shop.invalid/login',['visible=1; Path=/; Secure; Partitioned']),
+               (dict(self.action,url='https://www.shop.invalid/login',allowed_requests=[{'method':'POST','url':'https://www.shop.invalid/login','credential_fields':['password']}]),
+                'https://www.shop.invalid/login',['PrestaShop-a=1; Domain=.shop.invalid; HttpOnly; Partitioned']),
+               (self.action,'https://shop.invalid/login',['a=1; Path=/\nPS=s; HttpOnly; Partitioned'])]
+        for action,url,cookies in cases:
+            self.op.clear();self.op['id']=str(uuid.uuid4())
+            router=server.Router(self.op,action,[PASSWORD],None,lambda:'main')
+            route=FakeRoute(FakeRequest(url,'POST',navigation=True,headers=dict(self.FORM),body=b'password=x'),FakeResponse(200,cookies=cookies))
+            await router.route(route)
+            self.assertEqual('state',self.op.get('failure'),cookies)
+
+    def test_every_login_kind_names_its_login_request_and_at_most_eight_fields(self):
+        with self.assertRaises(ValueError):server.check_connector(dict(self.action,kind='browser',allowed_requests=[{'method':'POST','url':'https://shop.invalid/login'}]))
+        rule={'method':'POST','url':'https://shop.invalid/login'}
+        server.check_connector(dict(self.action,allowed_requests=[dict(rule,credential_fields=['f%d'%i for i in range(8)])]))
+        with self.assertRaises(ValueError):server.check_connector(dict(self.action,allowed_requests=[dict(rule,credential_fields=['f%d'%i for i in range(9)])]))
+
+
+class RoundSixLoginTests(RoundFiveLoginTests):
+    async def test_a_late_answer_that_refuses_the_handoff_means_the_state_is_never_read(self):
+        self.upstream.clear()
+        async def on_success():
+            route=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True,headers={'content-type':'application/x-www-form-urlencoded'},body=b'password=x'),
+                             self.log,self.upstream,FakeResponse(200,cookies=[PARTITIONED]))
+            asyncio.ensure_future(self.handler(route))
+            while 'fetch-start' not in self.log:await asyncio.sleep(0)
+        self.on_success=on_success
+        op={'id':str(uuid.uuid4())};captured={}
+        task=asyncio.create_task(server.browser_action(op,self.action,{'username':'u','password':PASSWORD},captured))
+        while not op.get('done'):await asyncio.sleep(0)
+        self.upstream.set()
+        self.assertTrue(await asyncio.wait_for(task,2))
+        self.assertEqual('state',op['failure']);self.assertEqual({},captured)
+        self.assertFalse(any(entry.startswith('storage_state') for entry in self.log))
+
+
+class RoundSixJournalTests(StorageStateBase):
+    async def test_a_status_before_the_redelivery_says_the_end_kept_in_the_journal(self):
+        for reason,end in (('ttl','expired'),('release','succeeded'),('revoke','revoked')):
+            oid=str(uuid.uuid4())
+            server.undelivered[oid]={'id':oid,'announced':True,'state':'failed','reason':reason}
+            self.assertEqual({'id':oid,'state':end,'known':True},await server.status(uuid.UUID(oid)))
+        oid=str(uuid.uuid4());server.undelivered[oid]={'id':oid,'announced':True,'state':'failed','reason':'error','failure':'leak'}
+        self.assertEqual('leak',(await server.status(uuid.UUID(oid)))['reason'])
+
+    def test_a_journal_not_read_at_start_is_never_overwritten_unread(self):
+        import json,time
+        old=str(uuid.uuid4())
+        (self.dir/server.handoff.JOURNAL).write_text(json.dumps({old:{'reason':'ttl','since':time.time()}}))
+        server.cleanup['journal']=False
+        server.enqueue({'id':str(uuid.uuid4()),'announced':True,'state':'failed','reason':'restart'})
+        self.assertIn(old,json.loads((self.dir/server.handoff.JOURNAL).read_text()))
+        self.assertEqual('ttl',server.undelivered[old]['reason'])
+
+    def test_a_journal_that_cannot_be_read_is_left_alone(self):
+        import contextlib,io,json,time
+        (self.dir/server.handoff.JOURNAL).write_text(json.dumps({str(uuid.uuid4()):{'reason':'ttl','since':time.time()}}))
+        before=(self.dir/server.handoff.JOURNAL).read_text()
+        server.cleanup.update(journal=False,journal_reported=False)
+        with patch.object(server.handoff,'load_journal',side_effect=server.handoff.HandoffError()),contextlib.redirect_stderr(io.StringIO()):
+            server.enqueue({'id':str(uuid.uuid4()),'announced':True,'state':'failed','reason':'restart'})
+        self.assertEqual(before,(self.dir/server.handoff.JOURNAL).read_text())
+
+    async def test_the_reaper_reads_the_journal_once_the_directory_is_usable(self):
+        import json,time
+        old=str(uuid.uuid4())
+        (self.dir/server.handoff.JOURNAL).write_text(json.dumps({old:{'reason':'ttl','since':time.time()}}))
+        server.cleanup.update(done=False,journal=False)
+        with patch.object(server,'announce_restart',AsyncMock()):
+            janitor=asyncio.create_task(server.reap())
+            for _ in range(150):
+                if old in server.undelivered:break
+                await asyncio.sleep(0.1)
+            janitor.cancel();await asyncio.gather(janitor,return_exceptions=True)
+        self.assertIn(old,server.undelivered)

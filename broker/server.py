@@ -357,11 +357,18 @@ class Router:
             if not (main and listed):
                 await self.deny(request_route)
                 return
-            if content_carries(await request.all_headers(), request.post_data_buffer, matching_rule(action, request.url, request.method), self.secrets):
+            headers, body = await request.all_headers(), request.post_data_buffer
+            # Off the event loop: a 64 KiB body takes a moment to check, and other routes and lease checks go on.
+            if await asyncio.to_thread(content_carries, headers, body, matching_rule(action, request.url, request.method), self.secrets):
                 # A value in a header or the body never leaves, also to an allowed address; only the login
                 # request's credential fields may carry the typed password.
                 await self.deny(request_route, 'leak')
                 return
+            # Exactly what was checked is sent: these headers (no HTTP/2 pseudo-header) and this body, and a Cookie
+            # header always, empty when the browser sent none. Without it Playwright would take the cookies from the
+            # shared store at send time, which an answer still on its way may have changed after the check.
+            sent = {name: value for name, value in headers.items() if not name.startswith(':')}
+            sent.setdefault('cookie', '')
             if not await authorized(op):
                 await self.deny(request_route, 'unauthorized')
                 return
@@ -371,7 +378,14 @@ class Router:
             admitted = True
             # continue_ may follow redirects without another interception. Fetch one
             # response, validate Location, then let Chromium request the next URL.
-            response = await request_route.fetch(max_redirects=0, timeout=12000)
+            try:
+                response = await request_route.fetch(headers=sent, post_data=body, max_redirects=0, timeout=12000)
+            except Exception:
+                # Its Set-Cookie may already be in the shared context (stored when the headers arrived) without
+                # having been checked: nothing of this login may be handed off.
+                if action.get('kind') in HANDOFF_KINDS:
+                    self.refuse('state')
+                raise
             if partitioned_cookie(response, action, request.url):
                 # Already in the browser context without its partition: nothing of this login may be exported.
                 self.refuse('state')
@@ -467,7 +481,8 @@ async def browser_action(op, action, value, capture=None):
                     await router.close()
                 except TimeoutError:
                     raise Failure('login') from None
-                if capture is not None:
+                if capture is not None and not op.get('policy_denied'):
+                    # A late answer that refused the handoff (refuse(), during close()): the state is not even read.
                     capture.update(await context.storage_state())
             return ok
         finally:
@@ -718,6 +733,8 @@ def discard(op):
 
 
 REASON = {'succeeded': 'release', 'expired': 'ttl', 'revoked': 'revoke', 'failed': 'error'}
+# The end a final event's reason stands for (the application's REASONS).
+ENDS = {'release': 'succeeded', 'ttl': 'expired', 'revoke': 'revoked', 'restart': 'failed', 'error': 'failed'}
 
 
 def removal_event(op):
@@ -730,7 +747,13 @@ def removal_event(op):
 
 def persist():
     """Writes the undelivered final events (IDs, reasons, failure codes, since when) next to the files. Never a value
-    or session data. A failure is reported once; the events are still retried from memory."""
+    or session data. A failure is reported once; the events are still retried from memory. A journal that could not be
+    read yet (the directory was not usable at start) is read first and never overwritten unread."""
+    if not cleanup.get('journal') and not restore_journal():
+        if not cleanup.get('journal_reported'):
+            report('undelivered final handoff events could not be saved; they are retried from memory only until the broker restarts')
+            cleanup['journal_reported'] = True
+        return
     entries = {oid: {'reason': op['reason'], 'since': op['delivery_wall'], **({'failure': op['failure']} if op.get('failure') in FAILURES else {})}
                for oid, op in undelivered.items()}
     try:
@@ -836,11 +859,14 @@ def startup_clean():
 
 
 def restore_journal():
-    """The final events an earlier broker could not deliver: queued again with their reasons."""
+    """The final events an earlier broker could not deliver: queued again with their reasons. True once read (also
+    when there is none); False while the directory cannot be read, so that it is tried again before anything is
+    written over it."""
     try:
         entries = handoff.load_journal()
     except Exception:
-        return
+        return False
+    cleanup['journal'] = True
     for oid, entry in entries.items():
         if oid in undelivered or entry.get("reason") not in handoff.JOURNAL_REASONS:
             continue
@@ -849,6 +875,7 @@ def restore_journal():
         if entry.get('failure') in FAILURES:
             op['failure'] = entry['failure']
         undelivered[oid] = op
+    return True
 
 
 
@@ -905,6 +932,8 @@ async def reap():
                     enqueue(op)
         if not cleanup['done'] and tick % 10 == 0:
             left = startup_clean()
+            if cleanup['done'] and not cleanup.get('journal'):
+                restore_journal()
             if left:
                 task = asyncio.create_task(announce_restart(left))
                 announcers.add(task)
@@ -1012,6 +1041,14 @@ async def status(oid: uuid.UUID):
     op = operations.get(str(oid), {})
     # known: false tells the application this broker has no such operation (a restart, or a start not yet
     # registered): it decides by whether it saw the start confirmed.
+    if not op and str(oid) in undelivered:
+        # Ended before a restart, its final event restored from the journal and not delivered yet: that end, not a
+        # restart's failure, is what the application records.
+        restored = undelivered[str(oid)]
+        answer = {'id': str(oid), 'state': ENDS.get(restored['reason'], 'failed'), 'known': True}
+        if answer['state'] == 'failed':
+            answer['reason'] = restored.get('failure') or ('restart' if restored['reason'] == 'restart' else 'error')
+        return answer
     answer = {'id': str(oid), 'state': op.get('state', 'failed'), 'known': bool(op)}
     if answer['state'] == 'failed':
         # A coarse reason for the operator (FAILURES), never a value, URL or selector.

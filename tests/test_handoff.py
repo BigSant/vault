@@ -224,6 +224,27 @@ class HandoffDirectoryTests(unittest.TestCase):
         self.assertNotIn(self.oid+'.json', remaining)
         self.assertNotIn(other+'.json', remaining)
 
+    def test_a_file_clean_cannot_remove_is_made_unreadable(self):
+        handoff.write(self.oid, b'{}')
+        self.assertEqual(handoff.MODE, stat.S_IMODE(os.lstat(self.dir/(self.oid+'.json')).st_mode))
+        # A symlink of that name is never followed (its target is left alone).
+        target = Path(self.tmp.name)/'outside'
+        target.write_text('x')
+        os.chmod(target, 0o644)
+        other = str(uuid.uuid4())
+        os.symlink(target, self.dir/(other+'.json'))
+        real = os.unlink
+
+        def unlink(name, *a, **k):
+            if str(name).endswith('.json'):
+                raise PermissionError()
+            return real(name, *a, **k)
+        with patch.object(handoff.os, 'unlink', unlink):
+            left, complete = handoff.clean()
+        self.assertFalse(complete)
+        self.assertEqual(0, stat.S_IMODE(os.lstat(self.dir/(self.oid+'.json')).st_mode))
+        self.assertEqual(0o644, stat.S_IMODE(os.stat(target).st_mode))
+
     def test_clean_reports_an_incomplete_cleanup(self):
         handoff.write(self.oid, b'{}')
         with failing('unlink', code=errno.EIO):

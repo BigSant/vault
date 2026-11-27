@@ -4,7 +4,16 @@ import ipaddress
 import json
 import os
 import socket
+import sys
 from urllib.parse import urlsplit
+
+
+class Conflict(ValueError):
+    """Two connectors give one host:port different allow_cidrs: every destination is refused."""
+
+
+# Said once on stderr while the configuration conflicts (never a host, port or network), again after it was fixed.
+conflict = {'reported': False}
 
 
 def destinations():
@@ -19,7 +28,7 @@ def destinations():
                 # One address, one network permission: two connectors that disagree refuse the whole configuration,
                 # so neither inherits the other's private range.
                 if key in result and set(result[key]) != set(cidrs):
-                    raise ValueError()
+                    raise Conflict()
                 result[key] = cidrs
     return result
 
@@ -40,7 +49,14 @@ async def tunnel(reader, writer):
                 raise ValueError()
         host = parsed.hostname
         port = parsed.port or (443 if method == 'CONNECT' else 80)
-        allowed = destinations()
+        try:
+            allowed = destinations()
+            conflict['reported'] = False
+        except Conflict:
+            if not conflict['reported']:
+                print('vault-egress: two connectors give one host:port different allow_cidrs; every destination is refused until they agree', file=sys.stderr, flush=True)
+                conflict['reported'] = True
+            raise
         if parsed.username or (host, port) not in allowed:
             raise ValueError()
         addresses = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)

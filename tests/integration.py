@@ -180,7 +180,11 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     config.unlink()
     config.parent.rmdir()
     seen.append(released.stdout + released.stderr)
-    assert released.returncode == 0 and json.loads(released.stdout)['state'] == 'succeeded' and gone(op['id']), released.stdout
+    try:
+        answer = json.loads(released.stdout)
+    except ValueError:
+        answer = {}
+    assert released.returncode == 0 and answer.get('state') == 'succeeded' and gone(op['id']), 'CLI release failed (exit %d)' % released.returncode
     print('PASS: clients/vault.py release removes the file')
 
     # Two executors at the same moment: one live handoff per entry also under MySQL REPEATABLE READ. A third session
@@ -261,11 +265,19 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert state == 'failed', state
     print('PASS: broker restart removes every handoff file; the operation failed')
 
-    for action in ['fixture.shop-leak', 'fixture.shop-fetch', 'fixture.shop-leak-path', 'fixture.shop-login-echo']:
+    def failure(oid):
+        # The audit's coarse reason (operation.failure); the operation ID is not a secret.
+        return subprocess.run(['docker', 'exec', '-i', 'vault-test-mysql-8.4', 'sh', '-c', 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root --batch --skip-column-names "$MYSQL_DATABASE"'],
+                              input=("SELECT outcome FROM audit WHERE subject='"+oid+"' AND event='operation.failure'").encode(), capture_output=True).stdout.decode().strip()
+
+    for action, reason in [('fixture.shop-leak', 'leak'), ('fixture.shop-fetch', 'policy'), ('fixture.shop-leak-path', 'leak'), ('fixture.shop-login-echo', 'leak')]:
         op = start(action)
-        assert op['state'] == 'failed' and not files(), f'{action}: {op}'
+        assert op['state'] == 'failed' and not files(), f'{action}: {op["state"]}'
+        # The localStorage copy reaches the state filter (static files load, storage_keys names it): refused as a
+        # leak there, not cut earlier for another reason.
+        assert failure(op['id']) == reason, f'{action}: failure reason differs'
     counts = fixture_counts()
-    assert counts.get('/ps/data', 0) == 0 and counts.get('static-leak', 0) == 0
+    assert counts.get('/ps/data', 0) == 0 and counts.get('static-leak', 0) == 0 and counts.get('url-leak', 0) == 0
     print('PASS: localStorage copy, an unlisted fetch, the password in a static path, and a server cookie with the password write nothing')
     op = start('fixture.shop-leak-cookie')
     assert op['ready'], op

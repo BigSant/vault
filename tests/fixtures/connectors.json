@@ -443,6 +443,17 @@
           "method": "GET",
           "url": "http://fixture:8000/ps/module/blockwishlist/action"
         }
+      ],
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "storage_keys": [
+        "p"
       ]
     },
     "fixture.shop-fetch": {

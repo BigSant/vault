@@ -218,6 +218,12 @@ def clean(path=None):
                 continue
             except OSError:
                 failed = True
+                # A session file of an earlier run must not stay readable until a later attempt removes it.
+                try:
+                    if stat.S_ISREG(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+                        os.chmod(name, 0, dir_fd=fd)
+                except OSError:
+                    pass
                 continue
             removed.append(name[:-5])
         try:

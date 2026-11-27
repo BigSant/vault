@@ -50,3 +50,15 @@ class DestinationTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.destinations({'a':a,'b':other})
         # Another port is another address.
         self.assertEqual(2,len(self.destinations({'a':a,'b':{'url':'https://shop.invalid:8443/x'}})))
+
+
+class ConflictReportTests(EgressTests):
+    async def test_a_conflict_is_said_once_without_any_address(self):
+        import contextlib,io
+        err=io.StringIO()
+        with patch.object(egress,'destinations',side_effect=egress.Conflict()),contextlib.redirect_stderr(err):
+            for _ in range(3):
+                reader=asyncio.StreamReader();reader.feed_data(b'CONNECT shop.invalid:443 HTTP/1.1\r\n\r\n');reader.feed_eof()
+                writer=Writer();await egress.tunnel(reader,writer);self.assertEqual(b'',writer.data)
+        self.assertEqual(1,err.getvalue().count('different allow_cidrs'));self.assertNotIn('shop.invalid',err.getvalue())
+        egress.conflict['reported']=False
