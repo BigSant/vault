@@ -132,6 +132,121 @@ class ExitCodeTests(unittest.TestCase):
         self.assertEqual('ran', marker.read_text())
 
 
+class RecoveryResumeTests(unittest.TestCase):
+    """scripts/recovery.py's resume and the backup's marker, with every Docker call recorded instead of run."""
+    def setUp(self):
+        sys.path.insert(0, str(ROOT/'scripts'))
+        import recovery
+        self.recovery = recovery
+        self.tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self.tmp.name)/'data'
+        self.data.mkdir()
+        self.calls = []
+        self.fail = {}
+        self.marker = self.data/'.backup-quiesced'
+        test = self
+
+        class Fake(recovery.Recovery):
+            def run(self, args, data=None):
+                if args[:2] == ['docker', 'start']:
+                    name = 'start'
+                elif args[:2] == ['docker', 'stop']:
+                    name = 'stop'
+                elif args[-2:] == ['artisan', 'down'] or args[-2:] == ['artisan', 'up']:
+                    name = args[-1]
+                elif 'mysqldump' in ' '.join(args):
+                    name = 'dump'
+                else:
+                    name = 'other'
+                test.calls.append(name)
+                if name == 'down':
+                    test.marker_at_down = test.marker.exists()
+                if name in test.fail:
+                    raise test.fail[name]
+                return b''
+
+            def sql(self, statement, database=None):
+                test.statements.append(statement)
+                return b'0'
+
+            def dbname(self):
+                return 'vault'
+        self.statements = []
+        self.vault = Fake({'ROOT': Path(self.tmp.name), 'DATA': self.data, 'ENV': 'test', 'RECOVERY': self.data, 'bao': None, 'CONTAINER': 'openbao'})
+        self.up = patch.object(recovery.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1))
+        self.up.start()
+
+    def tearDown(self):
+        self.up.stop()
+        self.tmp.cleanup()
+
+    def test_without_a_marker_resume_does_nothing(self):
+        self.assertFalse(self.vault.resume())
+        self.assertEqual([], self.calls)
+
+    def test_with_a_marker_resume_starts_lifts_and_then_removes_it(self):
+        self.marker.write_text('1')
+        self.assertTrue(self.vault.resume())
+        self.assertEqual(['start', 'up'], self.calls)
+        self.assertFalse(self.marker.exists())
+
+    def test_resume_leaves_another_running_backup_alone(self):
+        import fcntl
+        self.marker.write_text('1')
+        with open(self.data/'.backup.lock', 'a') as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.assertFalse(self.vault.resume())
+        self.assertEqual([], self.calls)
+        self.assertTrue(self.marker.exists())
+
+    def test_a_failed_resume_keeps_the_marker(self):
+        self.marker.write_text('1')
+        self.fail['up'] = RuntimeError('Recovery subprocess failed')
+        with self.assertRaises(RuntimeError):
+            self.vault.resume()
+        self.assertTrue(self.marker.exists())
+
+    def test_backup_writes_the_marker_before_it_quiesces(self):
+        self.fail['dump'] = RuntimeError('Recovery subprocess failed')
+        with self.assertRaises(RuntimeError):
+            self.vault.backup()
+        self.assertTrue(self.marker_at_down)
+        self.assertEqual(['down', 'stop', 'dump', 'start', 'up'], self.calls)
+        self.assertFalse(self.marker.exists())
+
+    def test_sigterm_inside_artisan_down_still_lifts_maintenance(self):
+        # bin/vault turns SIGTERM into SystemExit(143); `artisan down` may still have completed in the container.
+        self.fail['down'] = SystemExit(143)
+        with self.assertRaises(SystemExit):
+            self.vault.backup()
+        self.assertEqual(['down', 'up'], self.calls)
+        self.assertFalse(self.marker.exists())
+
+    def test_a_backup_whose_restore_fails_leaves_the_marker_for_resume(self):
+        self.fail['dump'] = RuntimeError('Recovery subprocess failed')
+        self.fail['start'] = SystemExit(143)
+        with self.assertRaises(SystemExit):
+            self.vault.backup()
+        self.assertTrue(self.marker.exists())
+        self.fail.clear()
+        self.calls.clear()
+        self.assertTrue(self.vault.resume())
+        self.assertEqual(['start', 'up'], self.calls)
+        self.assertFalse(self.marker.exists())
+
+    def test_a_second_backup_is_busy_while_one_holds_the_lock(self):
+        import fcntl
+        with open(self.data/'.backup.lock', 'a') as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(self.recovery.Busy):
+                self.vault.backup()
+        self.assertEqual([], self.calls)
+
+    def test_a_restored_database_holds_no_entry_for_an_old_handoff_file(self):
+        self.vault.invalidate_restored_access('vault_restore')
+        self.assertIn("UPDATE operations SET handoff='removed' WHERE handoff='written';", self.statements[-1])
+
+
 class HandoffDirectoryTests(unittest.TestCase):
     def setUp(self):
         self.vault = load_vault()

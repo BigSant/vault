@@ -59,22 +59,42 @@ class Recovery:
         finally:
             partial.unlink(missing_ok=True)
 
-    def resume(self):
-        """After a backup that was killed (systemd timeout, SIGKILL): PHP and the broker run again and maintenance is
-        lifted. Does nothing unless a backup left its marker, so it never lifts a maintenance someone else set."""
-        quiesced=self.data/'.backup-quiesced'
-        if not quiesced.exists():
-            return False
-        self.run(['docker','start',self.php,self.broker])
-        self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
-        quiesced.unlink(missing_ok=True)
-        print('Services resumed after an interrupted backup.')
-        return True
-
-    def backup(self):
+    def lock(self):
+        """The backup lock (`.backup.lock`), taken without waiting. Busy when another backup or restore holds it."""
         lock=open(self.data/'.backup.lock','a')
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:raise Busy('Another backup is running') from None
+        except BlockingIOError:
+            lock.close()
+            raise Busy('Another backup is running') from None
+        return lock
+
+    def resume(self):
+        """After a backup that was killed (systemd timeout, SIGKILL): PHP and the broker run again and maintenance is
+        lifted. Does nothing unless a backup left its marker, so it never lifts a maintenance someone else set, and
+        nothing while another backup holds the lock (the marker is then that backup's, and it restores the services
+        itself). The marker goes only after both commands succeeded."""
+        try:lock=self.lock()
+        except Busy:
+            print('Another backup is running; it resumes the services itself.')
+            return False
+        try:
+            quiesced=self.data/'.backup-quiesced'
+            if not quiesced.exists():
+                return False
+            self.run(['docker','start',self.php,self.broker])
+            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            quiesced.unlink(missing_ok=True)
+            print('Services resumed after an interrupted backup.')
+            return True
+        finally:
+            lock.close()
+
+    def backup(self):
+        lock=self.lock()
+        try:return self.quiesced_backup()
+        finally:lock.close()
+
+    def quiesced_backup(self):
         active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
         if int(active):raise Busy('Active operations must finish before backup')
         if subprocess.run(['docker','exec','-w','/',self.php,'test','-f','/var/www/html/storage/framework/maintenance.php'],capture_output=True).returncode==0:
@@ -83,11 +103,14 @@ class Recovery:
         target=directory/(self.env+'-'+time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-'+secrets.token_hex(3)+'.vault')
         down=False;stopped=False
         # A marker for `bin/vault backup-resume` (the unit's ExecStopPost): if this process is killed before its
-        # finally runs, the next resume starts PHP and the broker again and lifts maintenance.
+        # finally has restored the services, the next resume starts PHP and the broker again and lifts maintenance.
         quiesced=self.data/'.backup-quiesced'
         try:
             quiesced.write_text('1')
-            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down']);down=True
+            # Each obligation is recorded before its command runs: a SIGTERM inside `artisan down` or `docker stop`
+            # still restores (`artisan up` on an application that is up, `docker start` on running containers, do
+            # nothing).
+            down=True;self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down'])
             stopped=True;self.run(['docker','stop',self.php,self.broker])
             active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
             if int(active):raise Busy('An operation started while quiescing; retry after it finishes')
@@ -110,8 +133,8 @@ class Recovery:
         finally:
             if stopped:self.run(['docker','start',self.php,self.broker])
             if down:self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            # Reached only when both succeeded: a failed restore keeps the marker for backup-resume.
             quiesced.unlink(missing_ok=True)
-            lock.close()
         print('Encrypted consistent backup:',target)
         print('Keep backup.key AND OpenBao recovery shares separately from the backup.')
         return target
@@ -168,7 +191,7 @@ class Recovery:
     def restore(self, source):
         # Never overwrite a live installation, even with a force flag. Provision empty
         # containers first and copy ORIGINAL offline recovery material separately.
-        lock=open(self.data/'.backup.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        lock=self.lock()
         with tempfile.TemporaryDirectory(prefix='vault-import-') as tmp:
             tmp=Path(tmp);material=self.unpack(Path(source),tmp)
             tables=self.sql('SHOW TABLES',self.dbname())
@@ -197,4 +220,6 @@ class Recovery:
     def invalidate_restored_access(self, database):
         self.sql("DELETE FROM sessions; DELETE FROM cache; DELETE FROM cache_locks; "
                  "UPDATE machines SET revoked_at=UTC_TIMESTAMP(); UPDATE grants SET revoked_at=UTC_TIMESTAMP(); "
-                 "UPDATE operations SET state='revoked' WHERE state IN ('pending','approved','running','requires_user_action');",database)
+                 "UPDATE operations SET state='revoked' WHERE state IN ('pending','approved','running','requires_user_action'); "
+                 # A restored host has no handoff file of the old one: nothing may keep an entry reserved for it.
+                 "UPDATE operations SET handoff='removed' WHERE handoff='written';",database)
