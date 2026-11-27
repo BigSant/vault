@@ -109,7 +109,7 @@ The private `data/connectors/connectors.json` (the corresponding environment's d
       "kind":"browser", "url":"https://service.example/login", "origins":[],
       "username_selector":"input[name=username]", "password_selector":"input[name=password]",
       "submit_selector":"button[type=submit]",
-      "allowed_requests":[{"method":"POST","url":"https://service.example/login"},{"method":"GET","url":"https://service.example/account"}],
+      "allowed_requests":[{"method":"POST","url":"https://service.example/login","credential_fields":["password"]},{"method":"GET","url":"https://service.example/account"}],
       "success_selector":"#account-state", "success_text":"connected"
     }
   }
@@ -118,7 +118,7 @@ The private `data/connectors/connectors.json` (the corresponding environment's d
 
 API/CLI use the entry's `token` field as the Bearer and return success only on a 200. The HTTP body and headers are ignored, CLI stdout/stderr are discarded. This is a fixed recipe, not arbitrary command execution. Browser uses the login `username`/`password`; for an MFA flow add `mfa_selector` and `mfa_submit_selector`. `success_text` is compared exactly, and its text is not returned. The local context is closed; the target server session can live until the TTL it sets.
 
-`allowed_requests` must name exactly every additional URL (including the query) and method: forms, MFA, redirects and static resources (unless `static_paths` / `variable_query`, below, cover them). Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
+`allowed_requests` must name exactly every additional URL (including the query) and method, and a login (`browser`, `storage_state`) marks exactly one of them, a POST, as **the login request** with `"credential_fields"`: the 1–8 names of the form fields that carry the typed password (PrestaShop's front office `password`, its back office `passwd`). A connector without it, or with it on two rules, fails (`connector`). The rules cover forms, MFA, redirects and static resources (unless `static_paths` / `variable_query`, below, cover them). Only the initial GET is allowed automatically. Each navigation redirect to an allowed GET is passed through a new check; 307/308 that preserve POST and subresource redirects are rejected. A disallowed request, iframe/popup, WebSocket or download attempt aborts the whole operation with failed; even an allowed URL's Content-Disposition attachment is not passed to the browser. `timeout_seconds` can shorten but not extend the 180 s limit. In `origins`, allow only the necessary, trusted site origins; do not allow wildcards. A private target is allowed only by an exact operator CIDR, e.g. `"allow_cidrs":["10.20.30.40/32"]`; two connectors that name the same host and port must give it the same `allow_cidrs`, otherwise the destination proxy refuses every destination until the configuration agrees. The DNS proxy checks all answers and pins the real IP. HTTP is allowed only in the test Compose fixture mode. Target, selectors, headers, command and URL are not model arguments. The configuration is read on every operation, so before changing the meaning of an action, revoke its grants / finish the active operations and grant the permissions again.
 
 DB connector: `kind=database`, `role=vault-...`, a fixed `host` and `port`. The entry type `dynamic_database` and the secret `role` must match; only SELECT 1 is executed. The DB password need not and cannot be given to the agent. Test provisioning is described in the runbook.
 
@@ -172,8 +172,12 @@ never while a request is on its way; then the browser is closed. Before that poi
 listed, static, nor ignored fails the operation.
 
 Every request URL (navigation, XHR, static, a redirect target) is also checked for the entry's values: one that
-carries a value, or is longer than 8192 characters, is denied and the operation fails. This is a best-effort check,
-not a guarantee.
+carries a value, or is longer than 8192 characters, is denied and the operation fails. So is every request the
+broker sends with the page's own headers and body (a listed request): its headers (names and values, the `Cookie`
+header too) and its body (at most 64 KiB, else denied) must carry no value, except the login request's
+`credential_fields` in a urlencoded form body; anything else in that body (another field, a JSON or multipart body)
+is checked like any other. A static file is sent with the broker's own headers and no body. This is a best-effort
+check, not a guarantee.
 
 **Which values are looked for**: every stored field of the entry except the username and the entry type's *Text*
 fields: the password (it is typed into the page), every *Secret (masked)* and *Multi-line text* field (Setup › Entry
@@ -203,13 +207,16 @@ not name the fields makes the broker check every field but the username.)
   whitespace and `& ; : , | = ? # / . " '`) ends with the first part and another begins with the second.
 
 Not recognised, among others: a value split into three or more parts, interleaved, encrypted, compressed, or encoded
-in any other way. Each text has its own budget (candidates and bytes, in proportion to its length); a text that
+in any other way; and a non-ASCII value percent- or hex-encoded in a charset other than UTF-8 (windows-1257,
+ISO-8859-x): its bytes are not the UTF-8 bytes the check decodes to. Each text has its own budget (candidates and bytes, in proportion to its length); a text that
 exhausts it counts as carrying a value (the state or request is refused): the check never stops silently.
 
 What this leaves open, plainly: a static file goes only to a registered origin, under an operator path, without the
-session and with a query of only the `static_query` numbers or versions (at most 20 digits each); it cannot change state with the logged-in session or read data back. A
-page script can still choose the *file name* under a static path, so a hostile page could encode a short value into
-a path in a way the URL check does not recognise and send it to a registered origin. Register only origins that are
+session and with a query of only the `static_query` numbers or versions (`digits:N` at most 20 digits, `version`
+at most four parts of up to 6 digits, 24 in all, per parameter); it cannot change state with the logged-in session or
+read data back. A page script chooses the *path* under a static path (up to 512 characters, any file name with an
+allowed extension) as freely as the query, so a hostile page could encode a value into a path in a way the URL check
+does not recognise and send it to a registered origin. Register only origins that are
 the site itself (they receive the password at login anyway), keep `static_paths` narrow, and treat a page that runs
 someone else's script (an XSS in the back office) as able to use the browser while the login runs. Negative cases are
 in `tests/test_browser_policy.py` and the integration fixture.
@@ -225,7 +232,7 @@ a run never sees anything.
   "kind": "storage_state", "url": "https://shop.example/en/login", "origins": [],
   "username_selector": "#field-email", "password_selector": "#field-password", "submit_selector": "#submit-login",
   "static_paths": ["/themes/", "/js/", "/img/", "/modules/"],
-  "allowed_requests": [{"method": "POST", "url": "https://shop.example/en/login?back=my-account"},
+  "allowed_requests": [{"method": "POST", "url": "https://shop.example/en/login?back=my-account", "credential_fields": ["password"]},
                        {"method": "GET", "url": "https://shop.example/en/my-account"}],
   "ignore_requests": [{"method": "GET", "url": "https://shop.example/module/blockwishlist/action"}],
   "success_selector": "#main .page-header h1", "success_text": "Your account",
@@ -235,7 +242,7 @@ a run never sees anything.
   "kind": "storage_state", "url": "https://shop.example/admin123/index.php?controller=AdminLogin",
   "username_selector": "#email", "password_selector": "#passwd", "submit_selector": "#submit_login",
   "static_paths": ["/admin123/themes/", "/js/", "/img/", "/modules/"], "static_query": {"v": "version"},
-  "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": {"rand": "digits:13"}},
+  "allowed_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php", "variable_query": {"rand": "digits:13"}, "credential_fields": ["passwd"]},
                        {"method": "GET", "url": "https://shop.example/admin123/index.php?controller=AdminDashboard", "variable_query": {"token": "hex:32"}}],
   "ignore_requests": [{"method": "POST", "url": "https://shop.example/admin123/index.php/common/notifications"},
                       {"method": "GET", "url": "https://shop.example/admin123/index.php"}],
@@ -244,9 +251,11 @@ a run never sees anything.
 }
 ```
 
-Both were run against a stock `prestashop/prestashop:8` (8.2.9, default themes and modules, friendly URLs on): the
-login succeeds, the exported state opens the back office and *My account* in a fresh browser, and without the
-`ignore_requests` lines both fail (the wishlist fetch on the login page; the notifications POST and widget XHRs on
+Both were run against a stock `prestashop/prestashop:8` (8.2.9, default themes and modules, friendly URLs on), before
+`credential_fields` and the header/body check existed; that run has not been repeated with them (the field names
+are the forms' own: `password` in the front office's form post, `passwd` in the back office's urlencoded XHR). The
+login succeeded, the exported state opened the back office and *My account* in a fresh browser, and without the
+`ignore_requests` lines both failed (the wishlist fetch on the login page; the notifications POST and widget XHRs on
 the dashboard). The second ignore rule drops the dashboard's non-navigation XHRs to `index.php` (widgets, the address
 helper); the navigation to the dashboard is still the listed rule. `success_text` `account_circle` is the icon text of
 PrestaShop 8's employee menu. Other themes, modules or versions differ: check them with a synthetic account first. The entry uses the `username` and `password` fields; its type must be one of `entry_types`
@@ -264,7 +273,10 @@ allowed (runs are unattended; a connector with it cannot be granted).
   side). A host-only and a parent-domain cookie with the same name and path cannot both be host-only for one host:
   such a state is refused rather than one silently dropped. A **partitioned** cookie (`Partitioned`, CHIPS) that would
   be exported refuses the state too (`failed`, reason `state`): the file format cannot keep its partition, and without
-  it the executor's browser would send it as an ordinary cookie;
+  it the executor's browser would send it as an ordinary cookie. It is looked for in the original `Set-Cookie`
+  headers of every answer the broker fetches (each redirect hop, and an answer that arrives after the login was
+  confirmed), not only in the browser's cookies: Playwright's request client stores such a cookie in the context
+  without its partition, so the exported state alone could not show it;
 - localStorage: **none** by default; a connector names the keys it needs in `"storage_keys"` (registered origins
   only);
 - sessionStorage, IndexedDB and everything of other origins: never.

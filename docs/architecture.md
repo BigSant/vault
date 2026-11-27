@@ -68,7 +68,11 @@ Executor (host process, never an LLM) → API: execute / status "ready" / releas
   503, a broker that cannot be resolved or connected to) fails the operation at once.
 - The audit records the action, subject, actor, time and outcome; a failed operation also gets `operation.failure`
   with one fixed reason code from the broker (`policy`, `leak`, `unauthorized`, `login`, `state`, `connector`,
-  `handoff`, `restart`, `error`; anything else is dropped). Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.
+  `handoff`, `restart`, `error`; anything else is dropped, never refused).
+- A login names its login request (`credential_fields` on one POST rule): only those form fields may carry the typed
+  password; the headers and body of every request the broker sends with the page's own content are checked like
+  its URL. The original `Set-Cookie` of every answer the broker fetches is checked for a `Partitioned` session cookie
+  (refused for a handoff). Values, HTTP payloads, MFA, exception arguments and broker stdout/stderr are not recorded.
 
 States: `pending` → `approved` → `running` → `requires_user_action` / `succeeded` / `failed` / `expired` / `revoked`. Browser MFA is supplied by a human in the Vault web UI; the code is never passed to the agent. An operation ID is not a permission – only the machine identity that created the operation gets its state. ai-os additionally signs the handle with the workspace, agent, project and ticket context. A handoff adds the audit events `handoff.written` and `handoff.removed` (outcome `release`, `ttl`, `revoke`, `restart` or `error`), never with a value or path. A storageState the executor has already read stays usable at the site until the site ends that session: Vault can remove the file, not take back what was read.
 
