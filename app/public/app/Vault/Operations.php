@@ -271,7 +271,7 @@ final class Operations
                 ->timeout(8)->connectTimeout(2)->withoutRedirecting()->post('/operations', ['id' => $op->id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
             abort_unless(self::nothingSent($e->getMessage()), 503);
-            $this->terminal($op, 'failed', $machine, false);
+            $this->terminal($op, 'failed', $machine, false, 'error');
             abort(503);
         } catch (\Throwable) {
             abort(503);
@@ -282,7 +282,7 @@ final class Operations
             return;
         }
         if ($response->clientError() || $response->status() === 503) {
-            $this->terminal($op, 'failed', $machine, false);
+            $this->terminal($op, 'failed', $machine, false, 'error');
             abort($response->status() === 429 ? 429 : 503);
         }
         abort(503);
@@ -311,7 +311,7 @@ final class Operations
             } elseif ($op->action === Links::ACTION && $op->state === 'running') {
                 // Sending a link takes seconds and happens inside the claim. Still running long after: that claim
                 // crashed. Fail closed; the content is never sent twice.
-                if (strtotime($op->updated_at) <= time() - 60) {
+                if (strtotime($op->updated_at.' UTC') <= time() - 60) {
                     $this->terminal($op, 'failed', $machine);
                 }
             } elseif (in_array($op->state, ['running', 'requires_user_action'])) {
@@ -368,10 +368,11 @@ final class Operations
         if (! $tellBroker || $op->action === Links::ACTION) {
             return;
         }
-        // A recorded handoff file is removed by the broker whatever the end: also a failure (a broker that lost the
-        // operation in a restart answers that its file is gone once its startup cleanup succeeded).
+        // A recorded handoff file is removed by the broker whatever the end (also a failure, or a success whose final
+        // event was lost; a broker that lost the operation in a restart answers that its file is gone once its
+        // startup cleanup succeeded).
         $written = DB::table('operations')->where('id', $op->id)->value('handoff') === 'written';
-        if (in_array($state, ['revoked', 'expired']) || ($state === 'failed' && $written)) {
+        if (in_array($state, ['revoked', 'expired']) || $written) {
             // The broker removes a handoff file before it answers, and says whether it is gone.
             $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
             if (($result['removed'] ?? false) === true) {
@@ -438,43 +439,37 @@ final class Operations
         }
         $reason = $body['reason'] ?? null;
         abort_unless(($body['event'] ?? null) === 'removed' && is_string($reason) && isset(self::REASONS[$reason]), 422);
-        abort_if(isset($body['failure']) && ! in_array($body['failure'], self::FAILURES, true), 422);
-        $this->terminal($op, self::REASONS[$reason], $machine, false, $body['failure'] ?? ($reason === 'restart' ? 'restart' : null));
+        // A failure code outside FAILURES is dropped (not recorded), never refused: the broker would repeat a refused
+        // final event for a day.
+        $failure = in_array($body['failure'] ?? null, self::FAILURES, true) ? $body['failure'] : ($reason === 'restart' ? 'restart' : null);
+        $this->terminal($op, self::REASONS[$reason], $machine, false, $failure);
         $this->handoffRemoved($id, $reason);
 
         return ['ok' => true];
     }
 
     /**
-     * vault:links (every 10 minutes) and vault:maintenance: a recorded handoff file whose operation is over (or past
-     * its end, or lost by the broker in a restart or a host reboot) is removed by the broker, and recorded as removed
-     * only when the broker confirms it. A broker that does not answer leaves it for the next run. Returns how many
-     * removals were recorded.
+     * vault:links (every 10 minutes) and vault:maintenance. A live handoff (also one still logging in, without a
+     * recorded file) is brought up to date as a status would: past its end it expires, revoked it is revoked, one the
+     * broker lost (a restart, a host reboot) fails, one the broker ended takes that end; each of these asks the broker
+     * to remove a recorded file. An ended handoff whose file is still recorded is removed by the broker. A removal is
+     * recorded only on the broker's confirmation; a broker that does not answer leaves it for the next run. Returns
+     * how many recorded files were confirmed removed.
      */
     public function settleHandoffs(): int
     {
-        $settled = 0;
-        foreach (DB::table('operations')->where('handoff', 'written')->get() as $op) {
+        $written = DB::table('operations')->where('handoff', 'written')->pluck('id')->all();
+        foreach (DB::table('operations')->whereIn('action', $this->handoffActions())->whereIn('state', ['running', 'requires_user_action'])->get() as $op) {
             try {
-                $machine = DB::table('machines')->where('id', $op->machine_id)->first();
-                if (in_array($op->state, self::ACTIVE, true) && strtotime($op->expires_at.' UTC') <= time()) {
-                    $this->terminal($op, 'expired', $machine);
-                } elseif (in_array($op->state, self::ACTIVE, true)) {
-                    // Live here: does the broker still know it? After a restart (or a reboot) it does not, and its
-                    // final event may never come: fail it, which removes the file and frees the entry.
-                    $result = $this->broker('GET', '/operations/'.$op->id);
-                    if (($result['known'] ?? true) === false) {
-                        $this->terminal($op, 'failed', $machine, true, 'restart');
-                    }
-                } else {
-                    $this->settleHandoff($op);
-                }
+                $this->status(DB::table('machines')->where('id', $op->machine_id)->first(), $op->id);
             } catch (\Throwable) {
             }
-            $settled += DB::table('operations')->where('id', $op->id)->where('handoff', 'removed')->count();
+        }
+        foreach (DB::table('operations')->where('handoff', 'written')->whereNotIn('state', self::ACTIVE)->get() as $op) {
+            $this->settleHandoff($op);
         }
 
-        return $settled;
+        return $written ? DB::table('operations')->whereIn('id', $written)->where('handoff', 'removed')->count() : 0;
     }
 
     /** The executor is done with the file: the broker removes it and the operation succeeds. */

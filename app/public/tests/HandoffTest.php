@@ -442,7 +442,8 @@ final class HandoffTest extends TestCase
             $this->execute($token, $entry, 'refused-run-000'.$i)->assertStatus($status);
             $op = DB::table('operations')->where('request_id', 'refused-run-000'.$i)->first();
             $this->assertSame('failed', $op->state, (string) $answer);
-            $this->assertSame('operation.finish', DB::table('audit')->where('subject', $op->id)->orderByDesc('id')->value('event'));
+            $this->assertSame([['operation.finish', 'failed'], ['operation.failure', 'error']], DB::table('audit')->where('subject', $op->id)
+                ->whereIn('event', ['operation.finish', 'operation.failure'])->orderBy('id')->get(['event', 'outcome'])->map(fn ($a) => [$a->event, $a->outcome])->all());
         }
         // Nothing holds the entry: the next run starts. A timeout after sending is ambiguous and stays running.
         $this->brokerStart = 'timeout';
@@ -741,10 +742,20 @@ final class HandoffTest extends TestCase
         $this->brokerState = 'running';
         $third = $this->execute($token, $entry, 'nightly-run-0003')->json('id');
         $this->written($third)->assertOk();
-        $removed = fn (array $body) => $this->withToken('test-broker')->postJson('/api/internal/operations/'.$third.'/handoff', ['event' => 'removed', 'reason' => 'error'] + $body);
-        $removed(['failure' => 'not-a-code'])->assertStatus(422);
-        $removed(['failure' => 'state'])->assertOk();
+        $removed = fn (string $op, array $body) => $this->withToken('test-broker')->postJson('/api/internal/operations/'.$op.'/handoff', $body + ['event' => 'removed', 'reason' => 'error']);
+        $removed($third, ['failure' => 'state'])->assertOk();
         $this->assertSame('state', DB::table('audit')->where('subject', $third)->where('event', 'operation.failure')->value('outcome'));
+        // An unknown code is dropped, not refused (the broker would repeat a refused event for a day).
+        $fourth = $this->execute($token, $entry, 'nightly-run-0004')->json('id');
+        $this->written($fourth)->assertOk();
+        $removed($fourth, ['failure' => 'not-a-code'])->assertOk();
+        $this->assertSame('failed', DB::table('operations')->where('id', $fourth)->value('state'));
+        $this->assertFalse(DB::table('audit')->where('subject', $fourth)->where('event', 'operation.failure')->exists());
+        // A restart report is a failure with the reason restart.
+        $fifth = $this->execute($token, $entry, 'nightly-run-0005')->json('id');
+        $this->written($fifth)->assertOk();
+        $removed($fifth, ['reason' => 'restart'])->assertOk();
+        $this->assertSame('restart', DB::table('audit')->where('subject', $fifth)->where('event', 'operation.failure')->value('outcome'));
         $this->assertNoValue(json_encode(DB::table('audit')->get()));
     }
 
@@ -764,5 +775,63 @@ final class HandoffTest extends TestCase
         $answer = $this->withToken('test-broker')->getJson('/internal/operations/'.$op)->assertOk();
         $this->assertSame(['username', 'url'], $answer->json('text_fields'));
         $this->assertNoValue($answer->getContent());
+    }
+
+    public function test_vault_links_takes_an_end_the_broker_knows_and_removes_the_file(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        foreach (['revoked' => 'revoke', 'succeeded' => 'release', 'failed' => 'error'] as $state => $reason) {
+            $op = $this->execute($token, $entry, 'run-'.$state.'-0001')->json('id');
+            $this->written($op)->assertOk();
+            // The broker ended it, its `removed` was lost: here it is still running with its file recorded.
+            $this->brokerState = $state;
+            Artisan::call('vault:links');
+            $this->assertSame([$state, 'removed'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])), $state);
+            $this->assertSame($reason, DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'), $state);
+            $this->brokerState = 'running';
+        }
+    }
+
+    public function test_vault_links_fails_a_login_the_broker_lost_before_any_file(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        // Dispatched, no file recorded yet; then the broker restarts and the executor never asks again.
+        $this->brokerKnows = false;
+        Artisan::call('vault:links');
+        $this->assertSame(['failed', null], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+        $this->brokerKnows = true;
+        $this->execute($token, $entry, 'nightly-run-0002')->assertOk();
+    }
+
+    public function test_vault_links_settles_handoffs_even_when_the_link_check_fails(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        $this->brokerKnows = false;
+        $this->app->bind(\App\Vault\Links::class, fn () => throw new \RuntimeException('link service down'));
+        $this->assertSame(1, Artisan::call('vault:links'));
+        $this->assertStringNotContainsString('link service down', Artisan::output());
+        $this->assertSame(['failed', 'removed'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+    }
+
+    public function test_a_clear_refusal_before_the_start_is_audited_with_a_reason(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        foreach ([503, 'refused'] as $i => $answer) {
+            $this->brokerStart = $answer;
+            $this->execute($token, $entry, 'refused-run-000'.$i)->assertStatus(503);
+            $op = DB::table('operations')->where('request_id', 'refused-run-000'.$i)->value('id');
+            $this->assertSame('error', DB::table('audit')->where('subject', $op)->where('event', 'operation.failure')->value('outcome'), (string) $answer);
+        }
     }
 }
