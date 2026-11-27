@@ -7,6 +7,8 @@ CREATE TABLE `machines` (
   `revoked_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
+  `links` tinyint(1) NOT NULL DEFAULT '0',
+  `executor` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
   UNIQUE KEY `machines_token_hash_unique` (`token_hash`),
   KEY `machines_workspace_id_foreign` (`workspace_id`),

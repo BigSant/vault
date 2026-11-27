@@ -162,6 +162,8 @@ final class Sharing
         $d = $r->validate(['links' => 'required|in:0,1']);
         $machine = DB::table('machines')->where('id', $id)->where('workspace_id', $workspace)->whereNull('revoked_at')->where('expires_at', '>', now())->first();
         abort_unless($machine, 404);
+        // An executor (it may hold handoff files) never creates one-time links: separate identities, also later.
+        abort_if($machine->executor && $d['links'] === '1', 409);
         // Under the agent's lock, like a new link: a request at the same moment comes wholly before or after.
         $open = DB::transaction(function () use ($id, $d, $machine, $r) {
             DB::table('machines')->where('id', $id)->lockForUpdate()->first();

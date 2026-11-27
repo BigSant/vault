@@ -434,7 +434,7 @@ final class Workspace
     public function agents(string $workspace)
     {
         $space = $this->access->workspace($workspace, ['owner']);
-        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at', 'links')
+        $machines = DB::table('machines')->where('workspace_id', $workspace)->select('id', 'name', 'expires_at', 'revoked_at', 'links', 'executor')
             ->selectSub(DB::table('grants')->selectRaw('COUNT(*)')->whereColumn('machine_id', 'machines.id')
                 ->whereNull('grants.revoked_at')->where('grants.expires_at', '>', now())
                 ->whereNull('machines.revoked_at')->where('machines.expires_at', '>', now()), 'active_grants')
@@ -539,14 +539,22 @@ final class Workspace
     {
         $space = $this->access->workspace($workspace, ['owner']);
         $this->access->recent($r);
-        $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30', 'links' => 'nullable|in:1']);
+        $d = $r->validate(['name' => 'required|string|max:100', 'days' => 'required|integer|min:1|max:30', 'links' => 'nullable|in:1', 'executor' => 'nullable|in:1']);
+        // An executor (a trusted host process such as a test runner) may receive handoff files; an LLM agent never.
+        // The two are kept apart: an executor does not create one-time links.
+        if (isset($d['executor'], $d['links'])) {
+            throw ValidationException::withMessages(['executor' => 'An executor does not create one-time links. Make a separate agent for them.']);
+        }
         $token = bin2hex(random_bytes(32));
         $id = (string) Str::uuid();
         $expiresAt = now()->addDays((int) $d['days']);
         DB::transaction(function () use ($id, $workspace, $d, $token, $expiresAt) {
             DB::table('machines')->insert(['id' => $id, 'workspace_id' => $workspace, 'name' => $d['name'], 'token_hash' => hash('sha256', $token), 'expires_at' => $expiresAt,
-                'links' => isset($d['links']), 'created_at' => now(), 'updated_at' => now()]);
+                'links' => isset($d['links']), 'executor' => isset($d['executor']), 'created_at' => now(), 'updated_at' => now()]);
             $this->access->audit($workspace, 'machine.create', $id);
+            if (isset($d['executor'])) {
+                $this->access->audit($workspace, 'machine.executor', $id);
+            }
             if (isset($d['links'])) {
                 $this->access->audit($workspace, 'machine.links_allow', $id);
             }
@@ -567,7 +575,24 @@ final class Workspace
         if (! $definition || ($d['action'] === Links::ACTION && ! app(Links::class)->ready($workspace))) {
             throw ValidationException::withMessages(['action' => 'Choose an available action.']);
         }
-        if ($d['action'] === Links::ACTION && ! DB::table('machines')->where('id', $d['machine_id'])->value('links')) {
+        if (in_array($definition['kind'] ?? null, ['browser', 'storage_state'], true) && ! Operations::namesLoginRequest($definition)) {
+            throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' does not name its login request: give exactly one POST rule in allowed_requests "credential_fields" (the form fields that carry the password). Fix connectors.json first.']);
+        }
+        if (Operations::isHandoff($definition)) {
+            if (! DB::table('machines')->where('id', $d['machine_id'])->value('executor')) {
+                throw ValidationException::withMessages(['action' => $d['action'].' leaves a login session for an executor. Only an identity made as an executor may hold it.']);
+            }
+            if (! Operations::acceptsType($definition, $entry->type)) {
+                throw ValidationException::withMessages(['entry_id' => $d['action'].' accepts only entries of type: '.implode(', ', array_filter((array) ($definition['entry_types'] ?? []), 'is_string')).'.']);
+            }
+            if (Operations::leaseSeconds($definition) === null) {
+                throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' has an invalid ttl_seconds (1-1800). Fix connectors.json first.']);
+            }
+            if (! empty($definition['mfa_selector'])) {
+                throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' asks for MFA; a storage_state run is unattended. Remove mfa_selector from connectors.json first.']);
+            }
+        }
+        if ($d['action'] === Links::ACTION && ! Links::allowedFor(DB::table('machines')->where('id', $d['machine_id'])->first())) {
             throw ValidationException::withMessages(['action' => 'This agent may not create one-time links. Allow them on Identities first.']);
         }
         // A link with an entry's values can be opened by the agent itself: an owner approves every one.
@@ -748,7 +773,7 @@ final class Workspace
         $names = $this->actorNames($workspace, $actors);
         $actorOptions = $actors->mapWithKeys(fn ($actor) => [$actor => $names[$actor] ?? 'system'])->sort();
         $groups = ['entry' => ['entry'], 'grant' => ['grant', 'grants'], 'agent' => ['machine', 'machines'],
-            'request' => ['operation'], 'link' => ['link', 'links'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
+            'request' => ['operation', 'handoff'], 'link' => ['link', 'links'], 'member' => ['member', 'owner'], 'setup' => ['workspace', 'project', 'environment', 'type']];
         $outcomeLabels = ['ok' => 'OK', 'denied' => 'Denied', 'failed' => 'Failed', 'expired' => 'Expired', 'revoked' => 'Cancelled'];
         $rules = ['entry' => 'nullable|uuid', 'group' => 'nullable|string|in:'.implode(',', array_keys($groups)),
             'actor' => 'nullable|string|max:150', 'outcome' => 'nullable|string|in:'.implode(',', array_keys($outcomeLabels)),

@@ -339,6 +339,29 @@ final class LinksTest extends TestCase
         $this->withToken($token)->postJson('/api/v1/execute', ['entry_id' => $entry, 'action' => 'onetimesecret.link', 'request_id' => 'entry-link-2'])->assertStatus(422);
     }
 
+    public function test_an_identity_that_became_an_executor_neither_sends_nor_gets_a_link(): void
+    {
+        // A request made while the identity was a plain agent with links, approved after it was marked executor (an
+        // old row that has both flags): the send refuses it and no link is ever handed out.
+        $this->setUpAccount();
+        $entry = $this->entry();
+        [$machine, $token] = $this->agent();
+        $this->grant($machine, $entry, true);
+        $pending = $this->withToken($token)->postJson('/api/v1/links', ['entry_id' => $entry, 'text' => '{{password}}', 'request_id' => 'entry-link-9'])
+            ->assertOk()->assertJsonPath('state', 'pending');
+        DB::table('machines')->where('id', $machine)->update(['executor' => true]);
+        $this->post($this->base.'/operations/'.$pending->json('request').'/decision', ['decision' => 'approve'])->assertRedirect();
+        $this->assertSame([], $this->conceals());
+        $this->assertSame('failed', DB::table('links')->where('id', $pending->json('id'))->value('state'));
+        $this->withToken($token)->getJson('/api/v1/links/'.$pending->json('id'))->assertOk()->assertJsonPath('link', null);
+        // A link that was active before the flag: status no longer hands it out.
+        DB::table('machines')->where('id', $machine)->update(['executor' => false]);
+        $text = $this->withToken($token)->postJson('/api/v1/links', ['text' => 'synthetic', 'request_id' => 'text-link-9'])->assertOk()->assertJsonPath('state', 'active');
+        $this->assertNotNull($text->json('link'));
+        DB::table('machines')->where('id', $machine)->update(['executor' => true]);
+        $this->withToken($token)->getJson('/api/v1/links/'.$text->json('id'))->assertOk()->assertJsonPath('state', 'active')->assertJsonPath('link', null);
+    }
+
     public function test_a_denied_request_cancels_the_link_and_drops_its_content(): void
     {
         $this->setUpAccount();

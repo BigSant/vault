@@ -33,7 +33,7 @@ final class EntryTypes
     public static function actionFields(string $kind): array
     {
         return match ($kind) {
-            'browser' => ['username', 'password'],
+            'browser', 'storage_state' => ['username', 'password'],
             'database' => ['role'],
             // A one-time link reads the fields its text names; none are fixed.
             'onetimesecret' => [],

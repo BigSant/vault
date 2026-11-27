@@ -38,6 +38,64 @@ def bao(args, payload=None, token='', acceptable=(0,), container=None):
     return result.stdout
 
 
+def env_setting(name):
+    """A key from the DDE env files (common, then the environment's), without reading or printing anything else."""
+    value = None
+    for path in (ROOT/'app/env/common.env', ROOT/'app/env'/(ENV+'.env')):
+        if path.is_file():
+            for line in path.read_text().splitlines():
+                if line.startswith(name+'='):
+                    value = line.split('=', 1)[1].strip().strip('"\'')
+    return value or None
+
+
+def handoff_directory():
+    """Prepares or checks the broker's handoff directory. The default (DATA/handoff) is made here; a configured one
+    (VAULT_HANDOFF_DIRECTORY, e.g. /run/vault-handoff/prod from tmpfiles.d) must already exist, made by root."""
+    import grp
+    import stat
+    configured = env_setting('VAULT_HANDOFF_DIRECTORY')
+    path = Path(configured) if configured else DATA/'handoff'
+    if not path.is_absolute():
+        raise RuntimeError('VAULT_HANDOFF_DIRECTORY must be an absolute path')
+    created = False
+    if not configured and not os.path.lexists(path):
+        path.mkdir(mode=0o700)
+        created = True
+    if not configured and path.is_dir() and not path.is_symlink() and path.stat().st_uid == os.getuid():
+        # A default directory made earlier (or by Docker's bind mount for this user) gets the strict mode.
+        # 0700, or 2710 with the vault-handoff group (search only: a reader must know the operation ID). Never
+        # group access without that group: a shared primary group (users) would let every local user read files.
+        os.chmod(path, 0o700)
+        try:
+            group = grp.getgrnam('vault-handoff')
+            if group.gr_gid in os.getgroups():
+                os.chown(path, -1, group.gr_gid)
+                os.chmod(path, 0o2710)
+        except KeyError:
+            pass
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        raise RuntimeError('Handoff directory missing; create it as in docs/operations.md (tmpfiles.d)') from None
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o067:
+        raise RuntimeError('Handoff directory must be a real directory owned by this user, mode 2710 or stricter (no symlink)')
+    expected = env_setting('VAULT_HANDOFF_GID')
+    if expected and info.st_gid != int(expected):
+        raise RuntimeError('Handoff directory group differs from VAULT_HANDOFF_GID')
+    # The marker tells the broker this is the handoff directory: without it the broker writes and removes nothing,
+    # and at start it deletes every <uuid>.json in a marked one. So it is made here only in a directory made here
+    # just now; in any other (a configured one, or an older default) the administrator makes it, knowing the
+    # directory holds nothing else (tmpfiles.d does, docs/operations.md).
+    marker = path/'.vault-handoff'
+    if created:
+        os.close(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
+    if not os.path.lexists(marker):
+        raise RuntimeError('Handoff directory has no marker .vault-handoff; make it yourself (as in docs/operations.md) once you know the directory holds nothing else, since the broker removes every <uuid>.json in a marked directory')
+    if not stat.S_ISREG(os.lstat(marker).st_mode) or os.lstat(marker).st_uid != os.getuid():
+        raise RuntimeError('Handoff directory marker must be a regular file owned by this user')
+
+
 def prepare():
     for part in ('bootstrap/cache','storage/framework/cache/data','storage/framework/sessions','storage/framework/views','storage/logs'):
         (ROOT/'app/public'/part).mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -54,6 +112,19 @@ def prepare():
         save(broker_key, (DATA/'security/app/broker.key').read_text())
     if not (DATA/'connectors/connectors.json').exists():
         save(DATA/'connectors/connectors.json', (ROOT/'app/config/connectors.example.json').read_text())
+    check_connectors()
+    handoff_directory()
+
+
+def check_connectors():
+    """What this broker refuses in connectors.json (a login without its credential_fields, static_subresources,
+    unequal allow_cidrs for one host:port), said before the broker is replaced rather than at the first failed run."""
+    sys.path.insert(0, str(ROOT/'broker'))
+    import connector_check
+    actions = json.loads((DATA/'connectors/connectors.json').read_text()).get('actions', {})
+    found = connector_check.problems(actions, ('http', 'https') if ENV == 'test' else ('https',))
+    if found:
+        raise RuntimeError('connectors.json needs updating (docs/operations.md, Updates):\n  ' + '\n  '.join(found))
 
 
 def initialize():
@@ -149,11 +220,12 @@ def main():
         prepare(); initialize()
     elif command == 'database':
         database()
-    elif command in ('backup','restore-verify','restore'):
+    elif command in ('backup','backup-resume','restore-verify','restore'):
         sys.path.insert(0,str(ROOT/'scripts'))
         from recovery import Recovery
         recovery=Recovery(globals())
         if command=='backup':recovery.backup()
+        elif command=='backup-resume':recovery.resume()
         elif command=='restore-verify':recovery.verify(sys.argv[2])
         else:recovery.restore(sys.argv[2])
     elif command == 'rotate-service-credentials':
@@ -192,16 +264,20 @@ def main():
         initialize()
         subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','migrate','--force'],check=True)
     else:
-        print('bin/vault prepare | initialize | install | database | backup | restore-verify FILE | restore FILE | rotate-service-credentials | rotate-encryption-key (VAULT_ENV=local|test|stage|prod)')
+        print('bin/vault prepare | initialize | install | database | backup | backup-resume | restore-verify FILE | restore FILE | rotate-service-credentials | rotate-encryption-key (VAULT_ENV=local|test|stage|prod)')
 
 
 if __name__ == '__main__':
+    import signal
     os.umask(0o077)
+    # SIGTERM (systemd stopping the unit) unwinds like an error: every finally runs (PHP and the broker start again).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
         main()
     except RuntimeError as error:
         print(str(error)+'. Existing data and recovery material preserved.',file=sys.stderr)
-        sys.exit(1)
+        # 75 (EX_TEMPFAIL): try again later, e.g. a backup while operations are active (ops/vault-backup.service).
+        sys.exit(getattr(error,'exit_code',1))
     except Exception as error:
         print('Vault operator action failed ('+type(error).__name__+'). Existing data and recovery material preserved.',file=sys.stderr)
         sys.exit(1)

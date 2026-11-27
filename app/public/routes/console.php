@@ -17,9 +17,28 @@ Artisan::command('vault:recover-user {email}', function () {
 // Every few minutes (ops/vault-links.timer): one-time links whose lifetime is over end, open ones are checked, so a
 // read is on record even when nobody opens Links.
 Artisan::command('vault:links', function () {
-    $this->info('Checked '.app(\App\Vault\Links::class)->sweep().' open one-time links.');
+    // A handoff whose final event was lost (a broker restart, a host reboot) holds its entry (429) until this settles
+    // it: every 10 minutes rather than once a night. First, and on its own: a link check that fails (OpenBao or the
+    // link service unreachable) must not keep it from running. The error text is fixed, never an exception's.
+    $failed = false;
+    foreach ([
+        'Settled %d handoff files.' => fn () => app(\App\Vault\Operations::class)->settleHandoffs(),
+        'Checked %d open one-time links.' => fn () => app(\App\Vault\Links::class)->sweep(),
+    ] as $done => $part) {
+        try {
+            $this->info(sprintf($done, $part()));
+        } catch (\Throwable) {
+            $failed = true;
+            $this->error(str_starts_with($done, 'Settled') ? 'Settling handoff files failed.' : 'Checking one-time links failed.');
+        }
+    }
+
+    return $failed ? 1 : 0;
 });
 Artisan::command('vault:maintenance', function () {
+    // A handoff that is over, or past its end: the broker removes the file, and the removal is recorded only on its
+    // confirmation. A broker that does not answer leaves it for the next run; its restart removes every file anyway.
+    app(\App\Vault\Operations::class)->settleHandoffs();
     DB::table('operations')->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '<=', now())->update(['state' => 'expired', 'updated_at' => now()]);
     DB::table('sessions')->where('last_activity', '<', time() - 8 * 3600)->delete();
     DB::table('cache')->where('expiration', '<', time())->delete();

@@ -13,7 +13,7 @@
         'grant.create' => 'Added grant', 'grants.revoke' => 'Revoked grant',
         'machine.create' => 'Added agent', 'machines.revoke' => 'Revoked agent',
         'operation.request' => 'Agent request', 'operation.approve' => 'Agent request allowed', 'operation.deny' => 'Agent request denied',
-        'operation.mfa' => 'Site MFA code entered', 'operation.finish' => 'Agent request finished',
+        'operation.mfa' => 'Site MFA code entered', 'operation.finish' => 'Agent request finished', 'operation.failure' => 'Why the request failed',
         'member.change' => 'Changed member', 'owner.setup' => 'First owner set up',
         'workspace.create' => 'Added workspace', 'project.create' => 'Added project', 'project.rename' => 'Renamed project', 'project.delete' => 'Removed project',
         'environment.create' => 'Added environment', 'environment.update' => 'Updated environment', 'environment.delete' => 'Removed environment',
@@ -21,6 +21,7 @@
         'link.create' => 'Added one-time link', 'link.burn' => 'Burned one-time link', 'link.cancel' => 'Cancelled one-time link',
         'link.read' => 'One-time link read', 'link.previewed' => 'One-time link previewed',
         'links.settings' => 'Changed Onetime Secret account', 'links.remove' => 'Removed Onetime Secret account',
+        'handoff.written' => 'Login session handed to executor', 'handoff.removed' => 'Handoff file removed', 'machine.executor' => 'Made agent an executor',
         'machine.links_allow' => 'Allowed one-time links for agent', 'machine.links_stop' => 'Stopped one-time links for agent',
         'session.login' => 'Signed in', 'session.logout' => 'Signed out', 'user.password' => 'Changed password', 'user.recover' => 'Recovered account',
     ];

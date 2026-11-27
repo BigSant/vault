@@ -12,6 +12,11 @@ CREATE TABLE `operations` (
   `result` text COLLATE utf8mb4_unicode_ci,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
+  `handoff` varchar(10) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `lease_expires_at` timestamp NULL DEFAULT NULL,
+  `dispatched_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `operations_machine_id_request_id_unique` (`machine_id`,`request_id`)
+  UNIQUE KEY `operations_machine_id_request_id_unique` (`machine_id`,`request_id`),
+  KEY `operations_entry_id_state_index` (`entry_id`,`state`),
+  KEY `operations_machine_id_created_at_index` (`machine_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

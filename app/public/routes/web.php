@@ -35,7 +35,11 @@ Route::get('/internal/operations/{id}', function (Request $r, string $id, Operat
         $op = null;
     }
 
-    return $op ? ['allowed' => true, 'entry_id' => $op->entry_id, 'version' => (int) $op->version, 'action' => $op->action] : ['allowed' => false];
+    // secret_fields / text_fields: the names (never values) of the entry type's secret and multi-line fields, and of
+    // its Text fields. The broker's leak checks look for every stored field but the username and the Text fields (a
+    // URL, a shop name), so a field removed from the type whose value is still stored is looked for too.
+    return $op ? ['allowed' => true, 'entry_id' => $op->entry_id, 'version' => (int) $op->version, 'action' => $op->action,
+        'secret_fields' => $ops->secretFields($op), 'text_fields' => $ops->textFields($op)] : ['allowed' => false];
 })->whereUuid('id');
 Route::middleware('vault.auth')->group(function () {
     Route::get('/', [Workspace::class, 'index']);

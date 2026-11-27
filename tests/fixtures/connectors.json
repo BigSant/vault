@@ -25,7 +25,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -52,7 +55,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -73,7 +79,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -94,7 +103,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -115,7 +127,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -136,7 +151,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -157,7 +175,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -179,7 +200,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -208,7 +232,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -237,7 +264,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -257,7 +287,15 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
     },
     "fixture.browser-srcdoc": {
       "kind": "browser",
@@ -267,7 +305,15 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
     },
     "fixture.browser-popup-blank": {
       "kind": "browser",
@@ -277,7 +323,352 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
+    },
+    "fixture.shop-session": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/login",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
+    },
+    "fixture.shop-ttl": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/login",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 3,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
+    },
+    "fixture.shop-leak": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/leak",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ],
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "storage_keys": [
+        "p"
+      ]
+    },
+    "fixture.shop-fetch": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/fetch",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
+    },
+    "fixture.admin-session": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/admin/index.php?controller=AdminLogin",
+      "username_selector": "#email",
+      "password_selector": "#passwd",
+      "submit_selector": "#submit_login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/admin/index.php",
+          "variable_query": {
+            "rand": "digits:13"
+          },
+          "credential_fields": [
+            "passwd"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/admin/index.php?controller=AdminDashboard",
+          "variable_query": {
+            "token": "hex:32"
+          }
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "storage_keys": [
+        "nav",
+        "late"
+      ],
+      "ignore_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/admin/index.php/common/notifications"
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/admin/index.php"
+        }
+      ]
+    },
+    "fixture.shop-leak-cookie": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/leak-cookie",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
+    },
+    "fixture.shop-leak-path": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/leak-path",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
+    },
+    "fixture.shop-login-echo": {
+      "kind": "storage_state",
+      "url": "http://fixture:8000/ps/en/login-echo",
+      "username_selector": "#field-email",
+      "password_selector": "#field-password",
+      "submit_selector": "#submit-login",
+      "success_selector": "#account-state",
+      "success_text": "connected",
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/ps/en/login-echo",
+          "credential_fields": [
+            "password"
+          ]
+        },
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/en/my-account"
+        }
+      ],
+      "entry_types": [
+        "login"
+      ],
+      "ttl_seconds": 900,
+      "static_paths": [
+        "/ps/themes/",
+        "/ps/js/",
+        "/ps/img/"
+      ],
+      "static_query": {
+        "v": "version"
+      },
+      "ignore_requests": [
+        {
+          "method": "GET",
+          "url": "http://fixture:8000/ps/module/blockwishlist/action"
+        }
+      ]
     }
   }
 }

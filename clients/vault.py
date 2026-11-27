@@ -72,7 +72,8 @@ def main():
     listing.add_argument('--query');listing.add_argument('--project-id');listing.add_argument('--environment-id');listing.add_argument('--page',type=int,default=1)
     execute = sub.add_parser('execute')
     execute.add_argument('entry'); execute.add_argument('action'); execute.add_argument('--request-id', required=True)
-    for command in ['status','cancel']:
+    # release: an executor is done with an operation's handoff file; Vault removes it.
+    for command in ['status','cancel','release']:
         sub.add_parser(command).add_argument('id')
     sub.add_parser('link-options')
     # The content and the passphrase come as JSON on stdin ({"text": ..., "passphrase": ...}), never as arguments:
@@ -107,7 +108,8 @@ def main():
         else:
             import uuid
             oid = str(uuid.UUID(args.id))
-            answer = client.call('/api/v1/operations/'+oid+('/cancel' if args.command=='cancel' else ''), {} if args.command=='cancel' else None)
+            suffix = {'cancel':'/cancel','release':'/release'}.get(args.command,'')
+            answer = client.call('/api/v1/operations/'+oid+suffix, {} if suffix else None)
         print(json.dumps(answer, ensure_ascii=False))
         return 1 if 'error' in answer else 0
     except (OSError, ValueError, KeyError):

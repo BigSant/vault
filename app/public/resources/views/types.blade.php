@@ -32,7 +32,7 @@
 @endphp
 <div class="head"><h1>Setup</h1><a class="btn" href="#add-type">+ Add an entry type</a></div>
 @include('tabs', ['area' => 'setup', 'current' => 'types', 'space' => $space])
-<p class="note">An entry type defines an entry's encrypted fields. Agents see type and field keys, so keep sensitive data out of names.</p>
+<p class="note">An entry type defines an entry's encrypted fields. Agents see type and field keys, so keep sensitive data out of names. Browser and session actions look for a <em>Secret (masked)</em> or <em>Multi-line text</em> value in what a site sends, never for a <em>Text</em> value: give a secret one of those two kinds.</p>
 
 {{-- One password block for the page, above the entry types: every form below names it (data-confirm-from), so an
      expired confirmation asks here and holds the action under its name ("Save entry type Login"). The add form

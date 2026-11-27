@@ -26,7 +26,7 @@ Open **https://vault.local/**. The first owner needs the activation code from th
 
 ```bash
 docker exec -w /var/www/html vault-local-php-fpm php vendor/bin/phpunit
-docker run --rm --network none --user 1000:1000 -v "$PWD:/workspace:ro" -w /workspace --entrypoint python3 vault-broker:1 -m unittest discover -s tests -p 'test_*.py' -v
+docker run --rm --network none --user 1000:1000 --group-add 1001 -v "$PWD:/workspace:ro" -w /workspace --entrypoint python3 vault-broker:1 -m unittest discover -s tests -p 'test_*.py' -v
 VAULT_ENV=test bin/vault install
 VAULT_ENV=test bin/vault database
 python3 tests/integration.py
@@ -35,13 +35,15 @@ VAULT_ENV=test bin/vault restore-verify backups/<test-backup>.vault
 python3 tests/restore_empty.py backups/<test-backup>.vault
 ```
 
-In the unit test Docker command, adjust the UID/GID to your user. The integration tests use only `vault.test.local`, synthetic credentials and an isolated fixture. They check real HTTPS, CSRF, TOTP, OpenBao, API/CLI, short-lived DB access, browser MFA, a disallowed destination, password echo and revocation. Separate checks cover corruption of the encrypted backup, DNS address checking, permissions and client responses. After a code change, refresh the test environment with `make -C app test-init refresh=1`, then `make -C app up ENV=test`; broker changes also need `make -C app build`.
+In the unit test Docker command, adjust the UID/GID to your user; `--group-add` (any group other than the primary one) lets the fchown test of the handoff file run instead of being skipped. The integration tests use only `vault.test.local`, synthetic credentials and an isolated fixture. They check real HTTPS, CSRF, TOTP, OpenBao, API/CLI, short-lived DB access, browser MFA, a disallowed destination, password echo and revocation. Separate checks cover corruption of the encrypted backup, DNS address checking, permissions and client responses. After a code change, refresh the test environment with `make -C app test-init refresh=1`, then `make -C app up ENV=test`; broker changes also need `make -C app build`.
 
 ## Trust boundaries
 
 **An LLM that has host/root, the Docker socket or the ability to change the executor code can reach the secrets.** In production, Vault and the trusted ai-os backend must run on a host/VM the agent does not administer; the agent sandbox must not get these disks, the configuration or the owner web session. Local Docker is a development environment, not proof of this boundary.
 
 There is no `get_secret`, arbitrary shell, HTTP proxy, DOM, cookies, CDP or screenshots for the agent. The API and CLI recipe check for a 200 status from a registered HTTPS address; the browser logs in and checks the account state defined by the operator. These are specific useful actions, not general browsing. A new action needs an operator definition and a check of its results. CAPTCHA, special WebAuthn/SSO flows, SSH execution and automatic password change for arbitrary external accounts are not supported. SSH keys and secret notes can be stored and viewed.
+
+**Executor handoff (`storage_state`).** One connector kind hands something to a process other than the broker: for an *executor* identity (a trusted host process such as the OPS Playwright runner, never an LLM agent), the broker logs in itself and writes only the resulting Playwright storageState (the HttpOnly session cookies of the login host, host-only; localStorage only for keys the connector names) to a host directory mounted into the broker alone; the `vault-handoff` group may open a file by its operation ID but not list the directory (2710). The password never leaves the broker; a state in which the broker recognises the password or a *Secret (masked)* / *Multi-line text* value (decoded: percent, JSON, base64, hex, reversed, split) is refused — a **best-effort** check that never looks for a *Text* field's value, so keep nothing secret in a Text field: if the site that issues the session is compromised, no filter can guarantee what it encoded into it. The session in that file **is** a credential: whoever can read it (the group, which is one shared OS trust boundary, root, anyone with the Docker socket) can use it until the site ends it. Vault removes the file at release, at the end of its TTL (≤ 30 min), within about 1–2 s (at most about 11 s while the application answers slowly) of a revoked grant or identity (also when the application does not answer: fail closed), and at broker start; **a state the executor has already read cannot be revoked** by Vault — end the session on the site (log out, rotate the password) if it leaks. An LLM agent orders runs from the executor; it never gets the executor's token or the directory.
 
 Automatic rotation applies to the managed AppRole and OpenBao encryption keys through the operator's maintenance timer; dynamic DB access is valid for up to 60 s. Values of other systems are changed by a human in that system and then in Vault. `rotate_at` is a reminder, not a guarantee that the external password was changed.
 

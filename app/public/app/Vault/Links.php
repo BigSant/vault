@@ -636,10 +636,16 @@ final class Links
     // ---- Agents --------------------------------------------------------------------------------------------------
 
     /** What an agent may do with links: allowed, the lifetimes, and the entries it may use with their field keys. */
+    /** Whether this identity may create one-time links: allowed by an owner, and never an executor. */
+    public static function allowedFor(?object $machine): bool
+    {
+        return $machine && $machine->links && ! ($machine->executor ?? false);
+    }
+
     public function options(object $machine): array
     {
         $settings = $this->ready($machine->workspace_id);
-        if (! $machine->links || ! $settings) {
+        if (! self::allowedFor($machine) || ! $settings) {
             return ['allowed' => false, 'lifetimes' => [], 'default_lifetime' => null, 'entries' => []];
         }
         $entries = app(Operations::class)->grantRows($machine)->where('grants.action', self::ACTION)
@@ -695,7 +701,7 @@ final class Links
     /** An agent asks for a link. Without an entry it is made at once; with one it is a request an owner approves. */
     public function createByMachine(object $machine, array $input): array
     {
-        abort_unless($machine->links, 403);
+        abort_unless(self::allowedFor($machine), 403);
         $requestId = $input['request_id'] ?? null;
         abort_unless(is_string($requestId) && preg_match('/^[A-Za-z0-9_-]{8,80}$/D', $requestId), 422);
         $entryId = $input['entry_id'] ?? null;
@@ -731,7 +737,7 @@ final class Links
         try {
             $settings = DB::transaction(function () use ($machine, $id, $requestId, $digest, $d, $lifetime, $entryId, $fields, $template) {
                 $current = DB::table('machines')->where('id', $machine->id)->lockForUpdate()->first();
-                abort_unless($current && $current->links, 403);
+                abort_unless(self::allowedFor($current), 403);
                 // A concurrent retry that got here first: answered below, before any limit applies.
                 if (DB::table('links')->where('machine_id', $machine->id)->where('request_id', $requestId)->exists()) {
                     return null;
@@ -802,7 +808,7 @@ final class Links
         }
         $link = DB::table('links')->where('operation_id', $op->id)->first();
         $settings = $this->ready($link->workspace_id);
-        $allowed = DB::table('machines')->where('id', $link->machine_id)->where('links', true)->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
+        $allowed = DB::table('machines')->where('id', $link->machine_id)->where('links', true)->where('executor', false)->whereNull('revoked_at')->where('expires_at', '>', now())->exists();
         // Approved by an owner, request by request.
         $approved = DB::table('operations')->where('id', $op->id)->whereNotNull('approved_by')->exists();
         try {
@@ -871,7 +877,7 @@ final class Links
         $link = DB::table('links')->where('id', $id)->first();
         $url = null;
         // The link is handed out only while the agent may have it: links allowed, and for an entry's values its grant.
-        $allowed = DB::table('machines')->where('id', $machine->id)->value('links')
+        $allowed = self::allowedFor(DB::table('machines')->where('id', $machine->id)->first())
             && (! $link->entry_id || app(Operations::class)->grantRows($machine)->where('entries.id', $link->entry_id)->where('grants.action', self::ACTION)->exists());
         // Past its lifetime the link is dead at Onetime Secret, whatever the last answer said.
         if ($allowed && in_array($link->state, ['active', 'previewed'], true) && (! $link->expires_at || strtotime($link->expires_at) > time())) {
