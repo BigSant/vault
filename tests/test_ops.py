@@ -133,7 +133,9 @@ class ExitCodeTests(unittest.TestCase):
 
 
 class RecoveryResumeTests(unittest.TestCase):
-    """scripts/recovery.py's resume and the backup's marker, with every Docker call recorded instead of run."""
+    """scripts/recovery.py's resume, the backup's marker and its restore, against a `docker` stand-in that keeps the
+    containers' states: a `docker stop` whose client is killed keeps stopping the broker until the next command
+    has run, as the real daemon does."""
     def setUp(self):
         sys.path.insert(0, str(ROOT/'scripts'))
         import recovery
@@ -141,54 +143,83 @@ class RecoveryResumeTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.data = Path(self.tmp.name)/'data'
         self.data.mkdir()
-        self.calls = []
-        self.fail = {}
+        self.calls, self.fail, self.statements = [], {}, []
+        self.state = {'php': 'running', 'broker': 'running'}
+        self.maintenance = False
+        self.interrupt = None
+        self.broken = set()
+        self.has_handoff = 1
         self.marker = self.data/'.backup-quiesced'
         test = self
 
         class Fake(recovery.Recovery):
             def run(self, args, data=None):
-                if args[:2] == ['docker', 'start']:
-                    name = 'start'
-                elif args[:2] == ['docker', 'stop']:
-                    name = 'stop'
-                elif args[-2:] == ['artisan', 'down'] or args[-2:] == ['artisan', 'up']:
-                    name = args[-1]
-                elif 'mysqldump' in ' '.join(args):
-                    name = 'dump'
-                else:
-                    name = 'other'
+                name = ('start' if args[:2] == ['docker', 'start'] else 'stop' if args[:2] == ['docker', 'stop'] else
+                        'inspect' if args[:2] == ['docker', 'inspect'] else args[-1] if args[-2:] in (['artisan', 'down'], ['artisan', 'up']) else
+                        'dump' if 'mysqldump' in ' '.join(args) else 'other')
                 test.calls.append(name)
-                if name == 'down':
-                    test.marker_at_down = test.marker.exists()
-                if name in test.fail:
-                    raise test.fail[name]
-                return b''
+                due = [c for c, v in test.state.items() if v == 'stopping']
+                try:
+                    if name == 'down':
+                        test.marker_at_down = test.marker.exists()
+                        # Even when its client is killed, the command in the container completes.
+                        test.maintenance = True
+                        if test.interrupt == 'down':
+                            raise SystemExit(143)
+                    if name in test.fail:
+                        raise test.fail[name]
+                    if name == 'stop':
+                        if test.interrupt == 'stop':
+                            test.interrupt = None
+                            test.state.update(php='stopped', broker='stopping')
+                            raise SystemExit(143)
+                        test.state.update(php='stopped', broker='stopped')
+                    elif name == 'start':
+                        for c in test.state:
+                            if test.state[c] == 'stopped' and c not in test.broken:
+                                test.state[c] = 'running'
+                    elif name == 'up':
+                        if test.state['php'] != 'running':
+                            raise RuntimeError('Recovery subprocess failed')
+                        test.maintenance = False
+                    elif name == 'inspect':
+                        return ''.join(('true' if test.state[c] != 'stopped' else 'false') + '\n' for c in ('php', 'broker')).encode()
+                    return b''
+                finally:
+                    for c in due:
+                        if test.state[c] == 'stopping':
+                            test.state[c] = 'stopped'
+
+            def in_maintenance(self):
+                return test.maintenance
 
             def sql(self, statement, database=None):
                 test.statements.append(statement)
-                return b'0'
+                return str(test.has_handoff).encode() if 'information_schema' in statement else b'0'
 
             def dbname(self):
                 return 'vault'
-        self.statements = []
         self.vault = Fake({'ROOT': Path(self.tmp.name), 'DATA': self.data, 'ENV': 'test', 'RECOVERY': self.data, 'bao': None, 'CONTAINER': 'openbao'})
-        self.up = patch.object(recovery.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1))
-        self.up.start()
 
     def tearDown(self):
-        self.up.stop()
         self.tmp.cleanup()
+
+    def assert_restored(self):
+        self.assertEqual({'php': 'running', 'broker': 'running'}, self.state)
+        self.assertFalse(self.maintenance)
+        self.assertFalse(self.marker.exists())
 
     def test_without_a_marker_resume_does_nothing(self):
         self.assertFalse(self.vault.resume())
         self.assertEqual([], self.calls)
 
-    def test_with_a_marker_resume_starts_lifts_and_then_removes_it(self):
+    def test_with_a_marker_resume_restores_verifies_and_then_removes_it(self):
         self.marker.write_text('1')
+        self.state.update(php='stopped', broker='stopped')
+        self.maintenance = True
         self.assertTrue(self.vault.resume())
-        self.assertEqual(['start', 'up'], self.calls)
-        self.assertFalse(self.marker.exists())
+        self.assertEqual(['stop', 'start', 'up', 'inspect'], self.calls)
+        self.assert_restored()
 
     def test_resume_leaves_another_running_backup_alone(self):
         import fcntl
@@ -199,28 +230,42 @@ class RecoveryResumeTests(unittest.TestCase):
         self.assertEqual([], self.calls)
         self.assertTrue(self.marker.exists())
 
-    def test_a_failed_resume_keeps_the_marker(self):
+    def test_a_failed_or_unverified_resume_keeps_the_marker(self):
         self.marker.write_text('1')
         self.fail['up'] = RuntimeError('Recovery subprocess failed')
         with self.assertRaises(RuntimeError):
             self.vault.resume()
         self.assertTrue(self.marker.exists())
+        # The commands succeed, but the broker does not come back: not verified, the marker stays.
+        self.fail.clear()
+        self.state['broker'] = 'stopped'
+        self.broken = {'broker'}
+        with self.assertRaisesRegex(RuntimeError, 'not running'):
+            self.vault.resume()
+        self.assertTrue(self.marker.exists())
 
-    def test_backup_writes_the_marker_before_it_quiesces(self):
+    def test_backup_writes_the_marker_before_it_quiesces_and_restores_after_a_failure(self):
         self.fail['dump'] = RuntimeError('Recovery subprocess failed')
         with self.assertRaises(RuntimeError):
             self.vault.backup()
         self.assertTrue(self.marker_at_down)
-        self.assertEqual(['down', 'stop', 'dump', 'start', 'up'], self.calls)
-        self.assertFalse(self.marker.exists())
+        self.assertEqual(['down', 'stop', 'dump', 'stop', 'start', 'up', 'inspect'], self.calls)
+        self.assert_restored()
 
     def test_sigterm_inside_artisan_down_still_lifts_maintenance(self):
-        # bin/vault turns SIGTERM into SystemExit(143); `artisan down` may still have completed in the container.
-        self.fail['down'] = SystemExit(143)
+        self.interrupt = 'down'
         with self.assertRaises(SystemExit):
             self.vault.backup()
-        self.assertEqual(['down', 'up'], self.calls)
-        self.assertFalse(self.marker.exists())
+        self.assert_restored()
+
+    def test_sigterm_inside_docker_stop_waits_for_it_and_brings_both_back(self):
+        # The broker is still stopping when the finally runs: a `docker start` alone would be a no-op for it, and it
+        # would stop a moment later with the marker already gone.
+        self.interrupt = 'stop'
+        with self.assertRaises(SystemExit):
+            self.vault.backup()
+        self.assertEqual(['down', 'stop', 'stop', 'start', 'up', 'inspect'], self.calls)
+        self.assert_restored()
 
     def test_a_backup_whose_restore_fails_leaves_the_marker_for_resume(self):
         self.fail['dump'] = RuntimeError('Recovery subprocess failed')
@@ -231,20 +276,40 @@ class RecoveryResumeTests(unittest.TestCase):
         self.fail.clear()
         self.calls.clear()
         self.assertTrue(self.vault.resume())
-        self.assertEqual(['start', 'up'], self.calls)
-        self.assertFalse(self.marker.exists())
+        self.assert_restored()
 
-    def test_a_second_backup_is_busy_while_one_holds_the_lock(self):
+    def test_the_next_backup_finishes_an_interrupted_ones_restore_first(self):
+        # Backup A died after quiescing; its resume found the lock held by backup B (it did nothing). B, holding the
+        # lock, restores A's quiesce before it checks for maintenance, and then runs normally.
+        self.marker.write_text('1')
+        self.state.update(php='stopped', broker='stopped')
+        self.maintenance = True
+        self.fail['dump'] = RuntimeError('Recovery subprocess failed')
+        with self.assertRaises(RuntimeError):
+            self.vault.backup()
+        self.assertEqual(['stop', 'start', 'up', 'inspect', 'down', 'stop', 'dump', 'stop', 'start', 'up', 'inspect'], self.calls)
+        self.assert_restored()
+
+    def test_a_second_backup_or_a_restore_is_busy_while_one_holds_the_lock(self):
         import fcntl
         with open(self.data/'.backup.lock', 'a') as held:
             fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
             with self.assertRaises(self.recovery.Busy):
                 self.vault.backup()
+            with self.assertRaises(self.recovery.Busy):
+                self.vault.restore(self.data/'any.vault')
         self.assertEqual([], self.calls)
 
     def test_a_restored_database_holds_no_entry_for_an_old_handoff_file(self):
         self.vault.invalidate_restored_access('vault_restore')
         self.assertIn("UPDATE operations SET handoff='removed' WHERE handoff='written';", self.statements[-1])
+
+    def test_a_backup_from_before_handoffs_restores_without_the_column(self):
+        # master's schema: operations has no handoff column; the statement would fail (ERROR 1054) and stop restore.
+        self.has_handoff = 0
+        self.vault.invalidate_restored_access('vault_restore')
+        self.assertFalse(any('handoff=' in statement for statement in self.statements))
+        self.assertIn("UPDATE operations SET state='revoked'", self.statements[0])
 
 
 class HandoffDirectoryTests(unittest.TestCase):
@@ -317,6 +382,9 @@ class HandoffDirectoryTests(unittest.TestCase):
         self.assertEqual('2710', directory[2])
         self.assertIn(['f', directory[1]+'/.vault-handoff', '0600', 'VAULTUSER', 'vault-handoff', '-'], lines)
         self.assertIn(['x', directory[1]+'/.vault-handoff'], lines)
+        # The broker's journal of undelivered final events is not a session file: never aged out.
+        self.assertIn(['x', directory[1]+'/.vault-undelivered'], lines)
+        self.assertIn(['x', directory[1]+'/.vault-undelivered.tmp'], lines)
 
 
 if __name__ == '__main__':

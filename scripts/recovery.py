@@ -68,21 +68,39 @@ class Recovery:
             raise Busy('Another backup is running') from None
         return lock
 
+    def in_maintenance(self):
+        return subprocess.run(['docker','exec','-w','/',self.php,'test','-f','/var/www/html/storage/framework/maintenance.php'],capture_output=True).returncode==0
+
+    def running(self):
+        """Whether PHP and the broker both run (docker inspect)."""
+        try:states=self.run(['docker','inspect','-f','{{.State.Running}}',self.php,self.broker]).decode().split()
+        except RuntimeError:return False
+        return states==['true','true']
+
+    def restore_services(self):
+        """Undoes a quiesce, whatever step it was interrupted at: `docker stop` first (it waits for a stop still under
+        way, and an `artisan down` still running in PHP ends with it), then `docker start`, `artisan up`, and a check
+        that both containers run and maintenance is off. Raises when that check fails: the caller keeps the marker."""
+        self.run(['docker','stop',self.php,self.broker])
+        self.run(['docker','start',self.php,self.broker])
+        self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+        if not self.running() or self.in_maintenance():
+            raise RuntimeError('PHP or the broker is not running, or maintenance is still on, after restoring a backup; .backup-quiesced is kept for backup-resume')
+
     def resume(self):
         """After a backup that was killed (systemd timeout, SIGKILL): PHP and the broker run again and maintenance is
         lifted. Does nothing unless a backup left its marker, so it never lifts a maintenance someone else set, and
-        nothing while another backup holds the lock (the marker is then that backup's, and it restores the services
-        itself). The marker goes only after both commands succeeded."""
+        nothing while another backup holds the lock (that backup finishes the marker's restore first, below). The
+        marker goes only after the restore was verified."""
         try:lock=self.lock()
         except Busy:
-            print('Another backup is running; it resumes the services itself.')
+            print('Another backup is running; it restores the services of the interrupted one before its own.')
             return False
         try:
             quiesced=self.data/'.backup-quiesced'
             if not quiesced.exists():
                 return False
-            self.run(['docker','start',self.php,self.broker])
-            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            self.restore_services()
             quiesced.unlink(missing_ok=True)
             print('Services resumed after an interrupted backup.')
             return True
@@ -91,27 +109,35 @@ class Recovery:
 
     def backup(self):
         lock=self.lock()
-        try:return self.quiesced_backup()
+        try:
+            quiesced=self.data/'.backup-quiesced'
+            if quiesced.exists():
+                # An earlier backup was interrupted and its resume did not get the lock (this one had it): finish its
+                # restore under this lock before anything else.
+                self.restore_services()
+                quiesced.unlink(missing_ok=True)
+                print('Services of an interrupted backup restored first.')
+            return self.quiesced_backup()
         finally:lock.close()
 
     def quiesced_backup(self):
         active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
         if int(active):raise Busy('Active operations must finish before backup')
-        if subprocess.run(['docker','exec','-w','/',self.php,'test','-f','/var/www/html/storage/framework/maintenance.php'],capture_output=True).returncode==0:
+        if self.in_maintenance():
             raise RuntimeError('Application is already in maintenance')
         directory=self.root/'backups';directory.mkdir(mode=0o700,exist_ok=True)
         target=directory/(self.env+'-'+time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-'+secrets.token_hex(3)+'.vault')
-        down=False;stopped=False
-        # A marker for `bin/vault backup-resume` (the unit's ExecStopPost): if this process is killed before its
-        # finally has restored the services, the next resume starts PHP and the broker again and lifts maintenance.
+        # A marker for `bin/vault backup-resume` (the unit's ExecStopPost) and the next backup: if this process is
+        # killed before its finally has restored and verified the services, they finish it.
         quiesced=self.data/'.backup-quiesced'
+        marked=False
         try:
             quiesced.write_text('1')
-            # Each obligation is recorded before its command runs: a SIGTERM inside `artisan down` or `docker stop`
-            # still restores (`artisan up` on an application that is up, `docker start` on running containers, do
-            # nothing).
-            down=True;self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down'])
-            stopped=True;self.run(['docker','stop',self.php,self.broker])
+            # From here on the finally restores, whichever step a SIGTERM interrupts (restore_services starts with
+            # `docker stop`, which also waits for an interrupted one).
+            marked=True
+            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down'])
+            self.run(['docker','stop',self.php,self.broker])
             active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
             if int(active):raise Busy('An operation started while quiescing; retry after it finishes')
             with tempfile.TemporaryDirectory(prefix='vault-backup-') as tmp:
@@ -131,10 +157,10 @@ class Recovery:
                     for name in sorted(self.MEMBERS):tar.add(tmp/name,arcname=name,recursive=False)
                 self.crypt('encrypt',archive,target)
         finally:
-            if stopped:self.run(['docker','start',self.php,self.broker])
-            if down:self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
-            # Reached only when both succeeded: a failed restore keeps the marker for backup-resume.
-            quiesced.unlink(missing_ok=True)
+            if marked:
+                self.restore_services()
+                # Reached only after a verified restore: otherwise the marker stays for backup-resume.
+                quiesced.unlink(missing_ok=True)
         print('Encrypted consistent backup:',target)
         print('Keep backup.key AND OpenBao recovery shares separately from the backup.')
         return target
@@ -220,6 +246,8 @@ class Recovery:
     def invalidate_restored_access(self, database):
         self.sql("DELETE FROM sessions; DELETE FROM cache; DELETE FROM cache_locks; "
                  "UPDATE machines SET revoked_at=UTC_TIMESTAMP(); UPDATE grants SET revoked_at=UTC_TIMESTAMP(); "
-                 "UPDATE operations SET state='revoked' WHERE state IN ('pending','approved','running','requires_user_action'); "
-                 # A restored host has no handoff file of the old one: nothing may keep an entry reserved for it.
-                 "UPDATE operations SET handoff='removed' WHERE handoff='written';",database)
+                 "UPDATE operations SET state='revoked' WHERE state IN ('pending','approved','running','requires_user_action');",database)
+        # A restored host has no handoff file of the old one: nothing may keep an entry reserved for it. A backup made
+        # before handoffs existed has no such column (and no such file): nothing to do.
+        if int(self.sql("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='operations' AND COLUMN_NAME='handoff'",database) or 0):
+            self.sql("UPDATE operations SET handoff='removed' WHERE handoff='written';",database)
