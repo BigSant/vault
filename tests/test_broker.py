@@ -178,12 +178,13 @@ class StorageStateTests(StorageStateBase):
         calls=0;created=[]
         async def authorize(op):
             nonlocal calls;calls+=1
-            # perform() checks twice (before the secret, after the login); the third is lease()'s, before create.
-            return calls<3
+            # start() checks once, perform() twice (before the secret, after the login); the fourth is lease()'s,
+            # before create.
+            return calls<4
         real=server.handoff.create
         with patch.object(server,'authorized',authorize),patch.object(server.handoff,'create',lambda *a:(created.append(1),real(*a))[1]):
             oid=await self.start();await self.finish(oid)
-        self.assertEqual(3,calls);self.assertEqual([],created)
+        self.assertEqual(4,calls);self.assertEqual([],created)
         self.assertEqual('revoked',server.operations[oid]['state']);self.assertEqual([],self.files());self.assertEqual([],self.events)
 
     async def test_unrecorded_write_is_removed_at_once_and_still_reported_removed(self):
@@ -799,10 +800,12 @@ class ReviewRoundFourStateTests(StorageStateBase):
     async def test_the_lease_asks_the_application_again_before_it_writes(self):
         calls=[]
         async def authorize(op):
-            calls.append(op['id']);return len(calls)!=3
+            # start(), perform() before the secret and after the login, then lease() before it writes: the fourth.
+            calls.append(op['id']);return len(calls)!=4
         with patch.object(server,'authorized',authorize):
             oid=await self.start();await self.finish(oid)
-        self.assertEqual('revoked',server.operations[oid]['state']);self.assertEqual([],self.files());self.assertEqual([],self.events)
+        self.assertEqual(4,len(calls));self.assertEqual('revoked',server.operations[oid]['state'])
+        self.assertEqual([],self.files());self.assertEqual([],self.events)
 
     async def test_a_failed_write_whose_cleanup_fails_keeps_the_slot_until_the_file_is_gone(self):
         import os
