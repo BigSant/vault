@@ -38,10 +38,11 @@ async def authorized(op):
         response = await client.get(os.environ['APP_URL'] + '/internal/operations/' + op['id'], headers={'Authorization': 'Bearer ' + key()})
         data = response.json() if response.status_code == 200 else {}
         allowed = data.get('allowed') is True and all(data.get(k) == op[k] for k in ('entry_id', 'version', 'action'))
-        fields = data.get('secret_fields')
-        if allowed and isinstance(fields, list) and all(isinstance(f, str) for f in fields):
-            # The entry type's secret fields (names only): what the leak checks look for besides the password.
-            op['secret_fields'] = fields
+        for name in ('secret_fields', 'text_fields'):
+            fields = data.get(name)
+            if allowed and isinstance(fields, list) and all(isinstance(f, str) for f in fields):
+                # The entry type's field names by kind (names only): what the leak checks look for (entry_values).
+                op[name] = fields
         return allowed
 
 
@@ -134,47 +135,105 @@ MAX_URL = 8192
 TYPED_FIELDS = ('password',)
 
 
-def entry_values(value, secret_fields=None):
-    """The values a request URL or the handoff file must never carry: the fields typed into the page (password) and
-    the fields of the entry type's secret kind (the application names them). Text fields (a URL, a shop name) are not
-    checked: they would refuse ordinary pages. Without the application's list (an older application): every field
-    but the username. Empty values carry nothing."""
-    if secret_fields is None:
-        names = set(value) - {'username'}
-    else:
+def entry_values(value, secret_fields=None, text_fields=None):
+    """The values a request URL or the handoff file must never carry. With the application's list of the entry type's
+    *Text* fields: every field but the username and those (so a field no longer in the type, whose value is still
+    stored, is checked too). Else with its list of secret fields: the fields typed into the page (password) and
+    those. Else (an older application): every field but the username. Text fields (a URL, a shop name) are not
+    checked: they would refuse ordinary pages. Empty values carry nothing."""
+    if text_fields is not None:
+        names = set(value) - {'username'} - (set(text_fields) - set(TYPED_FIELDS))
+    elif secret_fields is not None:
         names = ({*TYPED_FIELDS, *secret_fields} & set(value)) - {'username'}
+    else:
+        names = set(value) - {'username'}
     return [value[k] for k in sorted(names) if isinstance(value[k], str) and value[k]]
+
+
+class Failure(ValueError):
+    """Ends an operation as failed with a coarse reason (FAILURES): what the operator sees in the audit, never a value,
+    a URL or a selector."""
+
+    def __init__(self, code):
+        super().__init__()
+        self.code = code if code in FAILURES else 'error'
+
+
+# The reasons a failed operation can have (docs/integrations.md lists them for the operator).
+FAILURES = frozenset({
+    'policy',        # a request, frame, popup, download or WebSocket the connector does not allow
+    'leak',          # a request URL or the session state carried an entry value (or could not be checked completely)
+    'unauthorized',  # the application withdrew the operation during the login
+    'login',         # the page did not behave as configured: a selector, a page timeout, the success text
+    'state',         # the session state was refused for its shape: a partitioned or duplicate cookie, empty, too large
+    'connector',     # the connector is not valid for its kind
+    'handoff',       # the handoff file could not be written, recorded or removed
+    'restart',       # the broker restarted while the operation ran
+    'error',         # anything else
+})
+# Requests already sent when the login is confirmed are waited for at most this long before the state is read.
+DRAIN_SECONDS = 15
 
 
 class Router:
     """The request policy of one login, kept apart from Playwright so that it can be tested with fakes.
 
-    In order: once the login is confirmed (`op['done']`) nothing more leaves and nothing fails; a URL too long to
-    check or carrying an entry value is denied (the operation fails); a static file is fetched anonymously after the
-    application confirms the operation; any other static-typed GET is dropped; a request the connector ignores is
+    In order: once the login is confirmed (`op['done']`) nothing new is sent and nothing fails; a URL too long to
+    check or carrying an entry value is denied (the operation fails); a request the connector ignores is dropped; a
+    static file is fetched anonymously after the application confirms the operation; any other static-typed GET is
     dropped; everything else must be an exact rule from the main frame and is fetched once, its redirects and
-    attachments checked here."""
+    attachments checked here.
+
+    Sending is admitted only through admit(), which looks at `done` and counts the send with no await in between,
+    and only after the last await of the decision (the application's confirmation). close() sets `done` and then
+    waits for the sends already admitted: after it returns nothing is on its way and nothing new leaves."""
 
     def __init__(self, op, action, secrets, new_request_context, main_frame):
         self.op, self.action, self.secrets = op, action, secrets
         self.new_request_context, self.main_frame = new_request_context, main_frame
+        self.sending = 0
+        self.idle = asyncio.Event()
+        self.idle.set()
 
-    def violation(self, *_):
+    def violation(self, *_, code='policy'):
         if self.op.get('done'):
             return
         first = not self.op.get('policy_denied', False)
         self.op['policy_denied'] = True
-        if first and self.op.get('task'):
-            self.op['task'].cancel()
+        if first:
+            self.op.setdefault('failure', code)
+            if self.op.get('task'):
+                self.op['task'].cancel()
 
-    async def deny(self, request_route):
-        self.violation()
+    async def deny(self, request_route, code='policy'):
+        self.violation(code=code)
         await self.drop(request_route)
 
     @staticmethod
     async def drop(request_route):
         with suppress(Exception):
             await request_route.abort()
+
+    def admit(self):
+        """True when a send may still start, and then counted until settle(). Never awaits: between this check of
+        `done` and the send there is no point at which the login can be confirmed unseen."""
+        if self.op.get('done'):
+            return False
+        self.sending += 1
+        self.idle.clear()
+        return True
+
+    def settle(self):
+        self.sending -= 1
+        if not self.sending:
+            self.idle.set()
+
+    async def close(self, seconds=None):
+        """The login is confirmed: from now on nothing new is sent (a request still waiting for the application, or
+        arriving later, is dropped), and the sends already admitted are waited for, so that the state read next is
+        the one the site's last answer left. Raises TimeoutError when they do not finish in time."""
+        self.op['done'] = True
+        await asyncio.wait_for(self.idle.wait(), DRAIN_SECONDS if seconds is None else seconds)
 
     async def static_fetch(self, request_route, request):
         # A fresh request context per file: no cookie jar (not even one a static response tried to set), no
@@ -199,37 +258,53 @@ class Router:
 
     async def route(self, request_route):
         response = None
+        admitted = False
         action, op = self.action, self.op
         try:
             request = request_route.request
             if op.get('done'):
-                # The login is confirmed and the state read: whatever the page still sends is dropped, not a failure.
+                # The login is confirmed: whatever the page still sends is dropped, not a failure.
                 await self.drop(request_route)
                 return
             if len(request.url) > MAX_URL or leak.carries([request.url], self.secrets):
-                # An entry value in a URL (path or query, plain or encoded) never leaves, whatever the rule.
-                await self.deny(request_route)
+                # An entry value in a URL (path or query, plain or encoded) never leaves, whatever the rule, and also
+                # fails an ignored or static request.
+                await self.deny(request_route, 'leak')
                 return
             navigation = request.is_navigation_request()
             main = request.frame == self.main_frame()
+            listed = request_allowed(action, request.url, request.method)
+            if not listed and main and not navigation and ignored(action, request.url, request.method):
+                # Decided before anything is fetched: an ignored path under static_paths is not sent as a static file.
+                # An exact allowed_requests rule wins over an ignore rule.
+                await self.drop(request_route)
+                return
             if main and static_allowed(action, request.url, request.method, request.resource_type, navigation):
                 if not await authorized(op):
-                    await self.deny(request_route)
+                    await self.deny(request_route, 'unauthorized')
                     return
+                if not self.admit():
+                    # Confirmed while the application answered: nothing more leaves.
+                    await self.drop(request_route)
+                    return
+                admitted = True
                 await self.static_fetch(request_route, request)
                 return
-            listed = request_allowed(action, request.url, request.method)
             if not listed and static_request(action, request.method, request.resource_type, navigation):
                 # A static GET outside the static paths or registered origins (analytics, a font CDN, a
                 # state-changing URL dressed as an image) is dropped before it leaves; the login goes on.
                 await self.drop(request_route)
                 return
-            if not listed and main and not navigation and ignored(action, request.url, request.method):
-                await self.drop(request_route)
-                return
-            if not (main and listed and await authorized(op)):
+            if not (main and listed):
                 await self.deny(request_route)
                 return
+            if not await authorized(op):
+                await self.deny(request_route, 'unauthorized')
+                return
+            if not self.admit():
+                await self.drop(request_route)
+                return
+            admitted = True
             # continue_ may follow redirects without another interception. Fetch one
             # response, validate Location, then let Chromium request the next URL.
             response = await request_route.fetch(max_redirects=0, timeout=12000)
@@ -240,8 +315,10 @@ class Router:
                 location = response.headers.get('location', '')
                 method = 'GET' if response.status == 303 or response.status in (301, 302) and request.method == 'POST' else request.method
                 destination = urljoin(request.url, location)
-                if not location or method != 'GET' or not navigation or not request_allowed(action, destination, method) \
-                        or len(destination) > MAX_URL or leak.carries([destination], self.secrets):
+                if len(destination) > MAX_URL or leak.carries([destination], self.secrets):
+                    await self.deny(request_route, 'leak')
+                    return
+                if not location or method != 'GET' or not navigation or not request_allowed(action, destination, method):
                     await self.deny(request_route)
                     return
                 # Do not deliver 3xx to Chromium: its redirect chain can bypass routing.
@@ -257,14 +334,17 @@ class Router:
             if response:
                 with suppress(Exception):
                     await response.dispose()
+            if admitted:
+                self.settle()
 
 
 async def browser_action(op, action, value, capture=None):
-    secrets_ = entry_values(value, op.get('secret_fields'))
+    secrets_ = entry_values(value, op.get('secret_fields'), op.get('text_fields'))
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, chromium_sandbox=True, proxy={'server': proxy},
                                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
         context = await browser.new_context(accept_downloads=False, service_workers='block')
+        router = None
         try:
             page = None
             router = Router(op, action, secrets_, lambda: pw.request.new_context(proxy={'server': proxy}), lambda: page.main_frame)
@@ -281,28 +361,43 @@ async def browser_action(op, action, value, capture=None):
             page.on('frameattached', router.violation)
             page.on('download', router.violation)
             page.set_default_timeout(12000)
-            await page.goto(action['url'], wait_until='domcontentloaded')
-            await page.locator(action['username_selector']).fill(value['username'])
-            await page.locator(action['password_selector']).fill(value['password'])
+            try:
+                await page.goto(action['url'], wait_until='domcontentloaded')
+                await page.locator(action['username_selector']).fill(value['username'])
+                await page.locator(action['password_selector']).fill(value['password'])
+            except Exception:
+                raise Failure('login') from None
             # A selector/form mismatch is a failure, never a reason to ask the model for credentials.
             if not await authorized(op):
                 return False
-            await page.locator(action['submit_selector']).click()
-            if action.get('mfa_selector'):
-                await page.locator(action['mfa_selector']).wait_for()
-                op['state'] = 'requires_user_action'
-                code = await asyncio.wait_for(op['mfa'].get(), 120)
-                if not await authorized(op):
-                    return False
-                await page.locator(action['mfa_selector']).fill(code)
-                await page.locator(action['mfa_submit_selector']).click()
-                op['state'] = 'running'
-            await page.locator(action['success_selector']).wait_for()
-            ok = await page.locator(action['success_selector']).inner_text() == action['success_text']
+            try:
+                await page.locator(action['submit_selector']).click()
+                if action.get('mfa_selector'):
+                    await page.locator(action['mfa_selector']).wait_for()
+                    op['state'] = 'requires_user_action'
+                    code = await asyncio.wait_for(op['mfa'].get(), 120)
+                    if not await authorized(op):
+                        return False
+                    await page.locator(action['mfa_selector']).fill(code)
+                    await page.locator(action['mfa_submit_selector']).click()
+                    op['state'] = 'running'
+                await page.locator(action['success_selector']).wait_for()
+                ok = await page.locator(action['success_selector']).inner_text() == action['success_text']
+            except TimeoutError:
+                # No MFA code in time: the operation expires, as before.
+                raise
+            except Exception:
+                raise Failure('login') from None
+            if not ok:
+                op.setdefault('failure', 'login')
             if ok and not op.get('policy_denied'):
-                # From here on nothing leaves and nothing the page still does (an XHR on document-ready, a timer)
-                # fails the operation: the login is confirmed.
-                op['done'] = True
+                # From here on nothing new leaves and nothing the page still does (an XHR on document-ready, a timer)
+                # fails the operation: the login is confirmed. What was already sent is waited for first, so that the
+                # state is read after the site's last answer, never while a request is still on its way.
+                try:
+                    await router.close()
+                except TimeoutError:
+                    raise Failure('login') from None
                 if capture is not None:
                     capture.update(await context.storage_state())
             return ok
@@ -320,14 +415,17 @@ MAX_ACTIVE = 4
 MAX_LEASES = 16
 # The application's answer to a lease check; a check that takes longer fails closed (the lease ends as revoked).
 CHECK_SECONDS = 5
-# How often an undelivered final event (`removed`) is sent again, and for how long at most.
+# How often undelivered final events (`removed`) are sent again, how many at a time, and for how long at most.
 DELIVERY_SECONDS = 5
+DELIVERY_BATCH = 8
 DELIVERY_GIVE_UP = 86400
 # Startup cleanup of the handoff directory. Until it has succeeded no handoff is started (503).
 cleanup = {'done': False, 'reported': False}
 # Finished operations whose file could not be removed: retried by the reaper; never reported as removed before.
 unfinished = {}
 # Finished operations whose final event (`removed`) the application has not confirmed yet: sent again until it does.
+# Kept in the handoff directory too (operation IDs and reasons only, handoff.save_journal), so that a broker restart
+# does not lose them.
 undelivered = {}
 
 
@@ -371,10 +469,13 @@ def storage_content(action, state, secrets):
     apply to the login host or a host in `cookie_hosts`, each exported host-only for that exact host (a parent-domain
     cookie is narrowed, so the executor's browser does not send it to sibling subdomains) and as a session cookie
     (the site's expiry is not copied). A host-only and a parent-domain cookie with the same name and path for the same
-    host cannot both be exported host-only: such a state is refused rather than one of them silently lost.
+    host cannot both be exported host-only: such a state is refused rather than one of them silently lost. A
+    partitioned cookie (CHIPS: `Partitioned`, Playwright's `partitionKey`) is refused too: exported without its
+    partition it would become an ordinary cookie in the executor's browser.
     localStorage: none, except the connector's `storage_keys` on the registered origins. Refused when a cookie's name,
     value or path or an item's name or value (repeatedly decoded) carries an entry value, when the result is too
-    large, or when it is empty. What is checked is only what the site chose; the file's own JSON is not."""
+    large, or when it is empty. What is checked is only what the site chose; the file's own JSON is not. Every refusal
+    is a Failure: 'leak' for a value, 'state' for the shape."""
     allowed = registered(action)
     hosts = cookie_hosts(action)
     readable, keys = names(action, 'cookie_names'), names(action, 'storage_keys')
@@ -396,7 +497,10 @@ def storage_content(action, state, secrets):
             if (cookie['name'], raw, host, path) in seen:
                 continue
             if (cookie['name'], host, path) in exported:
-                raise ValueError()
+                raise Failure('state')
+            if cookie.get('partitionKey') or cookie.get('_crHasCrossSiteAncestor'):
+                # Its meaning (only in this top-level site) cannot be kept in the file: refused, never widened.
+                raise Failure('state')
             seen.add((cookie['name'], raw, host, path))
             exported.add((cookie['name'], host, path))
             cookies.append({'name': cookie['name'], 'value': cookie['value'], 'domain': host, 'path': path, 'expires': -1,
@@ -410,14 +514,14 @@ def storage_content(action, state, secrets):
             if items:
                 origins.append({'origin': entry['origin'], 'localStorage': items})
     if not cookies and not origins:
-        raise ValueError()
+        raise Failure('state')
     content = json.dumps({'cookies': cookies, 'origins': origins}, ensure_ascii=False, separators=(',', ':')).encode()
     if len(content) > handoff.MAX_BYTES:
-        raise ValueError()
+        raise Failure('state')
     texts = [c[k] for c in cookies for k in ('name', 'value', 'path')]
     texts += [i[k] for o in origins for i in o['localStorage'] for k in ('name', 'value')]
     if leak.carries(texts, secrets):
-        raise ValueError()
+        raise Failure('leak')
     return content
 
 
@@ -442,13 +546,18 @@ async def perform(op, action):
         return 'revoked'
     kind = action['kind']
     if kind != 'database' and origin(action['url']) is None:
-        raise ValueError()
-    check_connector(action)
-    if kind in HANDOFF_KINDS:
-        # Runs are unattended: a login that would wait for a person is not a storage_state login.
-        if action.get('mfa_selector') or not isinstance(action.get('entry_types'), list) or not cleanup['done']:
-            raise ValueError()
-        lease_seconds(action)
+        raise Failure('connector')
+    try:
+        check_connector(action)
+        if kind in HANDOFF_KINDS:
+            # Runs are unattended: a login that would wait for a person is not a storage_state login.
+            if action.get('mfa_selector') or not isinstance(action.get('entry_types'), list):
+                raise ValueError()
+            lease_seconds(action)
+    except ValueError:
+        raise Failure('connector') from None
+    if kind in HANDOFF_KINDS and not cleanup['done']:
+        raise Failure('handoff')
     value = await secret(op)
     content = None
     try:
@@ -465,10 +574,10 @@ async def perform(op, action):
             ok = await browser_action(op, action, value, captured)
             if ok and not op.get('policy_denied'):
                 # Off the event loop: a large state takes a moment to check, and lease checks must go on meanwhile.
-                content = await asyncio.to_thread(storage_content, action, captured, entry_values(value, op.get('secret_fields')))
+                content = await asyncio.to_thread(storage_content, action, captured, entry_values(value, op.get('secret_fields'), op.get('text_fields')))
             captured.clear()
         else:
-            raise ValueError()
+            raise Failure('connector')
     finally:
         value.clear()
     if not await authorized(op):
@@ -489,19 +598,30 @@ async def lease(op, action, content):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + seconds
     op['lease_expires_at'] = (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    op['pending'] = handoff.create(op['id'], content)
+    try:
+        op['pending'] = handoff.create(op['id'], content)
+    except handoff.Leftover:
+        # Created, then neither completed nor removed: it may still be there (0600). Kept as written, so that run()
+        # tries again and, failing that, the reaper keeps the file (and its lease slot) until it is gone.
+        op['written'] = True
+        raise Failure('handoff') from None
+    except handoff.HandoffError:
+        raise Failure('handoff') from None
     op['written'] = True
     # From the moment `written` is sent the application may have recorded it, even if its answer never arrives:
     # `removed` is then always sent too (the application ignores it for a file it never recorded).
     op['announced'] = True
     # An unrecorded handoff never becomes readable: without the application's ok the file goes at once.
     if not await notify(op, {'event': 'written', 'lease_expires_at': op['lease_expires_at']}):
-        raise ValueError()
+        raise Failure('handoff')
     if loop.time() >= deadline:
         # The answer came after the lease ended: the file is removed unread, never shown.
         op['reason'], op['state'] = 'ttl', 'expired'
         return
-    op.pop('pending').publish()
+    try:
+        op.pop('pending').publish()
+    except handoff.HandoffError:
+        raise Failure('handoff') from None
     op['ready'] = True
     try:
         await asyncio.wait_for(op['release'].wait(), max(0, deadline - loop.time()))
@@ -528,6 +648,44 @@ def discard(op):
 REASON = {'succeeded': 'release', 'expired': 'ttl', 'revoked': 'revoke', 'failed': 'error'}
 
 
+def removal_event(op):
+    """The final event's body: the reason, and for a failure its coarse code (FAILURES)."""
+    body = {'event': 'removed', 'reason': op['reason']}
+    if op['reason'] == 'error' and op.get('failure') in FAILURES:
+        body['failure'] = op['failure']
+    return body
+
+
+def persist():
+    """Writes the undelivered final events (IDs, reasons, failure codes, since when) next to the files. Never a value
+    or session data. A failure is reported once; the events are still retried from memory."""
+    entries = {oid: {'reason': op['reason'], 'since': op['delivery_wall'], **({'failure': op['failure']} if op.get('failure') in FAILURES else {})}
+               for oid, op in undelivered.items()}
+    try:
+        handoff.save_journal(entries)
+        cleanup['journal_reported'] = False
+    except Exception:
+        if not cleanup.get('journal_reported'):
+            report('undelivered final handoff events could not be saved; they are retried from memory only until the broker restarts')
+            cleanup['journal_reported'] = True
+
+
+def enqueue(op):
+    """Keeps an unconfirmed final event for the deliverer, in memory and in the journal."""
+    op.setdefault('reason', REASON.get(op.get('state'), 'error'))
+    op.setdefault('delivery_since', time.monotonic())
+    op.setdefault('delivery_wall', time.time())
+    known = op['id'] in undelivered
+    undelivered[op['id']] = op
+    if not known:
+        persist()
+
+
+def forget(oid):
+    if undelivered.pop(oid, None) is not None:
+        persist()
+
+
 async def removed(op):
     """Tells the application the file is gone: only after a confirmed removal, and only when `written` was sent. The
     reason is fixed at the first attempt; an attempt that is not confirmed is repeated by the deliverer until it is."""
@@ -535,15 +693,17 @@ async def removed(op):
         return True
     op.setdefault('reason', REASON.get(op['state'], 'error'))
     op.setdefault('delivery_since', time.monotonic())
+    op.setdefault('delivery_wall', time.time())
+    op['attempted_at'] = time.monotonic()
     try:
-        delivered = await asyncio.shield(notify(op, {'event': 'removed', 'reason': op['reason']}))
+        delivered = await asyncio.shield(notify(op, removal_event(op)))
     except BaseException:
         delivered = False
     if delivered:
         op['announced'] = False
-        undelivered.pop(op['id'], None)
+        forget(op['id'])
     else:
-        undelivered[op['id']] = op
+        enqueue(op)
     return delivered
 
 
@@ -558,18 +718,24 @@ async def run(op):
             return
         if isinstance(result, str):
             op['state'] = result
+            if result == 'failed':
+                op.setdefault('failure', 'error')
             return
         await lease(op, action, result)
     except asyncio.CancelledError:
         op['state'] = 'failed' if op.get('policy_denied') else 'revoked'
-        op.setdefault('reason', 'revoke')
+        op.setdefault('reason', 'error' if op.get('policy_denied') else 'revoke')
+        if op.get('reason') == 'restart':
+            op.setdefault('failure', 'restart')
         raise
-    except Exception:
+    except Exception as error:
         op['state'] = 'failed'
+        op.setdefault('failure', error.code if isinstance(error, Failure) else 'error')
     finally:
         if not discard(op):
             # Kept and retried by the reaper; never reported as removed until it is.
             op['state'] = 'failed'
+            op.setdefault('failure', 'handoff')
             unfinished[op['id']] = op
         else:
             await removed(op)
@@ -597,6 +763,24 @@ def startup_clean():
     return left
 
 
+def restore_journal():
+    """The final events an earlier broker could not deliver: queued again with their reasons."""
+    try:
+        entries = handoff.load_journal()
+    except Exception:
+        return
+    for oid, entry in entries.items():
+        if oid in undelivered or entry.get("reason") not in handoff.JOURNAL_REASONS:
+            continue
+        op = {'id': oid, 'announced': True, 'state': 'failed', 'reason': entry['reason'], 'delivery_wall': entry.get('since', time.time()),
+              'delivery_since': time.monotonic() - max(0, time.time() - entry.get('since', time.time()))}
+        if entry.get('failure') in FAILURES:
+            op['failure'] = entry['failure']
+        undelivered[oid] = op
+
+
+
+
 async def check(op):
     try:
         allowed = await asyncio.wait_for(authorized(op), CHECK_SECONDS)
@@ -608,16 +792,22 @@ async def check(op):
         op['task'].cancel()
 
 
+async def deliver_once():
+    """One round: at most DELIVERY_BATCH events, those tried longest ago first; a day without confirmation gives up."""
+    now = time.monotonic()
+    for oid, op in list(undelivered.items()):
+        if now - op.get('delivery_since', now) > DELIVERY_GIVE_UP:
+            forget(oid)
+            report('a final handoff event was not confirmed by the application for a day; vault:links and vault:maintenance settle it')
+    batch = sorted(undelivered.values(), key=lambda op: op.get('attempted_at', 0))[:DELIVERY_BATCH]
+    await asyncio.gather(*(removed(op) for op in batch), return_exceptions=True)
+
+
 async def deliver():
-    """Sends undelivered final events again, all at once, every DELIVERY_SECONDS, apart from the lease checks."""
+    """Sends undelivered final events again every DELIVERY_SECONDS, apart from the lease checks."""
     while True:
         await asyncio.sleep(DELIVERY_SECONDS)
-        now = time.monotonic()
-        for oid, op in list(undelivered.items()):
-            if now - op.get('delivery_since', now) > DELIVERY_GIVE_UP:
-                undelivered.pop(oid, None)
-                report('a final handoff event was not confirmed by the application for a day; vault:maintenance settles it')
-        await asyncio.gather(*(removed(op) for op in list(undelivered.values())), return_exceptions=True)
+        await deliver_once()
 
 
 def holds_lease(op):
@@ -640,9 +830,7 @@ async def reap():
                 unfinished.pop(oid, None)
                 if op.get('announced'):
                     # Delivered by the deliverer, never awaited here.
-                    op.setdefault('reason', REASON.get(op['state'], 'error'))
-                    op.setdefault('delivery_since', time.monotonic())
-                    undelivered[oid] = op
+                    enqueue(op)
         if not cleanup['done'] and tick % 10 == 0:
             left = startup_clean()
             if left:
@@ -657,18 +845,25 @@ async def reap():
 
 
 async def announce_restart(ids):
-    """Files left by an earlier broker are gone; tell the application, which fails those operations."""
-    for _ in range(12):
-        ids = [oid for oid in ids if not await notify({'id': oid}, {'event': 'removed', 'reason': 'restart'})]
-        if not ids:
-            return
-        await asyncio.sleep(5)
+    """Files left by an earlier broker are gone; tell the application, which fails those operations. One attempt, in
+    batches; what it does not confirm goes to the deliverer (and its journal), which repeats it."""
+    ids = [oid for oid in ids if oid not in undelivered]
+    left = []
+    for i in range(0, len(ids), DELIVERY_BATCH):
+        batch = ids[i:i + DELIVERY_BATCH]
+        results = await asyncio.gather(*(notify({'id': oid}, {'event': 'removed', 'reason': 'restart'}) for oid in batch), return_exceptions=True)
+        left += [oid for oid, ok in zip(batch, results) if ok is not True]
+    for oid in left:
+        enqueue({'id': oid, 'announced': True, 'state': 'failed', 'reason': 'restart'})
+    if left:
+        report('%d final handoff events after a restart were not confirmed by the application; retried every %d s' % (len(left), DELIVERY_SECONDS))
 
 
 @asynccontextmanager
 async def lifespan(app):
     # No operation survives a restart, so no handoff file may either. Until the directory is clean no handoff starts.
     left = startup_clean()
+    restore_journal()
     announcer = asyncio.create_task(announce_restart(left))
     janitor = asyncio.create_task(reap())
     deliverer = asyncio.create_task(deliver())
@@ -746,6 +941,9 @@ async def status(oid: uuid.UUID):
     # known: false tells the application this broker has no such operation (a restart, or a start not yet
     # registered): it decides by whether it saw the start confirmed.
     answer = {'id': str(oid), 'state': op.get('state', 'failed'), 'known': bool(op)}
+    if answer['state'] == 'failed':
+        # A coarse reason for the operator (FAILURES), never a value, URL or selector.
+        answer['reason'] = op.get('failure', 'error') if op else 'restart'
     if op.get('ready') and op.get('state') == 'running':
         answer |= {'ready': True, 'lease_expires_at': op['lease_expires_at']}
     return answer
@@ -776,6 +974,9 @@ async def cancel(oid: uuid.UUID):
         await asyncio.gather(op['task'], return_exceptions=True)
     if op['id'] in unfinished and discard(op):
         unfinished.pop(op['id'], None)
+        await removed(op)
+    elif op['id'] in undelivered:
+        # The application asks, so it is listening: the pending final event goes now, not at the next round.
         await removed(op)
     return {'id': str(oid), 'state': op['state'], 'removed': gone(op)}
 

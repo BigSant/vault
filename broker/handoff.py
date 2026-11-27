@@ -10,6 +10,7 @@ the application has recorded it and while the lease has time left. Until then no
 failure before publish removes it. A failure inside publish after the fchmod (the fsync) removes a file that was
 group-readable for that moment.
 """
+import json
 import os
 import re
 import stat
@@ -26,6 +27,10 @@ NAME = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 
 class HandoffError(Exception):
     """The directory or the file is not what it must be. Carries no path or value."""
+
+
+class Leftover(HandoffError):
+    """create() failed and could not remove what it had created: the file may still be there (0600)."""
 
 
 def directory():
@@ -153,7 +158,8 @@ def create(oid, data, path=None):
         os.fsync(out)
         os.fsync(fd)
     except (OSError, HandoffError):
-        pending.discard()
+        if not pending.discard():
+            raise Leftover() from None
         raise HandoffError() from None
     return pending
 
@@ -211,3 +217,67 @@ def clean(path=None):
         return removed, not failed
     finally:
         os.close(fd)
+
+
+# The broker's undelivered final events (operation IDs, reasons, failure codes, when): never a value or session
+# data. In the handoff directory, so it survives a broker restart; 0600 and not a <uuid>.json name, so clean() keeps
+# it and the executor's group cannot open it. On the server the directory is under /run: a host reboot empties it, and
+# the application settles those operations itself (vault:links).
+JOURNAL = '.vault-undelivered'
+JOURNAL_REASONS = frozenset({'release', 'ttl', 'revoke', 'restart', 'error'})
+
+
+def save_journal(entries, path=None):
+    """Replaces the journal with {operation id: {reason, since[, failure]}}: a new file, fsynced, renamed over the old."""
+    data = json.dumps(entries, separators=(',', ':'), sort_keys=True).encode()
+    fd, _ = _directory_fd(path)
+    temporary = JOURNAL + '.tmp'
+    try:
+        try:
+            os.unlink(temporary, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        out = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, PRIVATE, dir_fd=fd)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(out, view):]
+            os.fsync(out)
+        finally:
+            os.close(out)
+        os.rename(temporary, JOURNAL, src_dir_fd=fd, dst_dir_fd=fd)
+        os.fsync(fd)
+    except OSError:
+        raise HandoffError() from None
+    finally:
+        os.close(fd)
+
+
+def load_journal(path=None):
+    """The journal's valid entries ({} when there is none). An entry that is not a canonical operation ID with a
+    known reason is skipped."""
+    fd, _ = _directory_fd(path)
+    try:
+        try:
+            handle = os.open(JOURNAL, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+        except FileNotFoundError:
+            return {}
+        except OSError:
+            raise HandoffError() from None
+        with os.fdopen(handle, 'rb') as stream:
+            raw = stream.read(1 << 20)
+    finally:
+        os.close(fd)
+    try:
+        entries = json.loads(raw)
+    except ValueError:
+        return {}
+    valid = {}
+    for oid, entry in entries.items() if isinstance(entries, dict) else ():
+        try:
+            filename(oid)
+        except HandoffError:
+            continue
+        if isinstance(entry, dict) and entry.get('reason') in JOURNAL_REASONS and isinstance(entry.get('since'), (int, float)):
+            valid[oid] = {k: entry[k] for k in ('reason', 'since', 'failure') if k in entry and isinstance(entry[k], (str, int, float))}
+    return valid

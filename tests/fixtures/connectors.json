@@ -456,7 +456,8 @@
         "v": "version"
       },
       "storage_keys": [
-        "nav"
+        "nav",
+        "late"
       ],
       "ignore_requests": [
         {

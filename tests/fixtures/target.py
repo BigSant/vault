@@ -53,6 +53,10 @@ class Target(BaseHTTPRequestHandler):
         if path=='/ps/img/moved.png':
             self.send_response(302);self.send_header('Location','/ps/img/redirected.png');self.end_headers();return
         if path in ('/ps/img/logo.png','/ps/img/bg.png','/ps/themes/font.woff2','/ps/img/redirected.png'):return self.static('application/octet-stream',b'\x00')
+        if path=='/ps/js/slow.js':
+            # Still on its way when the login is confirmed: the broker waits for it before it reads the state.
+            import time
+            time.sleep(2);return self.static('text/javascript',b'window.slow=1;')
         if path=='/ps/module/blockwishlist/action':COUNTS['wishlist-left']+=1
         if path=='/ps/en/login':
             # PrestaShop 8's wishlist module fetches on every page, before the login too.
@@ -85,11 +89,18 @@ class Target(BaseHTTPRequestHandler):
             if query.get('controller')==['AdminDashboard'] and query.get('token'):
                 # Logged in: the theme loads again (now with a session in the jar) and the page keeps UI state.
                 # As PrestaShop 8's dashboard: XHRs on document-ready (notifications with a Symfony CSRF token, a
-                # widget) and a timer after the login is confirmed. None of them is listed; none may fail the login.
-                return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-admin' in cookie else 'guest')+'</div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x");'
+                # widget) and a request after the login is confirmed. None of them is listed; none may fail the login.
+                # The order is fixed: a slow static file is on its way (2 s) when the account state appears (300 ms);
+                # the broker confirms the login and waits for that file; meanwhile (800 ms) the page marks
+                # localStorage "late" and sends an unlisted POST, which must be dropped, not sent and not a failure.
+                # The exported state carries "late" only if that attempt was made before the state was read.
+                state='connected' if 'synthetic-session-admin' in cookie else 'guest'
+                return self.respond(200,STATIC+'<div id="slot"></div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x");'
                     'document.addEventListener("DOMContentLoaded",()=>{const x=new XMLHttpRequest();x.open("POST","/ps/admin/index.php/common/notifications?_token=BYOThSjgJf8LRsc3hJpVmYwYWBfWm5hEUoWRhBXw56Q&rand="+Date.now());x.send("type=order");'
-                    'fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=refreshDashboard&module=dashactivity")});'
-                    'setTimeout(()=>fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=late",{method:"POST"}),1500)</script>')
+                    'fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=refreshDashboard&module=dashactivity");'
+                    'const s=document.createElement("script");s.src="/ps/js/slow.js";document.head.append(s);'
+                    'setTimeout(()=>{document.querySelector("#slot").innerHTML=\'<div id="account-state">'+state+'</div>\'},300);'
+                    'setTimeout(()=>{localStorage.setItem("late","attempted");fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=late",{method:"POST"})},800)})</script>')
         return self.respond(404,'not found')
 
     def shop_post(self, data):

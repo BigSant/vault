@@ -60,6 +60,16 @@ class StaticSubresourceTests(unittest.TestCase):
             action={k:v for k,v in (self.action|change).items() if v is not None}
             self.assertFalse(policy.static_allowed(action,'https://shop.invalid/themes/x.css','GET','stylesheet',False),change)
             self.assertFalse(policy.static_request(action,'GET','stylesheet',False),change)
+    def test_a_static_query_carries_only_a_number_or_a_version(self):
+        # A token or hex shape would let a page put far more into a static URL than "a few digits".
+        for shape in ('token','token:16','hex:32'):
+            action=dict(self.action,static_query={'v':shape})
+            self.assertIsNone(policy.static_config(action),shape)
+            self.assertFalse(policy.static_allowed(action,'https://shop.invalid/themes/x.css?v=0123456789abcdef0123456789abcdef','GET','stylesheet',False),shape)
+        for shape,value in (('digits:13','1764202600123'),('version','8.2.9')):
+            self.assertTrue(policy.static_allowed(dict(self.action,static_query={'v':shape}),'https://shop.invalid/themes/x.css?v='+value,'GET','stylesheet',False),shape)
+        # The same shapes stay usable for an allowed request's variable_query.
+        self.assertIsNotNone(policy.shapes({'_token':'token'}))
     def test_extensions_narrow_and_query_off_by_default(self):
         action=dict(self.action,static_extensions=['.css']);del action['static_query']
         self.assertTrue(policy.static_allowed(action,'https://shop.invalid/themes/x.css','GET','stylesheet',False))

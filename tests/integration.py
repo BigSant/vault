@@ -139,8 +139,11 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
         assert all(secret not in content for secret in SECRETS), 'entry value in storageState'
         assert all(not c['domain'].startswith('.') for c in state['cookies']) and not any(c['name'] == 'static-set' for c in state['cookies'])
         if action == 'fixture.admin-session':
-            # Only the connector's storage_keys: "nav", not "draft".
-            assert state['origins'] == [{'origin': 'http://fixture:8000', 'localStorage': [{'name': 'nav', 'value': 'collapsed'}]}], state['origins']
+            # Only the connector's storage_keys: "nav" and "late", not "draft". "late" proves that the page's
+            # request after the confirmed login was attempted before the state was read (and was dropped: the
+            # counts below).
+            assert [o['origin'] for o in state['origins']] == ['http://fixture:8000'], state['origins']
+            assert sorted((i['name'], i['value']) for i in state['origins'][0]['localStorage']) == [('late', 'attempted'), ('nav', 'collapsed')], state['origins']
         else:
             assert state['origins'] == []
         # One live handoff per entry.
@@ -160,7 +163,8 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert counts.get('static-credentials', 0) == 0, 'static request carried the session'
     assert counts.get('static-referer', 0) == 0, 'static request carried the page URL (Referer/Origin)'
     assert counts.get('wishlist-left', 0) == 0 and counts.get('dashboard-xhr-left', 0) == 0, 'an ignored or late XHR left the broker'
-    print('PASS: XHR/fetch on document-ready (wishlist, notifications with _token, a widget) ignored, a timer after the login dropped; no Referer to statics')
+    assert counts.get('/ps/js/slow.js', 0) >= 1, 'the file on its way at the confirmation was not waited for'
+    print('PASS: XHR/fetch on document-ready (wishlist, notifications with _token, a widget) ignored; a request after the confirmed login attempted and dropped while a sent one was awaited; no Referer to statics')
     print('PASS: static files under static_paths without cookies, 3xx not followed, a back-office GET as an image dropped, XHR login with ?rand=, dashboard with &token=')
 
     # The CLI's release answer is checked for values like every other response.

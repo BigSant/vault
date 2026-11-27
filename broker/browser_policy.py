@@ -21,6 +21,9 @@ SHAPES = {
     'token': (r'[A-Za-z0-9_-]{16,%d}', 16, 128),
     'version': (r'[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}', None, None),
 }
+# A static file's query (`static_query`) may only carry a number or a version (cache busting): never a hex or token
+# value, which could carry far more of what a page chose.
+STATIC_SHAPES = frozenset({'digits', 'version'})
 NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]{0,31}')
 # At least one segment: "/" alone would open the whole origin to static GETs.
 PATH_PREFIX = re.compile(r'/(?:[A-Za-z0-9._-]+/)+')
@@ -39,11 +42,12 @@ def registered(action):
     return {origin(action['url']),*(origin(value) for value in action.get('origins',[]))}-{None}
 
 
-def shape(spec):
-    """A compiled shape for 'digits', 'digits:13', 'hex:32' or 'version'; None for anything else."""
+def shape(spec,allowed=None):
+    """A compiled shape for 'digits', 'digits:13', 'hex:32' or 'version'; None for anything else (or for a shape
+    outside `allowed`, when given)."""
     if not isinstance(spec,str):return None
     name,_,size=spec.partition(':')
-    if name not in SHAPES:return None
+    if name not in SHAPES or allowed is not None and name not in allowed:return None
     pattern,low,high=SHAPES[name]
     if low is None:
         return re.compile(pattern) if not size else None
@@ -54,12 +58,12 @@ def shape(spec):
     return re.compile(pattern%int(size))
 
 
-def shapes(spec):
+def shapes(spec,allowed=None):
     """{parameter: compiled shape} for a `variable_query` / `static_query` object; None when malformed."""
     if not isinstance(spec,dict) or not spec:return None
     compiled={}
     for key,value in spec.items():
-        pattern=shape(value)
+        pattern=shape(value,allowed)
         if not isinstance(key,str) or not NAME.fullmatch(key) or pattern is None:return None
         compiled[key]=pattern
     return compiled
@@ -140,7 +144,7 @@ def static_config(action):
     if not isinstance(extensions,list) or not extensions or not all(isinstance(e,str) and e in STATIC_EXTENSIONS for e in extensions):
         return None
     query=action.get('static_query')
-    query={} if query is None else shapes(query)
+    query={} if query is None else shapes(query,STATIC_SHAPES)
     if query is None:return None
     return tuple(paths),tuple(extensions),query
 

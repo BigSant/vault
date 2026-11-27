@@ -49,7 +49,7 @@ def state(extra_local=None,cookie_value=SESSION,extra_cookies=()):
 class StorageStateBase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         import os,tempfile
-        server.operations.clear();server.unfinished.clear();server.cleanup.update(done=True,reported=False)
+        server.operations.clear();server.unfinished.clear();server.undelivered.clear();server.cleanup.update(done=True,reported=False)
         self.tmp=tempfile.TemporaryDirectory();self.dir=Path(self.tmp.name)/'handoff';self.dir.mkdir(mode=0o700);os.chmod(self.dir,0o2710)
         (self.dir/'.vault-handoff').write_bytes(b'')
         self.env=patch.dict(os.environ,{'VAULT_HANDOFF_DIR':str(self.dir),'VAULT_HANDOFF_GID':''});self.env.start()
@@ -73,11 +73,11 @@ class StorageStateBase(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         tasks=[op['task']for op in server.operations.values()]
         for task in tasks:task.cancel()
-        await asyncio.gather(*tasks,return_exceptions=True);server.operations.clear();server.unfinished.clear()
+        await asyncio.gather(*tasks,return_exceptions=True);server.operations.clear();server.unfinished.clear();server.undelivered.clear()
         for p in self.patches:p.stop()
         self.env.stop();self.tmp.cleanup()
     def file(self,oid):return self.dir/(oid+'.json')
-    def files(self):return [p.name for p in self.dir.iterdir() if p.name!='.vault-handoff']
+    def files(self):return [p.name for p in self.dir.iterdir() if p.name not in ('.vault-handoff',server.handoff.JOURNAL)]
     async def start(self,oid=None,action='shop.session'):
         oid=oid or str(uuid.uuid4())
         await server.start(server.Start(id=uuid.UUID(oid),entry_id=uuid.uuid4(),version=1,action=action))
@@ -588,7 +588,7 @@ class HandoffLifecycleTests(StorageStateBase):
             self.assertEqual(429,refused.exception.status_code)
 
     async def test_status_says_whether_the_broker_knows_the_operation(self):
-        self.assertEqual({'id':str(uuid.UUID(int=1)),'state':'failed','known':False},await server.status(uuid.UUID(int=1)))
+        self.assertEqual({'id':str(uuid.UUID(int=1)),'state':'failed','known':False,'reason':'restart'},await server.status(uuid.UUID(int=1)))
         oid=await self.start();await self.ready(oid)
         self.assertTrue((await server.status(uuid.UUID(oid)))['known'])
 
@@ -599,3 +599,343 @@ class HandoffLifecycleTests(StorageStateBase):
             started=asyncio.get_running_loop().time()
             await server.check(server.operations[oid]);await self.finish(oid)
         self.assertLess(asyncio.get_running_loop().time()-started,1);self.assertEqual('revoked',server.operations[oid]['state'])
+
+
+class GatedRoute(FakeRoute):
+    """A route whose upstream fetch waits for a gate, and says when it started and ended."""
+    def __init__(self,request,log,gate,response=None):
+        super().__init__(request,response);self.log,self.gate=log,gate
+    async def fetch(self,**_):
+        self.log.append('fetch-start');await self.gate.wait();self.log.append('fetch-end');self.outcome='fetched';return self.response
+
+
+class ConfirmedLoginTests(unittest.IsolatedAsyncioTestCase):
+    """Review round 4: once the login is confirmed nothing new leaves, also a request that was waiting for the
+    application at that moment; what was already sent finishes before the state is read."""
+    action={'kind':'storage_state','url':'https://shop.invalid/login','origins':[],
+            'static_paths':['/img/'],'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login'}],
+            'ignore_requests':[{'method':'GET','url':'https://shop.invalid/img/pixel.png'}]}
+
+    async def asyncSetUp(self):
+        self.op={'id':str(uuid.uuid4())};self.gate=asyncio.Event();self.asked=asyncio.Event();self.fetched=[]
+        async def authorize(op):self.asked.set();await self.gate.wait();return True
+        self.patch=patch.object(server,'authorized',authorize);self.patch.start()
+        test=self
+        class Context:
+            async def fetch(self,url,**_):test.fetched.append(url);return FakeResponse()
+            async def dispose(self):pass
+        async def context():return Context()
+        self.router=server.Router(self.op,self.action,[PASSWORD],context,lambda:'main')
+    async def asyncTearDown(self):self.patch.stop()
+
+    async def test_a_request_waiting_for_the_application_when_the_login_is_confirmed_never_leaves(self):
+        for request in (FakeRequest('https://shop.invalid/login','POST',navigation=True),FakeRequest('https://shop.invalid/img/a.png',kind='image')):
+            self.asked.clear();self.gate.clear()
+            route=FakeRoute(request);handler=asyncio.create_task(self.router.route(route))
+            await asyncio.wait_for(self.asked.wait(),1)
+            # Confirmed while the handler waits for the application's answer.
+            self.op['done']=True
+            self.gate.set();await handler
+            self.assertEqual('abort',route.outcome,request.url);self.assertEqual([],self.fetched)
+            self.assertNotIn('policy_denied',self.op);self.op.pop('done')
+        self.assertEqual(0,self.router.sending)
+
+    async def test_close_waits_for_a_request_already_sent(self):
+        log=[];upstream=asyncio.Event();self.gate.set()
+        route=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True),log,upstream)
+        handler=asyncio.create_task(self.router.route(route))
+        while 'fetch-start' not in log:await asyncio.sleep(0)
+        closing=asyncio.create_task(self.router.close(2))
+        await asyncio.sleep(0.05)
+        self.assertTrue(self.op['done']);self.assertFalse(closing.done())
+        upstream.set();await closing;log.append('closed');await handler
+        self.assertEqual(['fetch-start','fetch-end','closed'],log);self.assertEqual('fulfill',route.outcome)
+        # Nothing new is admitted afterwards.
+        self.assertFalse(self.router.admit())
+
+    async def test_close_gives_up_after_its_bound(self):
+        self.gate.set();route=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True),[],asyncio.Event())
+        handler=asyncio.create_task(self.router.route(route))
+        await asyncio.sleep(0.01)
+        with self.assertRaises(TimeoutError):await self.router.close(0.05)
+        handler.cancel();await asyncio.gather(handler,return_exceptions=True)
+
+    async def test_an_ignored_path_under_static_paths_is_never_fetched(self):
+        self.gate.set()
+        route=FakeRoute(FakeRequest('https://shop.invalid/img/pixel.png?id=1',kind='image'))
+        await self.router.route(route)
+        self.assertEqual('abort',route.outcome);self.assertEqual([],self.fetched);self.assertFalse(self.asked.is_set())
+        self.assertNotIn('policy_denied',self.op)
+        # Another file under the same static path still loads.
+        route=FakeRoute(FakeRequest('https://shop.invalid/img/logo.png',kind='image'));await self.router.route(route)
+        self.assertEqual('fulfill',route.outcome);self.assertEqual(['https://shop.invalid/img/logo.png'],self.fetched)
+
+
+class FakeLocator:
+    def __init__(self,page,selector):self.page,self.selector=page,selector
+    async def fill(self,value):pass
+    async def click(self):pass
+    async def wait_for(self):pass
+    async def inner_text(self):
+        await self.page.on_success();return 'ok'
+
+
+class FakePage:
+    main_frame='main'
+    def __init__(self,on_success):self.on_success=on_success
+    def on(self,*_):pass
+    def set_default_timeout(self,*_):pass
+    async def goto(self,*_,**__):pass
+    def locator(self,selector):return FakeLocator(self,selector)
+
+
+class FakePlaywright:
+    """Just enough of async_playwright for browser_action: one context whose route handler the test drives."""
+    def __init__(self,test):self.test=test;self.chromium=self;self.request=self
+    async def __aenter__(self):return self
+    async def __aexit__(self,*_):pass
+    async def launch(self,**_):return self
+    async def new_context(self,**_):return self
+    async def route(self,pattern,handler):self.test.handler=handler
+    async def route_web_socket(self,*_):pass
+    async def new_page(self):return FakePage(self.test.on_success)
+    def on(self,*_):pass
+    async def storage_state(self):
+        self.test.log.append('storage_state' if not self.test.upstream.is_set() or 'fetch-end' in self.test.log else 'storage_state-early')
+        return {'cookies':[],'origins':[]}
+    async def close(self):pass
+
+
+class BrowserActionOrderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_done_then_drain_then_storage_state(self):
+        self.log=[];self.upstream=asyncio.Event();self.release_auth=asyncio.Event();self.waiting=asyncio.Event()
+        op={'id':str(uuid.uuid4())};action=dict(ConfirmedLoginTests.action,username_selector='#u',password_selector='#p',
+                                              submit_selector='#s',success_selector='#ok',success_text='ok')
+        block=[]
+        async def authorize(op):
+            if block:
+                self.waiting.set();await self.release_auth.wait()
+            return True
+        self.routes=[]
+        async def on_success():
+            # The page sends a listed POST (it leaves, its answer is slow) and then another one that is still
+            # waiting for the application when the login is confirmed.
+            sent=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True),self.log,self.upstream)
+            self.routes.append(sent);asyncio.ensure_future(self.handler(sent))
+            while 'fetch-start' not in self.log:await asyncio.sleep(0)
+            block.append(1)
+            waiting=FakeRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True))
+            self.routes.append(waiting);asyncio.ensure_future(self.handler(waiting))
+            await self.waiting.wait()
+        self.on_success=on_success
+        capture={}
+        with patch.object(server,'async_playwright',lambda:FakePlaywright(self)),patch.object(server,'authorized',authorize):
+            task=asyncio.create_task(server.browser_action(op,action,{'username':'u','password':PASSWORD},capture))
+            while not op.get('done'):await asyncio.sleep(0)
+            self.log.append('done')
+            self.release_auth.set();await asyncio.sleep(0.05)
+            # The waiting request was dropped; the state is not read while the sent one is still on its way.
+            self.assertEqual('abort',self.routes[1].outcome);self.assertNotIn('storage_state',self.log)
+            self.upstream.set()
+            self.assertTrue(await asyncio.wait_for(task,2))
+        self.assertEqual(['fetch-start','done','fetch-end','storage_state'],self.log)
+        self.assertNotIn('policy_denied',op)
+
+
+class PolicyGuardTests(RouterTests):
+    """Review round 4: every guard of the ignore rule, the frame check and the order of checks has a test."""
+    action=dict(RouterTests.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login'},
+                                                    {'method':'GET','url':'https://shop.invalid/admin123/index.php?controller=Dash'}],
+                ignore_requests=[{'method':'POST','url':'https://shop.invalid/admin123/index.php/common/notifications'},
+                                 {'method':'GET','url':'https://shop.invalid/admin123/index.php'}])
+
+    async def test_an_ignore_rule_never_drops_a_navigation(self):
+        route=await self.go(FakeRequest('https://shop.invalid/admin123/index.php?controller=Other',navigation=True))
+        self.assertEqual('abort',route.outcome);self.assertTrue(self.op['policy_denied'])
+
+    async def test_an_ignore_rule_does_not_act_in_a_child_frame(self):
+        route=await self.go(FakeRequest('https://shop.invalid/admin123/index.php/common/notifications','POST',kind='xhr',frame='child'))
+        self.assertEqual('abort',route.outcome);self.assertTrue(self.op['policy_denied'])
+
+    async def test_an_ignored_url_with_an_entry_value_fails_the_operation(self):
+        route=await self.go(FakeRequest('https://shop.invalid/admin123/index.php/common/notifications?p='+PASSWORD,'POST',kind='xhr'))
+        self.assertEqual('abort',route.outcome);self.assertTrue(self.op['policy_denied']);self.assertEqual('leak',self.op['failure'])
+
+    async def test_a_listed_request_wins_over_an_ignore_rule(self):
+        route=await self.go(FakeRequest('https://shop.invalid/admin123/index.php?controller=Dash',kind='xhr'))
+        self.assertEqual('fulfill',route.outcome);self.assertNotIn('policy_denied',self.op)
+        route=await self.go(FakeRequest('https://shop.invalid/admin123/index.php?controller=Widget',kind='xhr'))
+        self.assertEqual('abort',route.outcome);self.assertNotIn('policy_denied',self.op)
+
+    def test_check_connector_validates_the_ignore_rules(self):
+        server.check_connector(self.action)
+        for rules in ([{'method':'GET','url':'https://elsewhere.invalid/x'}],[{'method':'GET','url':'https://shop.invalid/x?a=1'}],
+                      [{'method':'DELETE','url':'https://shop.invalid/x'}],{'method':'GET'}):
+            with self.assertRaises(ValueError,msg=rules):server.check_connector(dict(self.action,ignore_requests=rules))
+
+
+class ReviewRoundFourStateTests(StorageStateBase):
+    def assert_refused(self,page):
+        with self.assertRaises(ValueError):server.storage_content(self.action,page,[PASSWORD])
+
+    async def test_a_partitioned_session_cookie_is_refused_not_widened(self):
+        partitioned={'name':'chips','value':'s','domain':'shop.invalid','path':'/','httpOnly':True,'secure':True,'sameSite':'None','partitionKey':'https://shop.invalid'}
+        with self.assertRaises(server.Failure) as refused:server.storage_content(self.action,state(extra_cookies=[partitioned]),[PASSWORD])
+        self.assertEqual('state',refused.exception.code)
+        # One that is not exported (script-readable, not named) does not matter.
+        server.storage_content(self.action,state(extra_cookies=[dict(partitioned,httpOnly=False)]),[PASSWORD])
+        self.page=state(extra_cookies=[partitioned])
+        oid=await self.start();await self.finish(oid)
+        self.assertEqual({'state':'failed','reason':'state'},{k:v for k,v in (await server.status(uuid.UUID(oid))).items() if k in ('state','reason')})
+        self.assertEqual([],self.files())
+
+    def test_cookie_and_item_names_are_checked(self):
+        self.assert_refused(state(extra_cookies=[{'name':'n'+PASSWORD,'value':'v','domain':'shop.invalid','path':'/','httpOnly':True}]))
+        self.action['storage_keys']=['nav','k'+PASSWORD]
+        page=state();page['origins'][0]['localStorage'].append({'name':'k'+PASSWORD,'value':'v'})
+        with self.assertRaises(server.Failure) as refused:server.storage_content(self.action,page,[PASSWORD])
+        self.assertEqual('leak',refused.exception.code)
+
+    async def test_the_lease_asks_the_application_again_before_it_writes(self):
+        calls=[]
+        async def authorize(op):
+            calls.append(op['id']);return len(calls)!=3
+        with patch.object(server,'authorized',authorize):
+            oid=await self.start();await self.finish(oid)
+        self.assertEqual('revoked',server.operations[oid]['state']);self.assertEqual([],self.files());self.assertEqual([],self.events)
+
+    async def test_a_failed_write_whose_cleanup_fails_keeps_the_slot_until_the_file_is_gone(self):
+        import os
+        real_unlink=os.unlink
+        def unlink(name,*a,**k):
+            if str(name).endswith('.json'):raise PermissionError()
+            return real_unlink(name,*a,**k)
+        with patch.object(server.handoff.os,'fsync',side_effect=OSError()),patch.object(server.handoff.os,'unlink',unlink):
+            oid=await self.start();await self.finish(oid)
+            self.assertEqual('failed',server.operations[oid]['state']);self.assertIn(oid,server.unfinished)
+            self.assertEqual([oid+'.json'],self.files());self.assertTrue(server.holds_lease(server.operations[oid]))
+        self.assertEqual('handoff',server.operations[oid]['failure']);self.assertEqual([],self.events)
+        janitor=asyncio.create_task(server.reap())
+        for _ in range(40):
+            if oid not in server.unfinished:break
+            await asyncio.sleep(0.05)
+        janitor.cancel();await asyncio.gather(janitor,return_exceptions=True)
+        self.assertEqual([],self.files());self.assertNotIn(oid,server.unfinished)
+        # `written` was never sent: no final event either.
+        self.assertEqual([],self.events);self.assertNotIn(oid,server.undelivered)
+
+    async def test_failure_reasons_reach_status_and_the_final_event(self):
+        cases=[({'mfa_selector':'#code'},None,'connector'),({},state(PASSWORD),'leak'),({},'login','login')]
+        for change,page,reason in cases:
+            self.action=dict(STORAGE)|change
+            if page=='login':
+                async def broken(op,action,value,capture=None):raise server.Failure('login')
+                with patch.object(server,'browser_action',broken):
+                    oid=await self.start();await self.finish(oid)
+            else:
+                if page:self.page=page
+                oid=await self.start();await self.finish(oid)
+            self.assertEqual(('failed',reason),((await server.status(uuid.UUID(oid)))['state'],(await server.status(uuid.UUID(oid)))['reason']),change)
+            self.page=state()
+        self.action=dict(STORAGE);self.notify_ok=False
+        oid=await self.start();await self.finish(oid)
+        self.assertEqual({'event':'removed','reason':'error','failure':'handoff'},self.events[-1])
+        self.assert_no_secret(self.events,await server.status(uuid.UUID(oid)))
+
+
+class DeliveryTests(StorageStateBase):
+    """Review round 4: an unconfirmed final event survives a broker restart, is sent in bounded batches, and a restart
+    report the application did not confirm is retried rather than dropped."""
+    def journal(self):
+        import json
+        path=self.dir/server.handoff.JOURNAL
+        return json.loads(path.read_text()) if path.exists() else {}
+
+    async def test_an_undelivered_event_is_journaled_and_delivered_after_a_restart(self):
+        import os,stat
+        oid=await self.start();await self.ready(oid)
+        self.notify_ok=False
+        await server.release(uuid.UUID(oid))
+        self.assertEqual({oid:'release'},{k:v['reason'] for k,v in self.journal().items()})
+        info=os.lstat(self.dir/server.handoff.JOURNAL);self.assertEqual(0o600,stat.S_IMODE(info.st_mode))
+        self.assert_no_secret(self.journal());self.assertNotIn(SESSION,(self.dir/server.handoff.JOURNAL).read_text())
+        # A restart: nothing in memory, the journal on disk.
+        server.operations.clear();server.undelivered.clear();self.events.clear();self.notify_ok=True
+        with patch.object(server,'DELIVERY_SECONDS',0.05):
+            async with server.lifespan(server.app):
+                for _ in range(100):
+                    if self.events:break
+                    await asyncio.sleep(0.02)
+        self.assertEqual([{'event':'removed','reason':'release'}],self.events)
+        self.assertEqual({},self.journal());self.assertNotIn(oid,server.undelivered)
+
+    async def test_a_restart_report_that_is_not_confirmed_is_queued_and_said(self):
+        import contextlib,io
+        self.notify_ok=False;left=[str(uuid.uuid4()) for _ in range(3)]
+        err=io.StringIO()
+        with contextlib.redirect_stderr(err):await server.announce_restart(left)
+        self.assertEqual(set(left),set(server.undelivered));self.assertEqual({'restart'},{op['reason'] for op in server.undelivered.values()})
+        self.assertEqual(set(left),set(self.journal()));self.assertIn('not confirmed',err.getvalue());self.assertNotIn(str(self.dir),err.getvalue())
+        self.notify_ok=True;self.events.clear()
+        await server.deliver_once()
+        self.assertEqual([{'event':'removed','reason':'restart'}]*3,self.events);self.assertEqual({},server.undelivered)
+
+    async def test_delivery_goes_in_bounded_batches(self):
+        live=0;most=0;sent=[]
+        async def slow(op,body):
+            nonlocal live,most
+            live+=1;most=max(most,live);await asyncio.sleep(0.02);live-=1;sent.append(op['id']);return False
+        for _ in range(3*server.DELIVERY_BATCH):
+            server.enqueue({'id':str(uuid.uuid4()),'announced':True,'state':'failed','reason':'restart'})
+        with patch.object(server,'notify',slow):
+            await server.deliver_once();first=set(sent)
+            self.assertEqual(server.DELIVERY_BATCH,len(sent));self.assertLessEqual(most,server.DELIVERY_BATCH)
+            await server.deliver_once()
+        # The next round takes the ones tried longest ago, not the same batch again.
+        self.assertEqual(2*server.DELIVERY_BATCH,len(set(sent)));self.assertFalse(first&set(sent[server.DELIVERY_BATCH:]))
+
+
+class EntryValueRoundFourTests(unittest.TestCase):
+    def test_a_field_no_longer_in_the_type_is_still_checked(self):
+        value={'username':'u','password':'shop2026','url':'https://shop.invalid/admin123','old_pin':'7788-9911'}
+        # The application names the type's Text fields: everything else but the username is checked.
+        self.assertEqual(['7788-9911','shop2026'],server.entry_values(value,['password'],['username','url']))
+        # A Text field never removes the password from the check.
+        self.assertEqual(['7788-9911','shop2026'],server.entry_values(value,[],['url','password']))
+
+
+class LeakRoundFourTests(unittest.TestCase):
+    value='synthetic-hex-value'
+
+    def test_hex_after_one_hex_digit_is_found(self):
+        h=self.value.encode().hex()
+        for text in ('https://s.invalid/a.png?v=0'+h,'https://s.invalid/img/a'+h+'.png','https://s.invalid/img/'+h+'f.png','x'+h.upper()+'0'):
+            self.assertTrue(server.leak.carries([text],[self.value]),text)
+
+    def test_one_or_two_bytes_of_unpadded_base64_are_found_as_a_whole_text(self):
+        import base64
+        for value in ('k','k9'):
+            for text in (base64.b64encode(value.encode()).decode(),base64.b64encode(value.encode()).decode().rstrip('=')):
+                self.assertTrue(server.leak.carries([text],[value]),(value,text))
+        self.assertFalse(server.leak.carries(['session-azk-end'],['k9']))
+
+    def test_the_budget_is_checked_on_the_last_level_too(self):
+        # A text whose only decoding is a large leaf and nothing deeper: the frontier ends, the budget must not.
+        with patch.object(server.leak,'_decodings',lambda text:(set(),{'y'*5000})),patch.object(server.leak,'MIN_BYTES',100),patch.object(server.leak,'BYTES_PER_CHAR',0):
+            self.assertTrue(server.leak.carries(['x'],[PASSWORD]))
+
+    def test_short_values_are_matched_only_as_whole_words(self):
+        for value,text in (('k9q','session-k9q-end'),('k9q','a=k9q'),('7788','pin:7788;'),('abcde','ABCDE'),('q9k','x/k9q/'),('k9q','k9q')):
+            self.assertTrue(server.leak.carries([text],[value]),(value,text))
+        for value,text in (('k9q','sessionk9qend'),('7788','a17788b'),('abcde','xabcdey'),('k9q','k9q5')):
+            self.assertFalse(server.leak.carries([text],[value]),(value,text))
+        # Six characters or more: anywhere.
+        self.assertTrue(server.leak.carries(['xk9q7z1y'],['k9q7z1']))
+
+    def test_short_values_do_not_refuse_a_clean_session_by_chance(self):
+        import random
+        rng=random.Random(20261127)
+        cookies=[''.join(rng.choice('0123456789abcdef') for _ in range(1200)) for _ in range(60)]
+        for value in ('abc','123','7788','k9q2x'):
+            refused=sum(server.leak.carries([c],[value]) for c in cookies)
+            self.assertEqual(0,refused,value)
