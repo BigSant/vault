@@ -834,4 +834,18 @@ final class HandoffTest extends TestCase
             $this->assertSame('error', DB::table('audit')->where('subject', $op)->where('event', 'operation.failure')->value('outcome'), (string) $answer);
         }
     }
+
+    public function test_a_success_the_broker_reports_with_its_event_lost_removes_the_file_at_once(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // Released at the broker; its `removed` was lost. The very status that learns the end asks for the removal.
+        $this->brokerState = 'succeeded';
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'succeeded');
+        $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame('release', DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'));
+    }
 }
