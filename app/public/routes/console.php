@@ -18,6 +18,9 @@ Artisan::command('vault:recover-user {email}', function () {
 // read is on record even when nobody opens Links.
 Artisan::command('vault:links', function () {
     $this->info('Checked '.app(\App\Vault\Links::class)->sweep().' open one-time links.');
+    // A handoff whose final event was lost (a broker restart, a host reboot) holds its entry (429) until this settles
+    // it: every 10 minutes rather than once a night.
+    $this->info('Settled '.app(\App\Vault\Operations::class)->settleHandoffs().' handoff files.');
 });
 Artisan::command('vault:maintenance', function () {
     // A handoff that is over, or past its end: the broker removes the file, and the removal is recorded only on its

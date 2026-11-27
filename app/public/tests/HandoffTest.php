@@ -38,6 +38,12 @@ final class HandoffTest extends TestCase
     /** Whether the fake broker confirms a file gone on cancel. */
     private bool $brokerRemoved = true;
 
+    /** Whether the fake broker answers cancel with a 503 (not reachable for it). */
+    private bool $brokerCancelDown = false;
+
+    /** The fake broker's reason for a failed operation (GET /operations/{id}), when it gives one. */
+    private ?string $brokerReason = null;
+
     /** How the fake broker answers POST /operations: 200, another status, or 'refused' / 'timeout' (no answer). */
     private int|string $brokerStart = 200;
 
@@ -88,6 +94,9 @@ final class HandoffTest extends TestCase
                         default => 'cURL error 28: Operation timed out after 8001 milliseconds with 0 bytes received',
                     });
                 }
+                if ($this->brokerCancelDown && str_ends_with($path, '/cancel')) {
+                    return Http::response([], 503);
+                }
                 // The broker's file is ready once the application recorded it (the fake publishes at once).
                 $written = DB::table('operations')->where('id', basename($path))->value('handoff') === 'written';
 
@@ -95,8 +104,8 @@ final class HandoffTest extends TestCase
                     str_ends_with($path, '/release') => ['state' => 'succeeded', 'removed' => true],
                     str_ends_with($path, '/cancel') => ['state' => 'revoked', 'removed' => $this->brokerRemoved],
                     $request->method() === 'POST' => ['state' => 'running'],
-                    ! $this->brokerKnows => ['state' => 'failed', 'known' => false],
-                    default => ['state' => $this->brokerState, 'known' => true] + ($written && $this->brokerReady && $this->brokerState === 'running' ? ['ready' => true, 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 900)] : []),
+                    ! $this->brokerKnows => ['state' => 'failed', 'known' => false, 'reason' => 'restart'],
+                    default => ['state' => $this->brokerState, 'known' => true] + ($this->brokerReason ? ['reason' => $this->brokerReason] : []) + ($written && $this->brokerReady && $this->brokerState === 'running' ? ['ready' => true, 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 900)] : []),
                 });
             }
 
@@ -600,5 +609,160 @@ final class HandoffTest extends TestCase
         $this->withToken('test-broker')->postJson('/api/internal/operations/'.$op.'/handoff', ['event' => 'removed', 'reason' => 'ttl'])->assertOk();
         $this->assertSame(['expired', null], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
         $this->assertFalse(DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->exists());
+    }
+
+    public function test_a_lost_final_event_after_a_broker_restart_is_settled_by_the_next_status(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // The broker restarted (or the host rebooted): it no longer knows the operation, and its final event is lost.
+        $this->brokerKnows = false;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed');
+        $this->assertContains('POST /operations/'.$op.'/cancel', $this->calls);
+        $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame(['failed', 'restart'], [DB::table('audit')->where('subject', $op)->where('event', 'operation.finish')->value('outcome'),
+            DB::table('audit')->where('subject', $op)->where('event', 'operation.failure')->value('outcome')]);
+        // The entry is free at once, not after the nightly maintenance.
+        $this->brokerKnows = true;
+        $this->execute($token, $entry, 'nightly-run-0002')->assertOk();
+    }
+
+    public function test_a_failure_the_broker_reports_removes_a_recorded_file(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        $this->brokerState = 'failed';
+        $this->brokerReason = 'handoff';
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed');
+        $this->assertContains('POST /operations/'.$op.'/cancel', $this->calls);
+        $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame('error', DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'));
+        $this->assertSame('handoff', DB::table('audit')->where('subject', $op)->where('event', 'operation.failure')->value('outcome'));
+    }
+
+    public function test_status_of_an_ended_handoff_with_its_file_still_recorded_settles_it(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // Ended here, the broker's `removed` never arrived.
+        DB::table('operations')->where('id', $op)->update(['state' => 'failed']);
+        // A broker that cannot be reached, or cannot remove it yet: the answer is still the state, the file stays recorded.
+        $this->brokerCancelDown = true;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed');
+        $this->brokerCancelDown = false;
+        $this->brokerRemoved = false;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed');
+        $this->assertSame('written', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame(2, count(array_filter($this->calls, fn ($c) => $c === 'POST /operations/'.$op.'/cancel')));
+        $this->brokerRemoved = true;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('ready', false);
+        $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertSame('error', DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'));
+    }
+
+    public function test_vault_links_settles_a_lease_the_broker_lost(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // Nobody asks for the status: the every-10-minutes job finds it.
+        Artisan::call('vault:links');
+        $this->assertSame(['running', 'written'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+        $this->brokerKnows = false;
+        Artisan::call('vault:links');
+        $this->assertSame(['failed', 'removed'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+        // An ended operation whose removal was not confirmed is settled by the same job.
+        $this->brokerKnows = true;
+        $second = $this->execute($token, $entry, 'nightly-run-0002')->json('id');
+        $this->written($second)->assertOk();
+        DB::table('operations')->where('id', $second)->update(['state' => 'succeeded']);
+        Artisan::call('vault:links');
+        $this->assertSame('removed', DB::table('operations')->where('id', $second)->value('handoff'));
+    }
+
+    public function test_a_start_the_broker_later_knows_is_confirmed_so_a_restart_is_not_hidden(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        // The start's answer was lost (timeout after sending): not confirmed.
+        $this->brokerStart = 'timeout';
+        $this->execute($token, $entry)->assertStatus(503);
+        $op = DB::table('operations')->where('request_id', 'nightly-run-0001')->value('id');
+        $this->assertNull(DB::table('operations')->where('id', $op)->value('dispatched_at'));
+        // The broker knows it: confirmed now.
+        $this->brokerStart = 200;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'running');
+        $this->assertNotNull(DB::table('operations')->where('id', $op)->value('dispatched_at'));
+        // A broker restart right after that is a failure at once, not 30 seconds of "running".
+        $this->brokerKnows = false;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed');
+    }
+
+    public function test_the_written_report_confirms_the_start_too(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        DB::table('operations')->where('id', $op)->update(['dispatched_at' => null]);
+        $this->written($op)->assertOk();
+        $this->assertNotNull(DB::table('operations')->where('id', $op)->value('dispatched_at'));
+    }
+
+    public function test_the_audit_says_why_an_operation_failed_with_a_fixed_code_only(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $this->brokerState = 'failed';
+        $this->brokerReason = 'leak';
+        $op = $this->execute($token, $entry)->json('id');
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'failed')->assertJsonMissingPath('reason');
+        $this->assertSame('leak', DB::table('audit')->where('subject', $op)->where('event', 'operation.failure')->value('outcome'));
+        $this->get('/workspaces/'.$this->workspace.'/audit')->assertOk()->assertSee('Why the request failed');
+        // Anything outside the vocabulary is not recorded.
+        $this->brokerReason = 'https://shop.invalid/?p='.$this->password;
+        $second = $this->execute($token, $entry, 'nightly-run-0002')->json('id');
+        $this->withToken($token)->getJson('/api/v1/operations/'.$second)->assertOk()->assertJsonPath('state', 'failed');
+        $this->assertFalse(DB::table('audit')->where('subject', $second)->where('event', 'operation.failure')->exists());
+        // The broker's final event carries the code too, and nothing else is accepted.
+        $this->brokerState = 'running';
+        $third = $this->execute($token, $entry, 'nightly-run-0003')->json('id');
+        $this->written($third)->assertOk();
+        $removed = fn (array $body) => $this->withToken('test-broker')->postJson('/api/internal/operations/'.$third.'/handoff', ['event' => 'removed', 'reason' => 'error'] + $body);
+        $removed(['failure' => 'not-a-code'])->assertStatus(422);
+        $removed(['failure' => 'state'])->assertOk();
+        $this->assertSame('state', DB::table('audit')->where('subject', $third)->where('event', 'operation.failure')->value('outcome'));
+        $this->assertNoValue(json_encode(DB::table('audit')->get()));
+    }
+
+    public function test_the_broker_learns_the_names_of_text_fields_too(): void
+    {
+        DB::table('entry_types')->insert(['id' => (string) Str::uuid(), 'workspace_id' => $this->workspace, 'key' => 'shop_admin', 'name' => 'Shop admin',
+            'fields' => json_encode([['key' => 'username', 'label' => 'User', 'kind' => 'text', 'required' => true],
+                ['key' => 'password', 'label' => 'Password', 'kind' => 'secret', 'required' => true],
+                ['key' => 'url', 'label' => 'Admin URL', 'kind' => 'text', 'required' => false]]),
+            'created_at' => now(), 'updated_at' => now()]);
+        $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'entry_types' => ['shop_admin'], 'ttl_seconds' => 900]]);
+        $entry = app(Catalog::class)->create(['project_id' => $this->project, 'environment_id' => $this->environment, 'name' => 'Admin', 'alias' => 'shop-admin',
+            'type' => 'shop_admin', 'secret' => json_encode(['username' => 'u', 'password' => $this->password, 'url' => 'https://shop.example/admin123'])]);
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->assertOk()->json('id');
+        $answer = $this->withToken('test-broker')->getJson('/internal/operations/'.$op)->assertOk();
+        $this->assertSame(['username', 'url'], $answer->json('text_fields'));
+        $this->assertNoValue($answer->getContent());
     }
 }

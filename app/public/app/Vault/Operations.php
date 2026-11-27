@@ -26,7 +26,17 @@ final class Operations
 
     private const ACTIVE = ['pending', 'approved', 'running', 'requires_user_action'];
 
-    /** How long a claimed operation the broker does not know yet may still be on its way there (dispatch: 2 + 8 s). */
+    /**
+     * The broker's coarse reasons for a failed operation (broker/server.py FAILURES), recorded in the audit as
+     * operation.failure. Never a value, a URL or a selector; anything else the broker might send is dropped.
+     */
+    public const FAILURES = ['policy', 'leak', 'unauthorized', 'login', 'state', 'connector', 'handoff', 'restart', 'error'];
+
+    /**
+     * How long a claimed operation the broker does not know yet may still be on its way there (dispatch: 2 + 8 s),
+     * counted from the claim: until the broker has confirmed the start (its answer, a status it knows, or its
+     * `written` report, each of which sets dispatched_at) nothing else changes the row's updated_at.
+     */
     private const DISPATCH_SECONDS = 30;
 
     public function __construct(private Access $access) {}
@@ -130,11 +140,26 @@ final class Operations
     /** @return list<string> the keys of the operation's entry type fields of a secret kind (secret, multi-line) */
     public function secretFields(object $op): array
     {
+        return $this->fieldsOfKind($op, ['secret', 'multiline']);
+    }
+
+    /**
+     * @return list<string> the keys of the operation's entry type fields of the Text kind. The broker checks every
+     *                      stored field but the username and these, so a field removed from the type whose value is still
+     *                      stored is checked too.
+     */
+    public function textFields(object $op): array
+    {
+        return $this->fieldsOfKind($op, ['text']);
+    }
+
+    private function fieldsOfKind(object $op, array $kinds): array
+    {
         $entry = DB::table('entries')->join('projects', 'projects.id', '=', 'entries.project_id')->where('entries.id', $op->entry_id)
             ->select('entries.type', 'projects.workspace_id')->first();
         $type = $entry ? app(EntryTypes::class)->find($entry->workspace_id, $entry->type) : null;
 
-        return array_values(array_map(fn ($f) => $f['key'], array_filter($type->fields ?? [], fn ($f) => in_array($f['kind'], ['secret', 'multiline'], true))));
+        return array_values(array_map(fn ($f) => $f['key'], array_filter($type->fields ?? [], fn ($f) => in_array($f['kind'], $kinds, true))));
     }
 
     public function broker(string $method, string $path, array $body = []): array
@@ -268,7 +293,7 @@ final class Operations
         $op = DB::table('operations')->where('id', $id)->where('machine_id', $machine->id)->first();
         abort_unless($op, 404);
         if (in_array($op->state, ['pending', 'approved', 'running', 'requires_user_action'])) {
-            if (strtotime($op->expires_at) <= time()) {
+            if (strtotime($op->expires_at.' UTC') <= time()) {
                 $this->terminal($op, 'expired', $machine);
             } elseif (! $this->authorized($id, true)) {
                 $this->terminal($op, 'revoked', $machine);
@@ -301,11 +326,17 @@ final class Operations
                 if ($inFlight) {
                     $state = $op->state;
                 } elseif (in_array($state, ['succeeded', 'failed', 'expired', 'revoked'])) {
-                    $this->terminal($op, $state, $machine);
+                    $this->terminal($op, $state, $machine, true, $result['reason'] ?? null);
                 } else {
-                    DB::table('operations')->where('id', $id)->whereIn('state', ['running', 'requires_user_action'])->update(['state' => $state, 'updated_at' => now()]);
+                    // The broker knows it: the start is confirmed, also after a start whose answer was lost.
+                    DB::table('operations')->where('id', $id)->whereIn('state', ['running', 'requires_user_action'])
+                        ->update(['state' => $state, 'updated_at' => now(), 'dispatched_at' => $op->dispatched_at ?? now()]);
                 }
             }
+        } elseif (($op->handoff ?? null) === 'written') {
+            // Over, but its file is not confirmed gone (a final event that was lost): ask the broker now rather than
+            // keep the entry reserved until maintenance. A broker that does not answer leaves it for vault:links.
+            $this->settleHandoff($op);
         }
         $op = DB::table('operations')->where('id', $id)->first();
         $answer = ['id' => $id, 'state' => $op->state, 'ok' => $op->state === 'succeeded', 'expires_at' => self::rfc3339($op->expires_at)];
@@ -321,21 +352,43 @@ final class Operations
 
     /**
      * @param  bool  $tellBroker  false when the broker itself reported the end (its own callback must not wait on it)
+     * @param  ?string  $failure  the broker's coarse reason for a failure (FAILURES), audited as operation.failure
      */
-    public function terminal(object $op, string $state, object $machine, bool $tellBroker = true): void
+    public function terminal(object $op, string $state, object $machine, bool $tellBroker = true, ?string $failure = null): void
     {
-        DB::transaction(function () use ($op, $state, $machine) {
+        DB::transaction(function () use ($op, $state, $machine, $failure) {
             $updated = DB::table('operations')->where('id', $op->id)->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->update(['state' => $state, 'updated_at' => now()]);
             if ($updated) {
                 $this->access->audit($machine->workspace_id, 'operation.finish', $op->id, $state, 'machine:'.$machine->id);
+                if ($state === 'failed' && in_array($failure, self::FAILURES, true)) {
+                    $this->access->audit($machine->workspace_id, 'operation.failure', $op->id, $failure, 'machine:'.$machine->id);
+                }
             }
         });
-        if ($tellBroker && in_array($state, ['revoked', 'expired']) && $op->action !== Links::ACTION) {
+        if (! $tellBroker || $op->action === Links::ACTION) {
+            return;
+        }
+        // A recorded handoff file is removed by the broker whatever the end: also a failure (a broker that lost the
+        // operation in a restart answers that its file is gone once its startup cleanup succeeded).
+        $written = DB::table('operations')->where('id', $op->id)->value('handoff') === 'written';
+        if (in_array($state, ['revoked', 'expired']) || ($state === 'failed' && $written)) {
             // The broker removes a handoff file before it answers, and says whether it is gone.
             $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
             if (($result['removed'] ?? false) === true) {
-                $this->handoffRemoved($op->id, self::REASON[$state]);
+                $this->handoffRemoved($op->id, self::REASON[$state] ?? 'error');
             }
+        }
+    }
+
+    /** Asks the broker to remove the file of an operation that is over; records the removal only on its confirmation. */
+    private function settleHandoff(object $op): void
+    {
+        try {
+            $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
+            if (($result['removed'] ?? false) === true) {
+                $this->handoffRemoved($op->id, self::REASON[$op->state] ?? 'error');
+            }
+        } catch (\Throwable) {
         }
     }
 
@@ -371,7 +424,8 @@ final class Operations
                 // claim: a lost `removed` holds the entry and backups no longer than the lease itself.
                 $end = min(strtotime($op->expires_at.' UTC'), $until + 10);
                 $updated = $this->authorized($id) ? DB::table('operations')->where('id', $id)->where('state', 'running')->whereNull('handoff')
-                    ->update(['handoff' => 'written', 'lease_expires_at' => gmdate('Y-m-d H:i:s', $until), 'expires_at' => gmdate('Y-m-d H:i:s', $end), 'updated_at' => now()]) : 0;
+                    ->update(['handoff' => 'written', 'lease_expires_at' => gmdate('Y-m-d H:i:s', $until), 'expires_at' => gmdate('Y-m-d H:i:s', $end),
+                        'updated_at' => now(), 'dispatched_at' => $op->dispatched_at ?? now()]) : 0;
                 if ($updated) {
                     $this->access->audit($machine->workspace_id, 'handoff.written', $id, 'ok', 'machine:'.$machine->id);
                 }
@@ -384,16 +438,18 @@ final class Operations
         }
         $reason = $body['reason'] ?? null;
         abort_unless(($body['event'] ?? null) === 'removed' && is_string($reason) && isset(self::REASONS[$reason]), 422);
-        $this->terminal($op, self::REASONS[$reason], $machine, false);
+        abort_if(isset($body['failure']) && ! in_array($body['failure'], self::FAILURES, true), 422);
+        $this->terminal($op, self::REASONS[$reason], $machine, false, $body['failure'] ?? ($reason === 'restart' ? 'restart' : null));
         $this->handoffRemoved($id, $reason);
 
         return ['ok' => true];
     }
 
     /**
-     * vault:maintenance: a recorded handoff file whose operation is over (or past its end) is removed by the broker,
-     * and recorded as removed only when the broker confirms it. A broker that does not answer leaves it for the next
-     * run. Returns how many removals were recorded.
+     * vault:links (every 10 minutes) and vault:maintenance: a recorded handoff file whose operation is over (or past
+     * its end, or lost by the broker in a restart or a host reboot) is removed by the broker, and recorded as removed
+     * only when the broker confirms it. A broker that does not answer leaves it for the next run. Returns how many
+     * removals were recorded.
      */
     public function settleHandoffs(): int
     {
@@ -401,13 +457,17 @@ final class Operations
         foreach (DB::table('operations')->where('handoff', 'written')->get() as $op) {
             try {
                 $machine = DB::table('machines')->where('id', $op->machine_id)->first();
-                if (in_array($op->state, self::ACTIVE, true) && strtotime($op->expires_at) <= time()) {
+                if (in_array($op->state, self::ACTIVE, true) && strtotime($op->expires_at.' UTC') <= time()) {
                     $this->terminal($op, 'expired', $machine);
-                } elseif (! in_array($op->state, self::ACTIVE, true)) {
-                    $result = $this->broker('POST', '/operations/'.$op->id.'/cancel');
-                    if (($result['removed'] ?? false) === true) {
-                        $this->handoffRemoved($op->id, self::REASON[$op->state] ?? 'error');
+                } elseif (in_array($op->state, self::ACTIVE, true)) {
+                    // Live here: does the broker still know it? After a restart (or a reboot) it does not, and its
+                    // final event may never come: fail it, which removes the file and frees the entry.
+                    $result = $this->broker('GET', '/operations/'.$op->id);
+                    if (($result['known'] ?? true) === false) {
+                        $this->terminal($op, 'failed', $machine, true, 'restart');
                     }
+                } else {
+                    $this->settleHandoff($op);
                 }
             } catch (\Throwable) {
             }

@@ -13,7 +13,7 @@
         'grant.create' => 'Added grant', 'grants.revoke' => 'Revoked grant',
         'machine.create' => 'Added agent', 'machines.revoke' => 'Revoked agent',
         'operation.request' => 'Agent request', 'operation.approve' => 'Agent request allowed', 'operation.deny' => 'Agent request denied',
-        'operation.mfa' => 'Site MFA code entered', 'operation.finish' => 'Agent request finished',
+        'operation.mfa' => 'Site MFA code entered', 'operation.finish' => 'Agent request finished', 'operation.failure' => 'Why the request failed',
         'member.change' => 'Changed member', 'owner.setup' => 'First owner set up',
         'workspace.create' => 'Added workspace', 'project.create' => 'Added project', 'project.rename' => 'Renamed project', 'project.delete' => 'Removed project',
         'environment.create' => 'Added environment', 'environment.update' => 'Updated environment', 'environment.delete' => 'Removed environment',

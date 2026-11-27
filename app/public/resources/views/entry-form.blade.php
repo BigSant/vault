@@ -80,6 +80,7 @@
     <fieldset id="type-fields">
         <legend>Secret values</legend>
         @if($entry)<p class="note">Leave a secret value blank to keep its current value.</p>@endif
+        <p class="note">Browser and session actions check what a site sends for the password and the masked and multi-line fields, not for plain text fields: keep anything secret out of those.</p>
         @unless($entry)<p class="note" data-types="" @if($initialType !== null) hidden @endif>Choose a type above to see its fields.</p>@endunless
         @foreach($types as $t)
             @php $activeType = $t->key === $initialType; @endphp

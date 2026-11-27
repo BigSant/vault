@@ -22,7 +22,7 @@ Route::post('/internal/operations/{id}/handoff', function (Request $r, string $i
     abort_unless(hash_equals(trim(file_get_contents(config('vault.broker_key'))), (string) $r->bearerToken()), 401);
     abort_unless($r->isJson(), 415);
     $body = $r->json()->all();
-    abort_if(array_diff(array_keys($body), ['event', 'lease_expires_at', 'reason']), 422);
+    abort_if(array_diff(array_keys($body), ['event', 'lease_expires_at', 'reason', 'failure']), 422);
 
     return $ops->handoffEvent($id, $body);
 })->whereUuid('id');
