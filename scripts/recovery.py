@@ -1,7 +1,10 @@
 """Consistent encrypted bundles, isolated restore verification, fail-closed empty-target restore."""
+from contextlib import contextmanager
 import fcntl
 import json
 import os
+import signal
+import threading
 from pathlib import Path
 import secrets
 import subprocess
@@ -13,6 +16,30 @@ import time
 class Busy(RuntimeError):
     """Try again later: operations are active or another backup runs. bin/vault exits 75 (EX_TEMPFAIL)."""
     exit_code=75
+
+
+# How long backup-resume (the unit's ExecStopPost) waits for the backup lock: well under the unit's TimeoutStopSec.
+RESUME_WAIT = 300
+ACTIVE = "SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()"
+# Laravel's file maintenance driver: `down` writes framework/down, then maintenance.php; `up` removes them in that order.
+MAINTENANCE_FILES = ('storage/framework/down', 'storage/framework/maintenance.php')
+
+
+@contextmanager
+def sigterm_held():
+    """While the services are restored, a SIGTERM (systemd's stop, a second one) is held, not acted on: the restore
+    finishes, then the process exits 143. Only in the main thread (where bin/vault set its handler)."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    received = []
+    previous = signal.signal(signal.SIGTERM, lambda *_: received.append(1))
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+        if received:
+            raise SystemExit(143)
 
 
 class Recovery:
@@ -59,17 +86,35 @@ class Recovery:
         finally:
             partial.unlink(missing_ok=True)
 
-    def lock(self):
-        """The backup lock (`.backup.lock`), taken without waiting. Busy when another backup or restore holds it."""
+    def lock(self, wait=0):
+        """The backup lock (`.backup.lock`), waiting at most `wait` seconds. Busy when another backup or restore still
+        holds it then."""
         lock=open(self.data/'.backup.lock','a')
-        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        except BlockingIOError:
-            lock.close()
-            raise Busy('Another backup is running') from None
-        return lock
+        deadline=time.monotonic()+wait
+        while True:
+            try:
+                fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                return lock
+            except BlockingIOError:
+                if time.monotonic()>=deadline:
+                    lock.close()
+                    raise Busy('Another backup is running') from None
+                time.sleep(1)
+
+    def maintenance_files(self):
+        """(down, maintenance.php) as the PHP container sees them. Raises when it cannot look (a `docker exec` error is
+        never read as "not in maintenance")."""
+        out=self.run(['docker','exec','-w','/var/www/html',self.php,'sh','-c',
+                      'for f in "$@"; do if [ -e "$f" ]; then echo 1; else echo 0; fi; done','sh',*MAINTENANCE_FILES]).decode().split()
+        if len(out)!=2 or not set(out)<={'0','1'}:
+            raise RuntimeError('Could not read the maintenance state')
+        return out[0]=='1',out[1]=='1'
 
     def in_maintenance(self):
-        return subprocess.run(['docker','exec','-w','/',self.php,'test','-f','/var/www/html/storage/framework/maintenance.php'],capture_output=True).returncode==0
+        return any(self.maintenance_files())
+
+    def active_operations(self):
+        return int(self.sql(ACTIVE,self.dbname()))
 
     def running(self):
         """Whether PHP and the broker both run (docker inspect)."""
@@ -77,31 +122,39 @@ class Recovery:
         except RuntimeError:return False
         return states==['true','true']
 
-    def restore_services(self):
+    def restore_services(self, marker=None):
         """Undoes a quiesce, whatever step it was interrupted at: `docker stop` first (it waits for a stop still under
         way, and an `artisan down` still running in PHP ends with it), then `docker start`, `artisan up`, and a check
-        that both containers run and maintenance is off. Raises when that check fails: the caller keeps the marker."""
-        self.run(['docker','stop',self.php,self.broker])
-        self.run(['docker','start',self.php,self.broker])
-        self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
-        if not self.running() or self.in_maintenance():
-            raise RuntimeError('PHP or the broker is not running, or maintenance is still on, after restoring a backup; .backup-quiesced is kept for backup-resume')
+        that both containers run and maintenance is off. Only then is `marker` removed (also under the held SIGTERM, so
+        that a second one cannot fall between the two); raises when the check fails, and the marker stays."""
+        with sigterm_held():
+            self.run(['docker','stop',self.php,self.broker])
+            self.run(['docker','start',self.php,self.broker])
+            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            down,page=self.maintenance_files()
+            if page and not down:
+                # An `artisan up` cut between its two steps leaves maintenance.php; a repeated `up` sees the
+                # application up and leaves it too, and every request would still get the maintenance page.
+                self.run(['docker','exec','-w','/var/www/html',self.php,'rm','-f',MAINTENANCE_FILES[1]])
+            if not self.running() or self.in_maintenance():
+                raise RuntimeError('PHP or the broker is not running, or maintenance is still on, after restoring a backup; .backup-quiesced is kept for backup-resume')
+            if marker is not None:
+                marker.unlink(missing_ok=True)
 
     def resume(self):
         """After a backup that was killed (systemd timeout, SIGKILL): PHP and the broker run again and maintenance is
         lifted. Does nothing unless a backup left its marker, so it never lifts a maintenance someone else set, and
         nothing while another backup holds the lock (that backup finishes the marker's restore first, below). The
         marker goes only after the restore was verified."""
-        try:lock=self.lock()
+        try:lock=self.lock(RESUME_WAIT)
         except Busy:
-            print('Another backup is running; it restores the services of the interrupted one before its own.')
+            print('Another backup is still running after %d s; it restores the services of the interrupted one before its own.'%RESUME_WAIT)
             return False
         try:
             quiesced=self.data/'.backup-quiesced'
             if not quiesced.exists():
                 return False
-            self.restore_services()
-            quiesced.unlink(missing_ok=True)
+            self.restore_services(quiesced)
             print('Services resumed after an interrupted backup.')
             return True
         finally:
@@ -111,18 +164,18 @@ class Recovery:
         lock=self.lock()
         try:
             quiesced=self.data/'.backup-quiesced'
+            # Before anything is stopped: services brought up by hand with the marker forgotten may hold a live lease.
+            if self.active_operations():raise Busy('Active operations must finish before backup')
             if quiesced.exists():
                 # An earlier backup was interrupted and its resume did not get the lock (this one had it): finish its
                 # restore under this lock before anything else.
-                self.restore_services()
-                quiesced.unlink(missing_ok=True)
+                self.restore_services(quiesced)
                 print('Services of an interrupted backup restored first.')
             return self.quiesced_backup()
         finally:lock.close()
 
     def quiesced_backup(self):
-        active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
-        if int(active):raise Busy('Active operations must finish before backup')
+        if self.active_operations():raise Busy('Active operations must finish before backup')
         if self.in_maintenance():
             raise RuntimeError('Application is already in maintenance')
         directory=self.root/'backups';directory.mkdir(mode=0o700,exist_ok=True)
@@ -138,8 +191,7 @@ class Recovery:
             marked=True
             self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down'])
             self.run(['docker','stop',self.php,self.broker])
-            active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
-            if int(active):raise Busy('An operation started while quiescing; retry after it finishes')
+            if self.active_operations():raise Busy('An operation started while quiescing; retry after it finishes')
             with tempfile.TemporaryDirectory(prefix='vault-backup-') as tmp:
                 tmp=Path(tmp)
                 sql=self.run(['docker','exec','-w','/',self.mysql,'sh','-c',
@@ -158,9 +210,8 @@ class Recovery:
                 self.crypt('encrypt',archive,target)
         finally:
             if marked:
-                self.restore_services()
-                # Reached only after a verified restore: otherwise the marker stays for backup-resume.
-                quiesced.unlink(missing_ok=True)
+                # The marker goes only after a verified restore: otherwise it stays for backup-resume.
+                self.restore_services(quiesced)
         print('Encrypted consistent backup:',target)
         print('Keep backup.key AND OpenBao recovery shares separately from the backup.')
         return target
@@ -238,10 +289,34 @@ class Recovery:
                    'broker.key':'security/app/broker.key','connectors.json':'connectors/connectors.json'}
             for name,path in files.items():self.c['save'](self.data/path,(tmp/name).read_text())
             self.c['save'](self.data/'security/broker/broker.key',(tmp/'broker.key').read_text())
-            self.run(['docker','start',self.php,self.broker])
+            # A backup of an older version has an older schema: this checkout's migrations bring it up to date before
+            # the application is opened and before the broker starts (the identities page and vault:links read columns
+            # an old schema lacks). PHP starts in maintenance; nobody is signed in (sessions were cleared above).
+            self.run(['docker','start',self.php])
+            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down'])
+            self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','migrate','--force'])
+            self.check_schema(self.dbname())
+            self.run(['docker','start',self.broker])
             self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            self.warn_connectors(tmp/'connectors.json')
         lock.close()
         print('Backup restored. Owner login retained; sessions and machine grants revoked. Reissue machine access in WEB.')
+
+    def check_schema(self, database):
+        """The queries of the identities page and of vault:links work on the restored schema (raises otherwise)."""
+        self.sql('SELECT id,name,expires_at,revoked_at,links,executor FROM machines LIMIT 1; '
+                 'SELECT id,handoff,lease_expires_at,dispatched_at FROM operations LIMIT 1;',database)
+
+    def warn_connectors(self, path):
+        """A restored connectors.json of an older version may lack what this broker requires: said, never fatal."""
+        import sys
+        sys.path.insert(0,str(self.root/'broker'))
+        try:
+            import connector_check
+            found=connector_check.problems(json.loads(Path(path).read_text()).get('actions',{}),('http','https') if self.env=='test' else ('https',))
+        except Exception:
+            found=['connectors.json could not be checked']
+        for line in found:print('Update connectors.json:',line)
 
     def invalidate_restored_access(self, database):
         self.sql("DELETE FROM sessions; DELETE FROM cache; DELETE FROM cache_locks; "

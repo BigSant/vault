@@ -112,7 +112,19 @@ def prepare():
         save(broker_key, (DATA/'security/app/broker.key').read_text())
     if not (DATA/'connectors/connectors.json').exists():
         save(DATA/'connectors/connectors.json', (ROOT/'app/config/connectors.example.json').read_text())
+    check_connectors()
     handoff_directory()
+
+
+def check_connectors():
+    """What this broker refuses in connectors.json (a login without its credential_fields, static_subresources,
+    unequal allow_cidrs for one host:port), said before the broker is replaced rather than at the first failed run."""
+    sys.path.insert(0, str(ROOT/'broker'))
+    import connector_check
+    actions = json.loads((DATA/'connectors/connectors.json').read_text()).get('actions', {})
+    found = connector_check.problems(actions, ('http', 'https') if ENV == 'test' else ('https',))
+    if found:
+        raise RuntimeError('connectors.json needs updating (docs/operations.md, Updates):\n  ' + '\n  '.join(found))
 
 
 def initialize():

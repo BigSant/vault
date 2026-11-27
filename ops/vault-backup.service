@@ -7,14 +7,20 @@
 # The retry is a loop rather than Restart=on-failure (allowed for oneshot since systemd 244), so that every wait and
 # every attempt is one start of the unit with a clear end.
 # There is no start timeout: the waits are not work, and a timeout could kill an attempt while PHP and the broker are
-# stopped. Should the process be killed anyway, ExecStopPost runs `bin/vault backup-resume`, which starts them again
-# and lifts maintenance, but only when a backup left its marker. Schedule the timer outside the executor's run window.
+# stopped. `systemctl stop` sends SIGTERM to the whole cgroup: the shell traps it and waits for bin/vault (so systemd
+# does not run ExecStopPost while bin/vault still restores), bin/vault restores the services (stop, start, up, check)
+# with SIGTERM held, and then the shell exits 143. Should the process be killed anyway, ExecStopPost runs
+# `bin/vault backup-resume`, which waits for the backup lock (at most 300 s) and restores them, but only when a backup
+# left its marker. Schedule the timer outside the executor's run window.
 [Unit]
 Description=Vault encrypted backup
 [Service]
 Type=oneshot
 EnvironmentFile=%E/vault/units.env
-ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" || exit 1; n=1; while :; do bin/vault backup; rc=$$?; if [ "$$rc" -ne 75 ]; then exit "$$rc"; fi; if [ "$$n" -ge 12 ]; then echo "vault-backup: still busy after 12 attempts; no backup made today" >&2; exit 75; fi; n=$$((n+1)); sleep 1200; done'
+ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" || exit 1; t=; trap "t=1" TERM; n=1; while :; do bin/vault backup; rc=$$?; [ -n "$$t" ] && exit 143; if [ "$$rc" -ne 75 ]; then exit "$$rc"; fi; if [ "$$n" -ge 12 ]; then echo "vault-backup: still busy after 12 attempts; no backup made today" >&2; exit 75; fi; n=$$((n+1)); sleep 1200; [ -n "$$t" ] && exit 143; done'
 ExecStopPost=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" && bin/vault backup-resume'
 TimeoutStartSec=infinity
+# A stop lets the restore finish: bin/vault holds SIGTERM while it restores, and backup-resume waits up to 300 s for
+# the lock.
+TimeoutStopSec=10min
 UMask=0077
