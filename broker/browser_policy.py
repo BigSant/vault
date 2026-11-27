@@ -107,11 +107,33 @@ def rule_matches(rule,url,method):
     return query_matches(want.query,got.query,variable)
 
 
-def request_allowed(action,url,method):
+def matching_rule(action,url,method):
+    """The rule (the initial GET or an allowed_requests entry) that allows this request; None when none does. The
+    first match wins, and a rule with `credential_fields` is preferred, so the login request is always recognised."""
     target=origin(url)
-    if target is None or target not in registered(action):return False
+    if target is None or target not in registered(action):return None
     rules=[{'method':'GET','url':action['url']},*action.get('allowed_requests',[])]
-    return any(isinstance(rule,dict) and rule_matches(rule,url,method) for rule in rules)
+    matches=[rule for rule in rules if isinstance(rule,dict) and rule_matches(rule,url,method)]
+    return next((rule for rule in matches if rule.get('credential_fields')),matches[0] if matches else None)
+
+
+def request_allowed(action,url,method):
+    return matching_rule(action,url,method) is not None
+
+
+# A form field that may carry the typed credentials: a plain HTML name.
+FIELD=re.compile(r'[A-Za-z0-9_.\[\]-]{1,64}')
+
+
+def credential_config_valid(action):
+    """The login request is named explicitly: exactly one allowed_requests rule, a POST, with `credential_fields`
+    (1-8 form field names). Every other request may carry no entry value in its headers or body."""
+    rules=action.get('allowed_requests',[])
+    if not isinstance(rules,list):return False
+    named=[r for r in rules if isinstance(r,dict) and 'credential_fields' in r]
+    if len(named)!=1:return False
+    fields=named[0]['credential_fields']
+    return named[0].get('method')=='POST' and isinstance(fields,list) and 1<=len(fields)<=8 and all(isinstance(f,str) and FIELD.fullmatch(f) for f in fields)
 
 
 def ignored(action,url,method):

@@ -15,7 +15,12 @@ def destinations():
             parsed = urlsplit(url)
             if parsed.scheme in (('http','https') if os.environ.get('VAULT_TEST_FIXTURES')=='1' else ('https',)) and parsed.hostname and not parsed.username:
                 key = (parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80))
-                result[key] = [ipaddress.ip_network(c) for c in action.get('allow_cidrs', [])]
+                cidrs = [ipaddress.ip_network(c) for c in action.get('allow_cidrs', [])]
+                # One address, one network permission: two connectors that disagree refuse the whole configuration,
+                # so neither inherits the other's private range.
+                if key in result and set(result[key]) != set(cidrs):
+                    raise ValueError()
+                result[key] = cidrs
     return result
 
 

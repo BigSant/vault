@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 import handoff
 import leak
-from browser_policy import ignore_config_valid, ignored, origin, registered, request_allowed, static_allowed, static_config, static_request
-from urllib.parse import urljoin
+from browser_policy import credential_config_valid, ignore_config_valid, ignored, matching_rule, origin, registered, request_allowed, static_allowed, static_config, static_request
+from urllib.parse import unquote_plus, urljoin, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -133,6 +133,56 @@ STATIC_ACCEPT = {'stylesheet': 'text/css,*/*;q=0.1', 'image': 'image/avif,image/
 MAX_URL = 8192
 # The fields an action types into the page. The username is shown by the site itself, so it is never checked.
 TYPED_FIELDS = ('password',)
+# A request body longer than this is denied: the check below must be able to read all of it.
+MAX_BODY = 65536
+FORM = 'application/x-www-form-urlencoded'
+
+
+def content_carries(headers, body, rule, secrets):
+    """True when an outgoing request's headers (names and values, also Cookie) or body carry an entry value, or the
+    body is too long to check. Only the login request (the rule with `credential_fields`) may carry one, and only as
+    the value of one of those fields of a urlencoded form; anything else in its body is checked like any request's."""
+    texts = [t for name, value in (headers or {}).items() for t in (name, value)]
+    if body:
+        if len(body) > MAX_BODY:
+            return True
+        text = body.decode('utf-8', 'replace')
+        fields = set(rule.get('credential_fields') or ()) if rule else set()
+        kind = {k.lower(): v for k, v in (headers or {}).items()}.get('content-type', '').split(';')[0].strip().lower()
+        if fields and kind == FORM:
+            for part in text.split('&'):
+                # The field's name as the browser encoded it (a `[` becomes %5B); its value is not looked at.
+                if unquote_plus(part.partition('=')[0]) not in fields:
+                    texts.append(part)
+        else:
+            texts.append(text)
+    return leak.carries(texts, secrets)
+
+
+def partitioned_cookie(response, action, url):
+    """True when an answer the broker fetched sets a cookie that the handoff would export (HttpOnly or named in
+    cookie_names, for a cookie host) with the `Partitioned` attribute. Read from the original Set-Cookie headers:
+    Playwright's request client stores such a cookie in the browser context without its partition."""
+    if action.get('kind') not in HANDOFF_KINDS:
+        return False
+    try:
+        hosts, readable = cookie_hosts(action), names(action, 'cookie_names')
+    except ValueError:
+        return True
+    request_host = (urlsplit(url).hostname or '').lower()
+    for header in getattr(response, 'headers_array', None) or []:
+        if header.get('name', '').lower() != 'set-cookie':
+            continue
+        for line in header.get('value', '').split('\n'):
+            parts = [p.strip() for p in line.split(';')]
+            name = parts[0].partition('=')[0].strip()
+            attributes = {p.partition('=')[0].strip().lower(): p.partition('=')[2].strip() for p in parts[1:] if p}
+            if 'partitioned' not in attributes or not ('httponly' in attributes or name in readable):
+                continue
+            domain = attributes.get('domain', '').lower().lstrip('.')
+            if any(host == (domain or request_host) or domain and host.endswith('.' + domain) for host in hosts):
+                return True
+    return False
 
 
 def entry_values(value, secret_fields=None, text_fields=None):
@@ -198,11 +248,16 @@ class Router:
     def violation(self, *_, code='policy'):
         if self.op.get('done'):
             return
+        self.refuse(code)
+
+    def refuse(self, code):
+        """Fails the operation, also after the login is confirmed (an answer to a request already sent): no state is
+        exported. Before the confirmation the login is stopped at once."""
         first = not self.op.get('policy_denied', False)
         self.op['policy_denied'] = True
         if first:
             self.op.setdefault('failure', code)
-            if self.op.get('task'):
+            if self.op.get('task') and not self.op.get('done'):
                 self.op['task'].cancel()
 
     async def deny(self, request_route, code='policy'):
@@ -237,10 +292,16 @@ class Router:
 
     async def static_fetch(self, request_route, request):
         # A fresh request context per file: no cookie jar (not even one a static response tried to set), no
-        # credentials, and only the headers set here.
+        # credentials, and only the headers set here. Admitted only once the context exists, right before the
+        # fetch: making the context is an await during which the login can be confirmed.
         anonymous = await self.new_request_context()
         response = None
+        admitted = False
         try:
+            if not self.admit():
+                await self.drop(request_route)
+                return
+            admitted = True
             response = await anonymous.fetch(request.url, method='GET', headers={'Accept': STATIC_ACCEPT.get(request.resource_type, '*/*')},
                                              max_redirects=0, timeout=12000, fail_on_status_code=False)
             if 300 <= response.status < 400 or 'attachment' in response.headers.get('content-disposition', '').lower():
@@ -255,6 +316,8 @@ class Router:
                     await response.dispose()
             with suppress(Exception):
                 await anonymous.dispose()
+            if admitted:
+                self.settle()
 
     async def route(self, request_route):
         response = None
@@ -283,11 +346,7 @@ class Router:
                 if not await authorized(op):
                     await self.deny(request_route, 'unauthorized')
                     return
-                if not self.admit():
-                    # Confirmed while the application answered: nothing more leaves.
-                    await self.drop(request_route)
-                    return
-                admitted = True
+                # Admitted inside, right before its fetch; confirmed meanwhile: dropped, nothing leaves.
                 await self.static_fetch(request_route, request)
                 return
             if not listed and static_request(action, request.method, request.resource_type, navigation):
@@ -297,6 +356,11 @@ class Router:
                 return
             if not (main and listed):
                 await self.deny(request_route)
+                return
+            if content_carries(await request.all_headers(), request.post_data_buffer, matching_rule(action, request.url, request.method), self.secrets):
+                # A value in a header or the body never leaves, also to an allowed address; only the login
+                # request's credential fields may carry the typed password.
+                await self.deny(request_route, 'leak')
                 return
             if not await authorized(op):
                 await self.deny(request_route, 'unauthorized')
@@ -308,6 +372,11 @@ class Router:
             # continue_ may follow redirects without another interception. Fetch one
             # response, validate Location, then let Chromium request the next URL.
             response = await request_route.fetch(max_redirects=0, timeout=12000)
+            if partitioned_cookie(response, action, request.url):
+                # Already in the browser context without its partition: nothing of this login may be exported.
+                self.refuse('state')
+                await self.drop(request_route)
+                return
             if 'attachment' in response.headers.get('content-disposition', '').lower():
                 await self.deny(request_route)
                 return
@@ -526,13 +595,16 @@ def storage_content(action, state, secrets):
 
 
 def check_connector(action):
-    """Refuses options this broker no longer reads, and malformed new ones, before anything is fetched."""
+    """Refuses options this broker no longer reads, and malformed new ones, before anything is fetched. A login
+    (browser, storage_state) must name its login request and the form fields that carry the credentials."""
     if 'static_subresources' in action:
         # Replaced by static_paths (docs/integrations.md): an old connector fails instead of loading every GET.
         raise ValueError()
     if 'static_paths' in action and static_config(action) is None:
         raise ValueError()
     if not ignore_config_valid(action):
+        raise ValueError()
+    if action['kind'] in ('browser', *HANDOFF_KINDS) and not credential_config_valid(action):
         raise ValueError()
     names(action, 'storage_keys')
     names(action, 'cookie_names')

@@ -112,7 +112,8 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
         return op
 
     def files():
-        return [p for p in directory.iterdir() if p.name != '.vault-handoff']
+        # Session files only: the marker and the broker's journal of undelivered events are not handoffs.
+        return [p for p in directory.iterdir() if re.fullmatch(r'[0-9a-f-]{36}\.json', p.name)]
 
     def fixture_counts():
         return json.loads(subprocess.check_output(['docker', 'exec', 'vault-test-fixture', 'python3', '-c', "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/counts').read().decode())"]))
@@ -142,10 +143,12 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
             # Only the connector's storage_keys: "nav" and "late", not "draft". "late" proves that the page's
             # request after the confirmed login was attempted before the state was read (and was dropped: the
             # counts below).
-            assert [o['origin'] for o in state['origins']] == ['http://fixture:8000'], state['origins']
-            assert sorted((i['name'], i['value']) for i in state['origins'][0]['localStorage']) == [('late', 'attempted'), ('nav', 'collapsed')], state['origins']
+            # Fixed messages: the state's values never reach the output.
+            assert [o['origin'] for o in state['origins']] == ['http://fixture:8000'], 'exported origins differ'
+            assert sorted((i['name'], i['value']) for i in state['origins'][0]['localStorage']) == [('late', 'attempted'), ('nav', 'collapsed')], \
+                'exported localStorage differs (or the request after the confirmed login was never attempted)'
         else:
-            assert state['origins'] == []
+            assert state['origins'] == [], 'localStorage exported without storage_keys'
         # One live handoff per entry.
         call('/api/v1/execute', {'entry_id': entry, 'action': 'fixture.shop-ttl', 'request_id': secrets.token_hex(16)}, executor, 429)
         released = call('/api/v1/operations/'+op['id']+'/release', {}, executor)
@@ -270,7 +273,7 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert [c['name'] for c in state['cookies']] == ['PrestaShop-synthetic'], [c['name'] for c in state['cookies']]
     call('/api/v1/operations/'+op['id']+'/release', {}, executor)
     assert gone(op['id'])
-    print('PASS: a cookie a page script wrote (the password) is never exported; only the HttpOnly session')
+    print('PASS: a cookie a page script wrote is never exported; only the HttpOnly session')
 
     human.request('/workspaces/'+workspace+'/audit?group=request')
     assert 'handoff.written' in human.last and 'handoff.removed' in human.last

@@ -36,7 +36,8 @@ PASSWORD='synthetic-password-handoff'
 SESSION='synthetic-session-handoff'
 STORAGE={'kind':'storage_state','url':'https://shop.invalid/login','origins':['https://static.shop.invalid'],
     'username_selector':'#u','password_selector':'#p','submit_selector':'#s','success_selector':'#ok','success_text':'ok',
-    'entry_types':['prestashop_customer'],'ttl_seconds':900,'storage_keys':['nav']}
+    'entry_types':['prestashop_customer'],'ttl_seconds':900,'storage_keys':['nav'],
+    'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login','credential_fields':['password']}]}
 
 
 def state(extra_local=None,cookie_value=SESSION,extra_cookies=()):
@@ -444,7 +445,10 @@ class EntryValueTests(unittest.TestCase):
 
 
 class FakeResponse:
-    def __init__(self,status=200,headers=None,body=b'x'):self.status,self.headers,self._body=status,headers or {},body
+    def __init__(self,status=200,headers=None,body=b'x',cookies=()):
+        self.status,self.headers,self._body=status,headers or {},body
+        # As Playwright's APIResponse: every header line, Set-Cookie ones separately.
+        self.headers_array=[{'name':k,'value':v} for k,v in self.headers.items()]+[{'name':'Set-Cookie','value':c} for c in cookies]
     async def body(self):return self._body
     async def dispose(self):pass
 
@@ -457,16 +461,18 @@ class FakeRoute:
 
 
 class FakeRequest:
-    def __init__(self,url,method='GET',kind='document',navigation=False,frame='main',headers=None):
+    def __init__(self,url,method='GET',kind='document',navigation=False,frame='main',headers=None,body=None):
         self.url,self.method,self.resource_type,self._navigation,self.frame=url,method,kind,navigation,frame
+        self.post_data_buffer=body
         self.headers=headers or {'referer':'https://shop.invalid/admin123/index.php?controller=AdminDashboard&token=0123456789abcdef0123456789abcdef',
                                  'cookie':'PrestaShop-1=session','authorization':'Basic eA==','origin':'https://shop.invalid'}
     def is_navigation_request(self):return self._navigation
+    async def all_headers(self):return dict(self.headers)
 
 
 class RouterTests(unittest.IsolatedAsyncioTestCase):
     action={'kind':'storage_state','url':'https://shop.invalid/login','origins':['https://static.shop.invalid'],
-            'static_paths':['/themes/','/img/'],'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login'}],
+            'static_paths':['/themes/','/img/'],'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login','credential_fields':['password']}],
             'ignore_requests':[{'method':'POST','url':'https://shop.invalid/admin123/index.php/common/notifications'}]}
 
     async def asyncSetUp(self):
@@ -614,7 +620,7 @@ class ConfirmedLoginTests(unittest.IsolatedAsyncioTestCase):
     """Review round 4: once the login is confirmed nothing new leaves, also a request that was waiting for the
     application at that moment; what was already sent finishes before the state is read."""
     action={'kind':'storage_state','url':'https://shop.invalid/login','origins':[],
-            'static_paths':['/img/'],'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login'}],
+            'static_paths':['/img/'],'allowed_requests':[{'method':'POST','url':'https://shop.invalid/login','credential_fields':['password']}],
             'ignore_requests':[{'method':'GET','url':'https://shop.invalid/img/pixel.png'}]}
 
     async def asyncSetUp(self):
@@ -663,7 +669,9 @@ class ConfirmedLoginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_ignored_path_under_static_paths_is_never_fetched(self):
         self.gate.set()
-        route=FakeRoute(FakeRequest('https://shop.invalid/img/pixel.png?id=1',kind='image'))
+        # No query: the static rule alone would fetch this file, so only the order (ignore first) drops it.
+        self.assertTrue(server.static_allowed(self.action,'https://shop.invalid/img/pixel.png','GET','image',False))
+        route=FakeRoute(FakeRequest('https://shop.invalid/img/pixel.png',kind='image'))
         await self.router.route(route)
         self.assertEqual('abort',route.outcome);self.assertEqual([],self.fetched);self.assertFalse(self.asked.is_set())
         self.assertNotIn('policy_denied',self.op)
@@ -678,7 +686,7 @@ class FakeLocator:
     async def click(self):pass
     async def wait_for(self):pass
     async def inner_text(self):
-        await self.page.on_success();return 'ok'
+        await self.page.on_success();return getattr(self.page,'text','ok')
 
 
 class FakePage:
@@ -699,7 +707,8 @@ class FakePlaywright:
     async def new_context(self,**_):return self
     async def route(self,pattern,handler):self.test.handler=handler
     async def route_web_socket(self,*_):pass
-    async def new_page(self):return FakePage(self.test.on_success)
+    async def new_page(self):
+        page=FakePage(self.test.on_success);page.text=getattr(self.test,'text','ok');return page
     def on(self,*_):pass
     async def storage_state(self):
         self.test.log.append('storage_state' if not self.test.upstream.is_set() or 'fetch-end' in self.test.log else 'storage_state-early')
@@ -745,7 +754,7 @@ class BrowserActionOrderTests(unittest.IsolatedAsyncioTestCase):
 
 class PolicyGuardTests(RouterTests):
     """Review round 4: every guard of the ignore rule, the frame check and the order of checks has a test."""
-    action=dict(RouterTests.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login'},
+    action=dict(RouterTests.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login','credential_fields':['password']},
                                                     {'method':'GET','url':'https://shop.invalid/admin123/index.php?controller=Dash'}],
                 ignore_requests=[{'method':'POST','url':'https://shop.invalid/admin123/index.php/common/notifications'},
                                  {'method':'GET','url':'https://shop.invalid/admin123/index.php'}])
@@ -942,3 +951,231 @@ class LeakRoundFourTests(unittest.TestCase):
         for value in ('abc','123','7788','k9q2x'):
             refused=sum(server.leak.carries([c],[value]) for c in cookies)
             self.assertEqual(0,refused,value)
+
+
+PARTITIONED='PS=s; Path=/; HttpOnly; Secure; SameSite=None; Partitioned'
+
+
+class RoundFiveRouterTests(RouterTests):
+    """Review round 5: the original Set-Cookie of every fetched answer, the headers and body of every request, a
+    static file admitted only right before its fetch, and the guards that survived mutation."""
+    async def test_a_partitioned_session_cookie_in_a_fetched_answer_fails_the_handoff(self):
+        for response in (FakeResponse(200,cookies=[PARTITIONED]),FakeResponse(303,{'location':'/login'},cookies=['a=1; Path=/',PARTITIONED.lower()]),
+                         FakeResponse(200,cookies=['PS=s; Domain=.shop.invalid; HttpOnly; Partitioned'])):
+            self.op.clear();self.op['id']=str(uuid.uuid4())
+            route=await self.go(FakeRequest('https://shop.invalid/login','POST',navigation=True),response)
+            self.assertEqual('abort',route.outcome);self.assertTrue(self.op['policy_denied']);self.assertEqual('state',self.op['failure'])
+        # Not exported (script-readable, or for another host): no matter.
+        for cookie in ('PS=s; Path=/; Secure; Partitioned','PS=s; Domain=elsewhere.invalid; HttpOnly; Partitioned'):
+            self.op.clear();self.op['id']=str(uuid.uuid4())
+            route=await self.go(FakeRequest('https://shop.invalid/login','POST',navigation=True),FakeResponse(200,cookies=[cookie]))
+            self.assertEqual('fulfill',route.outcome,cookie);self.assertNotIn('policy_denied',self.op)
+        # A plain login (kind browser) exports nothing: its cookies are not checked.
+        router=server.Router(self.op,dict(self.action,kind='browser'),[PASSWORD],None,lambda:'main')
+        route=FakeRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True),FakeResponse(200,cookies=[PARTITIONED]))
+        await router.route(route);self.assertEqual('fulfill',route.outcome)
+
+    async def test_an_answer_that_arrives_after_the_confirmation_still_fails_the_handoff(self):
+        log=[];upstream=asyncio.Event()
+        route=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True),log,upstream,FakeResponse(200,cookies=[PARTITIONED]))
+        handler=asyncio.create_task(self.router.route(route))
+        while 'fetch-start' not in log:await asyncio.sleep(0)
+        closing=asyncio.create_task(self.router.close(2));await asyncio.sleep(0.01)
+        upstream.set();await closing;await handler
+        self.assertTrue(self.op['policy_denied']);self.assertEqual('state',self.op['failure'])
+
+    async def test_only_the_login_requests_credential_fields_may_carry_the_password(self):
+        form={'content-type':'application/x-www-form-urlencoded'}
+        ok=FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(form),body=('email=u&password='+PASSWORD).encode())
+        self.assertEqual('fulfill',(await self.go(ok)).outcome);self.assertNotIn('policy_denied',self.op)
+        import base64,json
+        for request in (FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(form),body=('email='+PASSWORD+'&password=x').encode()),
+                        FakeRequest('https://shop.invalid/login','POST',navigation=True,headers={'content-type':'application/json'},body=json.dumps({'password':PASSWORD}).encode()),
+                        FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(form,cookie='p='+base64.b64encode(PASSWORD.encode()).decode()),body=b'password=x'),
+                        FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(form,**{'x-p':PASSWORD[::-1]}),body=b'password=x'),
+                        FakeRequest('https://shop.invalid/login','POST',navigation=True,headers=dict(form),body=b'password=x&'+b'a'*server.MAX_BODY),
+                        # Looks like a form, but is not one: only a urlencoded form's credential field is skipped.
+                        FakeRequest('https://shop.invalid/login','POST',navigation=True,headers={'content-type':'text/plain'},body=('password='+PASSWORD).encode())):
+            self.op.clear();self.op['id']=str(uuid.uuid4());self.calls.clear()
+            route=await self.go(request)
+            self.assertEqual('abort',route.outcome);self.assertEqual('leak',self.op['failure']);self.assertEqual([],self.calls)
+
+    async def test_another_allowed_request_never_carries_a_value_in_its_body_or_headers(self):
+        action=dict(self.action,allowed_requests=[*self.action['allowed_requests'],{'method':'POST','url':'https://static.shop.invalid/collect'}])
+        router=server.Router(self.op,action,[PASSWORD],None,lambda:'main')
+        for request in (FakeRequest('https://static.shop.invalid/collect','POST',headers={'content-type':'application/x-www-form-urlencoded'},body=('password='+PASSWORD).encode()),
+                        FakeRequest('https://static.shop.invalid/collect','POST',headers={'authorization':'Bearer '+PASSWORD})):
+            self.op.clear();self.op['id']=str(uuid.uuid4())
+            route=FakeRoute(request);await router.route(route)
+            self.assertEqual('abort',route.outcome);self.assertEqual('leak',self.op['failure'])
+        route=FakeRoute(FakeRequest('https://static.shop.invalid/collect','POST',body=b'type=order'));self.op.clear();self.op['id']=str(uuid.uuid4())
+        await router.route(route);self.assertEqual('fulfill',route.outcome)
+
+    async def test_the_login_rule_is_recognised_even_after_a_broader_rule(self):
+        # Another rule that also matches the login POST (a variable query) comes first: the credential rule still decides.
+        action=dict(self.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login?x=1','variable_query':{'x':'digits'}},
+                                                  {'method':'POST','url':'https://shop.invalid/login?x=1','credential_fields':['password']}])
+        router=server.Router(self.op,action,[PASSWORD],None,lambda:'main')
+        route=FakeRoute(FakeRequest('https://shop.invalid/login?x=1','POST',navigation=True,headers={'content-type':'application/x-www-form-urlencoded'},body=('password='+PASSWORD).encode()))
+        await router.route(route);self.assertEqual('fulfill',route.outcome);self.assertNotIn('policy_denied',self.op)
+
+    def test_a_login_names_exactly_one_post_with_its_credential_fields(self):
+        server.check_connector(self.action)
+        login={'method':'POST','url':'https://shop.invalid/login'}
+        for rules in ([login],[dict(login,credential_fields=[])],[dict(login,credential_fields=['a b'])],[dict(login,method='GET',credential_fields=['p'])],
+                      [dict(login,credential_fields=['p']),dict(login,url='https://shop.invalid/x',credential_fields=['q'])],[dict(login,credential_fields='password')]):
+            with self.assertRaises(ValueError,msg=rules):server.check_connector(dict(self.action,allowed_requests=rules))
+
+    async def test_a_static_file_confirmed_while_its_context_is_made_never_leaves(self):
+        gate=asyncio.Event();made=asyncio.Event();disposed=[]
+        test=self
+        class Context:
+            async def fetch(self,url,**_):test.fetched.append(url);return FakeResponse()
+            async def dispose(self):disposed.append(1)
+        async def slow_context():
+            made.set();await gate.wait();return Context()
+        router=server.Router(self.op,self.action,[PASSWORD],slow_context,lambda:'main')
+        route=FakeRoute(FakeRequest('https://static.shop.invalid/themes/a.css',kind='stylesheet'))
+        handler=asyncio.create_task(router.route(route))
+        await made.wait();self.op['done']=True;gate.set();await handler
+        self.assertEqual('abort',route.outcome);self.assertEqual([],self.fetched);self.assertEqual([1],disposed);self.assertEqual(0,router.sending)
+
+    async def test_an_overlong_url_fails_even_where_it_would_be_dropped(self):
+        url='https://shop.invalid/other/a.png?'+'a'*server.MAX_URL
+        self.assertFalse(server.leak.carries([url],[PASSWORD]))
+        route=await self.go(FakeRequest(url,kind='image'))
+        self.assertEqual('abort',route.outcome);self.assertTrue(self.op['policy_denied'])
+
+    async def test_a_static_get_outside_the_static_paths_is_dropped_silently(self):
+        route=await self.go(FakeRequest('https://shop.invalid/other/a.png',kind='image'))
+        self.assertEqual('abort',route.outcome);self.assertNotIn('policy_denied',self.op);self.assertEqual([],self.calls+self.fetched)
+
+    async def test_the_first_violation_ends_the_login_and_keeps_its_reason(self):
+        task=asyncio.create_task(asyncio.sleep(10));self.op['task']=task
+        self.router.violation(code='leak');self.router.violation(code='policy')
+        await asyncio.gather(task,return_exceptions=True)
+        self.assertTrue(task.cancelled());self.assertEqual('leak',self.op['failure'])
+
+
+class RoundFiveLoginTests(unittest.IsolatedAsyncioTestCase):
+    """browser_action and perform with a Playwright stand-in: from an HTTP answer to the operation's result."""
+    action=dict(ConfirmedLoginTests.action,kind='storage_state',username_selector='#u',password_selector='#p',submit_selector='#s',
+                success_selector='#ok',success_text='ok',entry_types=['login'])
+
+    async def asyncSetUp(self):
+        self.log=[];self.upstream=asyncio.Event();self.upstream.set()
+        self.patches=[patch.object(server,'async_playwright',lambda:FakePlaywright(self)),patch.object(server,'authorized',AsyncMock(return_value=True))]
+        for p in self.patches:p.start()
+    async def asyncTearDown(self):
+        for p in self.patches:p.stop()
+
+    async def test_a_partitioned_cookie_from_the_login_answer_writes_nothing(self):
+        async def on_success():
+            await self.handler(FakeRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True,headers={'content-type':'application/x-www-form-urlencoded'},
+                                                     body=b'password=x'),FakeResponse(200,cookies=[PARTITIONED])))
+        self.on_success=on_success
+        op={'id':str(uuid.uuid4())};captured={}
+        # The context's cookie, as Playwright's request client stored it: without its partition.
+        self.assertTrue(await server.browser_action(op,self.action,{'username':'u','password':PASSWORD},captured))
+        self.assertTrue(op['policy_denied']);self.assertEqual('state',op['failure'])
+        with patch.object(server,'secret',AsyncMock(return_value={'username':'u','password':PASSWORD})),patch.dict(server.cleanup,done=True):
+            op={'id':str(uuid.uuid4())}
+            self.assertEqual('failed',await server.perform(op,self.action));self.assertEqual('state',op['failure'])
+
+    async def test_a_request_that_never_ends_fails_the_login_at_the_drain_bound(self):
+        self.upstream.clear()
+        async def on_success():
+            route=GatedRoute(FakeRequest('https://shop.invalid/login','POST',navigation=True,headers={'content-type':'application/x-www-form-urlencoded'},body=b'password=x'),self.log,self.upstream)
+            asyncio.ensure_future(self.handler(route))
+            while 'fetch-start' not in self.log:await asyncio.sleep(0)
+        self.on_success=on_success
+        with patch.object(server,'DRAIN_SECONDS',0.1):
+            with self.assertRaises(server.Failure) as failed:await server.browser_action({'id':str(uuid.uuid4())},self.action,{'username':'u','password':PASSWORD},{})
+        self.assertEqual('login',failed.exception.code);self.assertNotIn('storage_state',self.log)
+        self.upstream.set()
+
+    async def test_a_wrong_success_text_is_a_login_failure(self):
+        async def on_success():pass
+        self.on_success=on_success;self.text='Sign in'
+        op={'id':str(uuid.uuid4())}
+        self.assertFalse(await server.browser_action(op,self.action,{'username':'u','password':PASSWORD},{}))
+        self.assertEqual('login',op['failure']);self.assertNotIn('storage_state',self.log)
+
+
+class RoundFiveStateTests(StorageStateBase):
+    def test_a_cross_site_ancestor_cookie_without_a_partition_key_is_refused(self):
+        cookie={'name':'chips','value':'s','domain':'shop.invalid','path':'/','httpOnly':True,'_crHasCrossSiteAncestor':True}
+        with self.assertRaises(server.Failure) as refused:server.storage_content(self.action,state(extra_cookies=[cookie]),[PASSWORD])
+        self.assertEqual('state',refused.exception.code)
+
+    async def test_a_file_whose_removal_fails_is_made_unreadable_at_once(self):
+        import os,stat
+        oid=await self.start();await self.ready(oid)
+        self.assertEqual(0o640,stat.S_IMODE(os.lstat(self.file(oid)).st_mode))
+        real=os.unlink
+        def unlink(name,*a,**k):
+            if str(name).endswith('.json'):raise PermissionError()
+            return real(name,*a,**k)
+        with patch.object(server.handoff.os,'unlink',unlink):
+            self.assertFalse((await server.release(uuid.UUID(oid)))['removed'])
+        self.assertEqual(0,stat.S_IMODE(os.lstat(self.file(oid)).st_mode));self.assertIn(oid,server.unfinished)
+
+    def test_a_published_file_whose_removal_fails_is_made_unreadable(self):
+        import os,stat
+        oid=str(uuid.uuid4());pending=server.handoff.create(oid,b'{}')
+        real=os.unlink
+        def unlink(name,*a,**k):
+            if str(name).endswith('.json'):raise PermissionError()
+            return real(name,*a,**k)
+        # The fsync after the fchmod to 0640 fails, and so does the unlink.
+        with patch.object(server.handoff.os,'fsync',side_effect=OSError()),patch.object(server.handoff.os,'unlink',unlink):
+            with self.assertRaises(server.handoff.HandoffError):pending.publish()
+        self.assertEqual(0,stat.S_IMODE(os.lstat(self.file(oid)).st_mode))
+
+    def test_publish_refuses_a_file_whose_mode_did_not_change(self):
+        oid=str(uuid.uuid4())
+        pending=server.handoff.create(oid,b'{}')
+        with patch.object(server.handoff.os,'fchmod',lambda fd,mode:None):
+            with self.assertRaises(server.handoff.HandoffError):pending.publish()
+        self.assertFalse(self.file(oid).exists())
+
+    def test_failure_codes_are_a_fixed_list(self):
+        self.assertEqual('error',server.Failure('https://shop.invalid/?p='+PASSWORD).code)
+        self.assertEqual('leak',server.Failure('leak').code)
+        op={'id':str(uuid.uuid4()),'reason':'error','failure':'not-a-code'}
+        self.assertEqual({'event':'removed','reason':'error'},server.removal_event(op))
+        op['failure']='leak';self.assertEqual({'event':'removed','reason':'error','failure':'leak'},server.removal_event(op))
+        # The journal keeps a known code only.
+        server.enqueue({'id':str(uuid.uuid4()),'announced':True,'state':'failed','reason':'error','failure':'not-a-code'})
+        import json
+        self.assertEqual([{'reason','since'}],[set(e) for e in json.loads((self.dir/server.handoff.JOURNAL).read_text()).values()])
+
+    def test_the_journal_keeps_only_valid_entries(self):
+        import json,time
+        good,other=str(uuid.uuid4()),str(uuid.uuid4())
+        (self.dir/server.handoff.JOURNAL).write_text(json.dumps({good:{'reason':'ttl','since':time.time(),'failure':'leak'},
+            'not-a-uuid':{'reason':'ttl','since':1},other.upper():{'reason':'ttl','since':1},str(uuid.uuid4()):{'reason':'bogus','since':1},
+            str(uuid.uuid4()):{'reason':'ttl'},str(uuid.uuid4()):'ttl'}))
+        self.assertEqual([good],list(server.handoff.load_journal()))
+        server.restore_journal()
+        self.assertEqual([good],list(server.undelivered));self.assertEqual(('ttl','leak'),(server.undelivered[good]['reason'],server.undelivered[good]['failure']))
+        (self.dir/server.handoff.JOURNAL).write_text('{not json')
+        self.assertEqual({},server.handoff.load_journal())
+
+    async def test_an_event_unconfirmed_for_a_day_is_given_up_and_said(self):
+        import contextlib,io
+        self.notify_ok=False
+        old={'id':str(uuid.uuid4()),'announced':True,'state':'failed','reason':'restart','delivery_since':__import__('time').monotonic()-server.DELIVERY_GIVE_UP-1}
+        server.enqueue(old);err=io.StringIO()
+        with contextlib.redirect_stderr(err):await server.deliver_once()
+        self.assertNotIn(old['id'],server.undelivered);self.assertIn('for a day',err.getvalue())
+
+
+class ApiKeyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_every_broker_call_needs_the_key(self):
+        import httpx
+        with patch.object(server,'key',lambda:'synthetic-broker-key'):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server.app),base_url='http://broker') as client:
+                for headers in ({},{'Authorization':'Bearer wrong'},{'Authorization':'synthetic-broker-key'}):
+                    self.assertEqual(401,(await client.get('/operations/'+str(uuid.uuid4()),headers=headers)).status_code,headers)
+                self.assertEqual(200,(await client.get('/operations/'+str(uuid.uuid4()),headers={'Authorization':'Bearer synthetic-broker-key'})).status_code)

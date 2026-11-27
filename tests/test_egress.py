@@ -35,3 +35,18 @@ class EgressTests(unittest.IsolatedAsyncioTestCase):
     async def test_internal_destination_needs_explicit_cidr(self):
         connect,_=await self.attempt('fixture:443',['10.1.2.3'],{('fixture',443):[ipaddress.ip_network('10.1.2.3/32')]})
         connect.assert_awaited_once_with('10.1.2.3',443)
+
+
+class DestinationTests(unittest.TestCase):
+    def destinations(self,actions):
+        import json
+        from unittest.mock import mock_open
+        with patch.object(egress,'open',mock_open(read_data=json.dumps({'actions':actions})),create=True):
+            return egress.destinations()
+    def test_two_connectors_of_one_address_must_agree_on_its_network_permission(self):
+        a={'url':'https://shop.invalid/login','allow_cidrs':['10.0.0.5/32']}
+        self.assertEqual({('shop.invalid',443):[ipaddress.ip_network('10.0.0.5/32')]},self.destinations({'a':a,'b':dict(a,url='https://shop.invalid/other')}))
+        for other in ({'url':'https://shop.invalid/x'},{'url':'https://shop.invalid/x','allow_cidrs':['10.0.0.0/8']}):
+            with self.assertRaises(ValueError):self.destinations({'a':a,'b':other})
+        # Another port is another address.
+        self.assertEqual(2,len(self.destinations({'a':a,'b':{'url':'https://shop.invalid:8443/x'}})))

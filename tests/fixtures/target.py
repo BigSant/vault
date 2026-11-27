@@ -4,7 +4,10 @@ from urllib.parse import parse_qs, urlsplit
 import json
 import secrets
 from collections import Counter
+import threading
 COUNTS=Counter()
+# Set when slow.js reaches this server; gate.js waits for it (the admin dashboard, tests/integration.py).
+SLOW_ARRIVED=threading.Event()
 SHOP_COOKIE='PrestaShop-synthetic=synthetic-session-shop; Path=/; HttpOnly; SameSite=Lax'
 ADMIN_COOKIE='PrestaShop-admin=synthetic-session-admin; Path=/; HttpOnly; SameSite=Lax'
 # A theme as PrestaShop serves it: files under /themes/, /js/, /img/ with a ?v= version, one image that redirects,
@@ -56,7 +59,12 @@ class Target(BaseHTTPRequestHandler):
         if path=='/ps/js/slow.js':
             # Still on its way when the login is confirmed: the broker waits for it before it reads the state.
             import time
-            time.sleep(2);return self.static('text/javascript',b'window.slow=1;')
+            SLOW_ARRIVED.set();time.sleep(4);return self.static('text/javascript',b'window.slow=1;')
+        if path=='/ps/js/gate.js':
+            # Answered only once slow.js has reached this server (so the broker has sent it): only then does the page
+            # show the account state, however slow the machine.
+            arrived=SLOW_ARRIVED.wait(20);SLOW_ARRIVED.clear()
+            return self.static('text/javascript',b'window.reveal&&window.reveal();' if arrived else b'')
         if path=='/ps/module/blockwishlist/action':COUNTS['wishlist-left']+=1
         if path=='/ps/en/login':
             # PrestaShop 8's wishlist module fetches on every page, before the login too.
@@ -69,9 +77,10 @@ class Target(BaseHTTPRequestHandler):
             return self.respond(200,'<form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
                 '<button id="submit-login" onclick="localStorage.setItem(\'p\',btoa(document.querySelector(\'#field-password\').value))">Sign in</button></form>')
         if path=='/ps/en/leak-cookie':
-            # A page script copies the password into a (script-readable) cookie: never exported.
+            # A page script writes a (script-readable) cookie: never exported. (One that carries the password fails the
+            # login request itself: tests/test_broker.py, content_carries.)
             return self.respond(200,'<html><head>'+STATIC+'</head><body><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
-                '<button id="submit-login" onclick="document.cookie=\'p=\'+btoa(document.querySelector(\'#field-password\').value)+\'; path=/\'">Sign in</button></form></body></html>')
+                '<button id="submit-login" onclick="document.cookie=\'p=script-value; path=/\'">Sign in</button></form></body></html>')
         if path=='/ps/en/leak-path':
             # A page script puts the password into a static path on the registered origin: denied before it leaves.
             return self.respond(200,'<form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email"><input name="password" id="field-password">'
@@ -90,17 +99,18 @@ class Target(BaseHTTPRequestHandler):
                 # Logged in: the theme loads again (now with a session in the jar) and the page keeps UI state.
                 # As PrestaShop 8's dashboard: XHRs on document-ready (notifications with a Symfony CSRF token, a
                 # widget) and a request after the login is confirmed. None of them is listed; none may fail the login.
-                # The order is fixed: a slow static file is on its way (2 s) when the account state appears (300 ms);
-                # the broker confirms the login and waits for that file; meanwhile (800 ms) the page marks
-                # localStorage "late" and sends an unlisted POST, which must be dropped, not sent and not a failure.
-                # The exported state carries "late" only if that attempt was made before the state was read.
+                # The order is fixed: slow.js is on its way (4 s at the server) when the account state appears, which
+                # happens only after gate.js, answered once slow.js has arrived; the broker confirms the login and
+                # waits for slow.js; meanwhile (500 ms after the state appeared) the page marks localStorage "late"
+                # and sends an unlisted POST, which must be dropped, not sent and not a failure. The exported state
+                # carries "late" only if that attempt was made before the state was read.
                 state='connected' if 'synthetic-session-admin' in cookie else 'guest'
                 return self.respond(200,STATIC+'<div id="slot"></div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x");'
                     'document.addEventListener("DOMContentLoaded",()=>{const x=new XMLHttpRequest();x.open("POST","/ps/admin/index.php/common/notifications?_token=BYOThSjgJf8LRsc3hJpVmYwYWBfWm5hEUoWRhBXw56Q&rand="+Date.now());x.send("type=order");'
                     'fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=refreshDashboard&module=dashactivity");'
-                    'const s=document.createElement("script");s.src="/ps/js/slow.js";document.head.append(s);'
-                    'setTimeout(()=>{document.querySelector("#slot").innerHTML=\'<div id="account-state">'+state+'</div>\'},300);'
-                    'setTimeout(()=>{localStorage.setItem("late","attempted");fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=late",{method:"POST"})},800)})</script>')
+                    'window.reveal=()=>{document.querySelector("#slot").innerHTML=\'<div id="account-state">'+state+'</div>\';'
+                    'setTimeout(()=>{localStorage.setItem("late","attempted");fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=late",{method:"POST"})},500)};'
+                    'for(const f of ["slow","gate"]){const s=document.createElement("script");s.src="/ps/js/"+f+".js";document.head.append(s)}})</script>')
         return self.respond(404,'not found')
 
     def shop_post(self, data):

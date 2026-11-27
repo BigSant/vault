@@ -25,7 +25,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -52,7 +55,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -73,7 +79,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -94,7 +103,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -115,7 +127,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -136,7 +151,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -157,7 +175,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -179,7 +200,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -208,7 +232,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -237,7 +264,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/login"
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "POST",
@@ -257,7 +287,15 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
     },
     "fixture.browser-srcdoc": {
       "kind": "browser",
@@ -267,7 +305,15 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
     },
     "fixture.browser-popup-blank": {
       "kind": "browser",
@@ -277,7 +323,15 @@
       "submit_selector": "#login",
       "success_selector": "#account-state",
       "success_text": "connected",
-      "allowed_requests": []
+      "allowed_requests": [
+        {
+          "method": "POST",
+          "url": "http://fixture:8000/login",
+          "credential_fields": [
+            "password"
+          ]
+        }
+      ]
     },
     "fixture.shop-session": {
       "kind": "storage_state",
@@ -290,7 +344,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -327,7 +384,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -364,7 +424,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -393,7 +456,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -433,7 +499,10 @@
           "url": "http://fixture:8000/ps/admin/index.php",
           "variable_query": {
             "rand": "digits:13"
-          }
+          },
+          "credential_fields": [
+            "passwd"
+          ]
         },
         {
           "method": "GET",
@@ -481,7 +550,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -518,7 +590,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login?back=my-account"
+          "url": "http://fixture:8000/ps/en/login?back=my-account",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",
@@ -555,7 +630,10 @@
       "allowed_requests": [
         {
           "method": "POST",
-          "url": "http://fixture:8000/ps/en/login-echo"
+          "url": "http://fixture:8000/ps/en/login-echo",
+          "credential_fields": [
+            "password"
+          ]
         },
         {
           "method": "GET",

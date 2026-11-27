@@ -107,7 +107,8 @@ class Pending:
         self._close()
 
     def discard(self):
-        """Removes the unpublished file. True when it is gone (or never was), False when unlink failed."""
+        """Removes the unpublished file. True when it is gone (or never was), False when unlink failed: it is then
+        made unreadable (mode 0) at once, also after a publish that had made it 0640."""
         try:
             try:
                 os.unlink(self._name, dir_fd=self._fd)
@@ -115,6 +116,10 @@ class Pending:
                 pass
             return True
         except OSError:
+            try:
+                os.fchmod(self._out, 0)
+            except (OSError, TypeError):
+                pass
             return False
         finally:
             self._close()
@@ -180,6 +185,11 @@ def remove(oid, path=None):
         except FileNotFoundError:
             return True
         except OSError:
+            # Kept for the next attempt, but nobody may read it meanwhile.
+            try:
+                os.chmod(name, 0, dir_fd=fd)
+            except OSError:
+                pass
             raise HandoffError() from None
         try:
             os.fsync(fd)
