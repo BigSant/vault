@@ -176,8 +176,11 @@ carries a value, or is longer than 8192 characters, is denied and the operation 
 broker sends with the page's own headers and body (a listed request): its headers (names and values, the `Cookie`
 header too) and its body (at most 64 KiB, else denied) must carry no value, except the login request's
 `credential_fields` in a urlencoded form body; anything else in that body (another field, a JSON or multipart body)
-is checked like any other. A static file is sent with the broker's own headers and no body. This is a best-effort
-check, not a guarantee.
+is checked like any other. A static file is sent with the broker's own headers and no body. Exactly the headers and
+body that were checked are sent (with an explicit `Cookie` header, empty when the browser sent none, so cookies the
+browser's store gained meanwhile are never added). The URL and the headers/body are checked apart: a value split
+between a query parameter and a header (or the body) is not joined and not recognised. This is a best-effort check,
+not a guarantee.
 
 **Which values are looked for**: every stored field of the entry except the username and the entry type's *Text*
 fields: the password (it is typed into the page), every *Secret (masked)* and *Multi-line text* field (Setup › Entry
@@ -200,8 +203,9 @@ not name the fields makes the broker check every field but the username.)
   or `/7788/`, not `a17788b`), so that a short value is not found by chance inside a long hex or base64 session
   token (measured on 300 random 1 200-character hex session cookies: a random 3-letter value refused 1, 3 digits or
   4–5 characters none; a whole-word match in decoded bytes stays possible). A short value that is an ordinary word of
-  the site (`login`, `index`, `https`) is still found wherever the site uses that word and refuses every such login
-  (`failed`, reason `leak`): keep such a value out of secret fields;
+  the site (`login`, `index`, `https`) or of the browser's own request headers (`1`, `cors`, `navigate`, `document`,
+  `no-cache`, `same-origin`, which every login request carries) is still found wherever it occurs and refuses every
+  such login (`failed`, reason `leak`): keep such a value out of secret fields;
 - a value of 6 characters or more contained in one of those, or its reversal contained in one;
 - a value of 8 characters or more cut once into two parts of at least 4, where one text (or one of its tokens split at
   whitespace and `& ; : , | = ? # / . " '`) ends with the first part and another begins with the second.
@@ -276,7 +280,9 @@ allowed (runs are unattended; a connector with it cannot be granted).
   it the executor's browser would send it as an ordinary cookie. It is looked for in the original `Set-Cookie`
   headers of every answer the broker fetches (each redirect hop, and an answer that arrives after the login was
   confirmed), not only in the browser's cookies: Playwright's request client stores such a cookie in the context
-  without its partition, so the exported state alone could not show it;
+  without its partition, so the exported state alone could not show it. For the same reason a fetch that fails
+  half-way (its headers, and so its cookies, may already be stored) fails the handoff (`state`), also after the
+  confirmation, and a handoff refused that late never reads the state at all;
 - localStorage: **none** by default; a connector names the keys it needs in `"storage_keys"` (registered origins
   only);
 - sessionStorage, IndexedDB and everything of other origins: never.
@@ -336,7 +342,8 @@ operation and never writes a second file. The process needs only search access t
 
 **Why a run failed.** The answer says only `failed`; the activity log (`operation.failure`) records one coarse reason,
 never a value, URL or selector: `policy` (a request, frame, popup, download or WebSocket the connector does not
-allow), `leak` (a request URL or the session state carried an entry value, or could not be checked completely),
+allow), `leak` (a request's URL, headers or body, or the session state, carried an entry value, or could not be
+checked completely),
 `unauthorized` (the application withdrew the operation during the login), `login` (a selector, a page timeout, the
 success text), `state` (a partitioned or duplicate cookie, an empty or too large state), `connector` (the connector
 is not valid for its kind), `handoff` (the file could not be written, recorded or removed), `restart` (the broker

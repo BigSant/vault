@@ -56,7 +56,8 @@ regular file it owns), gives others nothing and the group at most search (2710 o
 0640 only after the application recorded it. It is removed at release, at the TTL, within about 1–2 s (at most about 11 s) of a
 revocation (or when the application does not answer), when the broker stops, and at broker start. Removal needs only
 the directory (no symlink in its place), so a file is removed even if the directory's mode or group was changed
-during a lease; a file whose removal fails is made unreadable (mode 0) at once, retried every second and recorded
+during a lease; a file whose removal fails (also in the cleanup at broker start) is made unreadable (mode 0) at once,
+retried every second and recorded
 (`handoff.removed`) only once it is gone. At start the broker removes every `<uuid>.json` in the marked directory and nothing else; a wrongly
 configured path (no marker) loses no file. Until that startup cleanup has succeeded the broker refuses every handoff
 (503, the operation fails at once) and says so once on its stderr, without a path (`docker logs vault-<env>-broker`);
@@ -84,10 +85,15 @@ a stopped unit still starts PHP and the broker again; and should the process be 
 never lifting a maintenance someone else set, and only under the backup lock (`data/<env>/.backup.lock`). Restoring,
 in the backup's own `finally` and in `backup-resume` alike, is: `docker stop` PHP and the broker (it waits for a stop
 that a SIGTERM interrupted, and an `artisan down` still running in PHP ends with it), `docker start` both, `artisan up`,
-then a check that both containers run and maintenance is off; only after that check is the marker removed, so a
-failed or unverified restore leaves it for the next attempt. While another backup holds the lock, `backup-resume`
-does nothing, and that backup, finding the marker when it starts, does the same restore first (under its lock), then
-its own backup.
+then a check that both containers run and maintenance is off (both of Laravel's files: `storage/framework/down`
+and `maintenance.php`; a `maintenance.php` an interrupted `artisan up` left behind is removed, since a repeated `up`
+leaves it; a state that cannot be read counts as maintenance); only after that check is the marker removed, so a
+failed or unverified restore leaves it for the next attempt. A SIGTERM during the restore is held until it is done
+(then `bin/vault` exits 143). The unit's shell traps SIGTERM and waits for `bin/vault`, so `systemctl stop` lets the
+restore finish before systemd runs `ExecStopPost` (`TimeoutStopSec=10min`); `backup-resume` then waits up to 300 s for
+the backup lock. While another backup still holds it after that, `backup-resume` gives up, and that backup, finding
+the marker when it starts (after it checked that no operation is active), does the same restore first under its lock,
+then its own backup.
 Every unit fails when
 `VAULT_ENV` is missing instead of acting on `local`. They read `~/.config/vault/units.env`:
 
@@ -145,7 +151,7 @@ For a full restore, prepare containers with **an empty database and an uninitial
 VAULT_ENV=local bin/vault restore /private/path/backup.vault
 ```
 
-The command refuses to overwrite an existing DB schema or initialized OpenBao instance. It restores SQL, the snapshot and configuration, clears sessions and cache, revokes all machine tokens and grants, and marks every recorded handoff file as removed (the new host has none, so no entry stays reserved for one; a backup made before handoffs existed has no such column, and the step is skipped). Owner passwords and TOTP survive. Issue new identities and grants to agents. On failure, the target stays stopped to prevent use of a partial restore. Repair the empty target or start with a fresh one. There is no `--force` option to overwrite an existing Vault. `tests/restore_empty.py` exercises this procedure in disposable containers and a temporary DB.
+The command refuses to overwrite an existing DB schema or initialized OpenBao instance. It restores SQL, the snapshot and configuration, clears sessions and cache, revokes all machine tokens and grants, and marks every recorded handoff file as removed (the new host has none, so no entry stays reserved for one; a backup made before handoffs existed has no such column, and the step is skipped). A backup of an older version has an older schema: `restore` starts PHP alone, puts it in maintenance, applies **this checkout's** migrations, checks that the identities page's and `vault:links`' queries work, and only then starts the broker and lifts maintenance. So restore a backup with the code version you will run (or a newer one), never with an older one. Owner passwords and TOTP survive. Issue new identities and grants to agents. On failure, the target stays stopped to prevent use of a partial restore. Repair the empty target or start with a fresh one. There is no `--force` option to overwrite an existing Vault. `tests/restore_empty.py` exercises this procedure in disposable containers and a temporary DB.
 
 Every table in the DDE table registry uses `empty skip`. General dataset and SQL exports intentionally omit identities, the catalog and audit data. **Use only a full encrypted Vault backup to restore Vault.** A standalone SQL dump is insufficient. The schema snapshot in `app/database/schema/` (one `SHOW CREATE TABLE` per table, no rows) is regenerated from a migrated test database whenever a migration changes the schema; the Laravel migrations are what changes it. `DATABASE_MIGRATIONS=off` disables DDE migrations only.
 
@@ -166,6 +172,21 @@ If an owner loses access, a trusted operator can run `bin/vault recover-user own
 Archiving an entry in the web app revokes its grants. Restoring it from the archive leaves those grants revoked. Only an owner can permanently destroy an archived entry, after typing DELETE. Destruction removes all versions from the live backend. Existing backups follow their own retention policy. Metadata and audit history remain. Blank secret fields in the web edit form retain their current values, as do imported fields omitted from the form. Users can enter an SSH passphrase or explicitly select its removal. Restoring a historical version creates a new CAS version. External API keys and website passwords do not change automatically.
 
 ## Updates and incident response
+
+> **Before you replace the broker with this version, update `connectors.json`.** This broker refuses (operation
+> `failed`, reason `connector`, audited as `operation.failure`) every `browser` and `storage_state` connector that
+> does not name its login request, so an existing connector fails at its first run, unattended at night:
+>
+> 1. In every `browser` / `storage_state` connector, mark exactly one POST rule of `allowed_requests`, the login
+>    POST, with `"credential_fields"`: the names of the form fields that carry the password (PrestaShop's front
+>    office `["password"]`, its back office `["passwd"]`). No other request may then carry the password.
+> 2. Rename `"static_subresources": true` to `"static_paths": [...]` (docs/integrations.md), if a connector still has it.
+> 3. Give every connector that names the same `host:port` the same `allow_cidrs`; otherwise the destination proxy
+>    refuses every destination, also of unrelated `http` / `cli` connectors (it says so once on its stderr).
+> 4. Run `VAULT_ENV=<env> bin/vault prepare`: it names every connector that still needs one of these (by its key,
+>    never a URL) and stops. A grant for a login connector without its login request is refused in the web UI too.
+>
+> A restored backup of an older version brings its own older `connectors.json`: `restore` names what to update.
 
 Before updating, create and verify a backup. Install the locked Composer dependencies, rebuild the broker image, apply Laravel migrations and run health checks and tests. Recreate the broker container after changing the seccomp file contents. The Compose path alone stays the same. `broker/seccomp.json` uses the default Moby profile at commit `6fe7deb1b9fb7c0397a4593480d7d22b9ee8caef`, with clone/setns/unshare/chroot added for Chromium's user namespace sandbox. Keep the sandbox enabled.
 
