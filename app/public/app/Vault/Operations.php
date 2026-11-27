@@ -54,6 +54,24 @@ final class Operations
         return is_int($ttl) && $ttl >= 1 && $ttl <= 1800 ? $ttl : null;
     }
 
+    /**
+     * Whether a login connector names its login request as the broker requires (browser_policy.credential_config_valid):
+     * exactly one POST rule in allowed_requests with credential_fields, 1-8 plain form field names.
+     */
+    public static function namesLoginRequest(array $definition): bool
+    {
+        $rules = $definition['allowed_requests'] ?? [];
+        if (! is_array($rules)) {
+            return false;
+        }
+        $named = array_values(array_filter($rules, fn ($r) => is_array($r) && array_key_exists('credential_fields', $r)));
+        $fields = $named[0]['credential_fields'] ?? null;
+
+        return count($named) === 1 && ($named[0]['method'] ?? null) === 'POST' && is_array($fields) && array_is_list($fields)
+            && count($fields) >= 1 && count($fields) <= 8
+            && count(array_filter($fields, fn ($f) => is_string($f) && preg_match('/^[A-Za-z0-9_.\[\]-]{1,64}$/D', $f))) === count($fields);
+    }
+
     /** Whether a handoff connector accepts this entry type (its `entry_types` list, fixed by the operator). */
     public static function acceptsType(array $definition, ?string $type): bool
     {
@@ -415,9 +433,12 @@ final class Operations
     public function handoffEvent(string $id, array $body): array
     {
         $op = DB::table('operations')->where('id', $id)->first();
-        abort_unless($op && in_array($op->action, $this->handoffActions(), true), 404);
+        // A handoff whose connector was removed from connectors.json during its lease still has its file reported
+        // (and settled): it is known by its recorded file, not only by its action.
+        abort_unless($op && (in_array($op->action, $this->handoffActions(), true) || $op->handoff !== null), 404);
         $machine = DB::table('machines')->where('id', $op->machine_id)->first();
         if (($body['event'] ?? null) === 'written') {
+            abort_unless(in_array($op->action, $this->handoffActions(), true), 409);
             $until = is_string($body['lease_expires_at'] ?? null) ? strtotime($body['lease_expires_at']) : false;
             abort_unless($until !== false && $until > time() && $until <= strtotime($op->expires_at.' UTC') + 5, 422);
             $recorded = DB::transaction(function () use ($id, $until, $machine, $op) {
@@ -459,7 +480,13 @@ final class Operations
     public function settleHandoffs(): int
     {
         $written = DB::table('operations')->where('handoff', 'written')->pluck('id')->all();
-        foreach (DB::table('operations')->whereIn('action', $this->handoffActions())->whereIn('state', ['running', 'requires_user_action'])->get() as $op) {
+        // Also a live operation whose connector is gone from connectors.json but whose file is recorded: its status
+        // finds it unauthorized and ends it, which removes the file.
+        $live = DB::table('operations')->whereIn('state', ['running', 'requires_user_action'])
+            ->where(fn ($q) => $q->whereIn('action', $this->handoffActions())->orWhere('handoff', 'written'))->get();
+        foreach ($live as $op) {
+            // Each on its own: one that cannot be settled (its identity gone, the broker refusing it) never stops
+            // the others.
             try {
                 $this->status(DB::table('machines')->where('id', $op->machine_id)->first(), $op->id);
             } catch (\Throwable) {

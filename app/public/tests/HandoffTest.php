@@ -38,6 +38,9 @@ final class HandoffTest extends TestCase
     /** Whether the fake broker confirms a file gone on cancel. */
     private bool $brokerRemoved = true;
 
+    /** Whether the fake broker says ready even for a file the application has not recorded (a broker out of step). */
+    private bool $brokerReadyAnyway = false;
+
     /** Whether the fake broker answers cancel with a 503 (not reachable for it). */
     private bool $brokerCancelDown = false;
 
@@ -60,7 +63,8 @@ final class HandoffTest extends TestCase
         file_put_contents($this->temp.'/broker.key', 'test-broker');
         file_put_contents($this->temp.'/bootstrap.code', 'test-bootstrap');
         $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'username_selector' => '#u', 'password_selector' => '#p',
-            'submit_selector' => '#s', 'success_selector' => '#ok', 'success_text' => 'ok', 'entry_types' => ['login'], 'ttl_seconds' => 900],
+            'submit_selector' => '#s', 'success_selector' => '#ok', 'success_text' => 'ok', 'entry_types' => ['login'], 'ttl_seconds' => 900,
+            'allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/login', 'credential_fields' => ['password']]]],
             'test.http' => ['kind' => 'http', 'url' => 'https://example.invalid/status']]);
         config(['vault.credentials' => $this->temp.'/bao.json', 'vault.broker_key' => $this->temp.'/broker.key',
             'vault.bootstrap_file' => $this->temp.'/bootstrap.code', 'vault.connectors' => $this->temp.'/connectors.json']);
@@ -101,11 +105,11 @@ final class HandoffTest extends TestCase
                 $written = DB::table('operations')->where('id', basename($path))->value('handoff') === 'written';
 
                 return Http::response(match (true) {
-                    str_ends_with($path, '/release') => ['state' => 'succeeded', 'removed' => true],
+                    str_ends_with($path, '/release') => ['state' => 'succeeded', 'removed' => $this->brokerRemoved],
                     str_ends_with($path, '/cancel') => ['state' => 'revoked', 'removed' => $this->brokerRemoved],
                     $request->method() === 'POST' => ['state' => 'running'],
                     ! $this->brokerKnows => ['state' => 'failed', 'known' => false, 'reason' => 'restart'],
-                    default => ['state' => $this->brokerState, 'known' => true] + ($this->brokerReason ? ['reason' => $this->brokerReason] : []) + ($written && $this->brokerReady && $this->brokerState === 'running' ? ['ready' => true, 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 900)] : []),
+                    default => ['state' => $this->brokerState, 'known' => true] + ($this->brokerReason ? ['reason' => $this->brokerReason] : []) + (($written || $this->brokerReadyAnyway) && $this->brokerReady && $this->brokerState === 'running' ? ['ready' => true, 'lease_expires_at' => gmdate('Y-m-d\TH:i:s\Z', time() + 900)] : []),
                 });
             }
 
@@ -847,5 +851,82 @@ final class HandoffTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'succeeded');
         $this->assertSame('removed', DB::table('operations')->where('id', $op)->value('handoff'));
         $this->assertSame('release', DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->value('outcome'));
+    }
+
+    public function test_release_records_a_removal_only_when_the_broker_confirms_it(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        $this->brokerRemoved = false;
+        $this->withToken($token)->postJson('/api/v1/operations/'.$op.'/release')->assertOk()->assertJsonPath('state', 'succeeded');
+        $this->assertSame('written', DB::table('operations')->where('id', $op)->value('handoff'));
+        $this->assertFalse(DB::table('audit')->where('subject', $op)->where('event', 'handoff.removed')->exists());
+    }
+
+    public function test_ready_needs_the_file_recorded_here_whatever_the_broker_says(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->brokerReadyAnyway = true;
+        $this->withToken($token)->getJson('/api/v1/operations/'.$op)->assertOk()->assertJsonPath('state', 'running')->assertJsonPath('ready', false);
+        $this->withToken($token)->postJson('/api/v1/operations/'.$op.'/release')->assertStatus(409);
+    }
+
+    public function test_one_handoff_that_cannot_be_settled_does_not_stop_the_others(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $broken = $this->execute($token, $entry)->json('id');
+        $this->written($broken)->assertOk();
+        // Its identity row is gone: settling it throws.
+        DB::table('operations')->where('id', $broken)->update(['machine_id' => (string) Str::uuid()]);
+        $second = $this->entry('login', 'shop-admin');
+        $this->grant($executor, $second);
+        $op = $this->execute($token, $second, 'nightly-run-0002')->json('id');
+        $this->written($op)->assertOk();
+        $this->brokerKnows = false;
+        Artisan::call('vault:links');
+        $this->assertSame(['failed', 'removed'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+    }
+
+    public function test_a_lease_whose_connector_was_removed_is_still_settled(): void
+    {
+        $entry = $this->entry();
+        [$executor, $token] = $this->identity(true);
+        $this->grant($executor, $entry);
+        $op = $this->execute($token, $entry)->json('id');
+        $this->written($op)->assertOk();
+        // The operator removes the connector during the lease.
+        $this->connectors(['test.http' => ['kind' => 'http', 'url' => 'https://example.invalid/status']]);
+        Artisan::call('vault:links');
+        $this->assertSame(['revoked', 'removed'], array_values((array) DB::table('operations')->where('id', $op)->first(['state', 'handoff'])));
+        // A late final event for it is accepted, not 404 (the broker would repeat it for a day).
+        $this->withToken('test-broker')->postJson('/api/internal/operations/'.$op.'/handoff', ['event' => 'removed', 'reason' => 'revoke'])->assertOk();
+    }
+
+    public function test_a_login_connector_without_its_login_request_cannot_be_granted(): void
+    {
+        [$executor] = $this->identity(true);
+        $entry = $this->entry();
+        $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'entry_types' => ['login'], 'ttl_seconds' => 900,
+            'allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/login']]]]);
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $executor, 'entry_id' => $entry, 'action' => 'shop.session', 'days' => 1])
+            ->assertStatus(303)->assertSessionHasErrors('action');
+        $this->assertSame(0, DB::table('grants')->count());
+        $this->assertTrue(\App\Vault\Operations::namesLoginRequest(['allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/login', 'credential_fields' => ['password']]]]));
+        $this->assertFalse(\App\Vault\Operations::namesLoginRequest(['allowed_requests' => [['method' => 'GET', 'url' => 'https://shop.invalid/login', 'credential_fields' => ['password']]]]));
+        $this->assertFalse(\App\Vault\Operations::namesLoginRequest(['allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/login', 'credential_fields' => array_map(fn ($i) => 'f'.$i, range(1, 9))]]]));
+        $this->assertFalse(\App\Vault\Operations::namesLoginRequest(['allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/a', 'credential_fields' => ['p']],
+            ['method' => 'POST', 'url' => 'https://shop.invalid/b', 'credential_fields' => ['q']]]]));
+        $this->connectors(['shop.session' => ['kind' => 'storage_state', 'url' => 'https://shop.invalid/login', 'entry_types' => ['login'], 'ttl_seconds' => 900,
+            'allowed_requests' => [['method' => 'POST', 'url' => 'https://shop.invalid/login', 'credential_fields' => ['password']]]]]);
+        $this->post('/workspaces/'.$this->workspace.'/grants', ['machine_id' => $executor, 'entry_id' => $entry, 'action' => 'shop.session', 'days' => 1])->assertRedirect();
+        $this->assertSame(1, DB::table('grants')->count());
     }
 }

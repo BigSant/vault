@@ -575,6 +575,9 @@ final class Workspace
         if (! $definition || ($d['action'] === Links::ACTION && ! app(Links::class)->ready($workspace))) {
             throw ValidationException::withMessages(['action' => 'Choose an available action.']);
         }
+        if (in_array($definition['kind'] ?? null, ['browser', 'storage_state'], true) && ! Operations::namesLoginRequest($definition)) {
+            throw ValidationException::withMessages(['action' => 'The connector of '.$d['action'].' does not name its login request: give exactly one POST rule in allowed_requests "credential_fields" (the form fields that carry the password). Fix connectors.json first.']);
+        }
         if (Operations::isHandoff($definition)) {
             if (! DB::table('machines')->where('id', $d['machine_id'])->value('executor')) {
                 throw ValidationException::withMessages(['action' => $d['action'].' leaves a login session for an executor. Only an identity made as an executor may hold it.']);
