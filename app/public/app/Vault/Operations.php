@@ -26,6 +26,9 @@ final class Operations
 
     private const ACTIVE = ['pending', 'approved', 'running', 'requires_user_action'];
 
+    /** How long a claimed operation the broker does not know yet may still be on its way there (dispatch: 2 + 8 s). */
+    private const DISPATCH_SECONDS = 30;
+
     public function __construct(private Access $access) {}
 
     public static function isHandoff(?array $definition): bool
@@ -124,6 +127,16 @@ final class Operations
         return $grant && $definition ? $op : null;
     }
 
+    /** @return list<string> the keys of the operation's entry type fields of a secret kind (secret, multi-line) */
+    public function secretFields(object $op): array
+    {
+        $entry = DB::table('entries')->join('projects', 'projects.id', '=', 'entries.project_id')->where('entries.id', $op->entry_id)
+            ->select('entries.type', 'projects.workspace_id')->first();
+        $type = $entry ? app(EntryTypes::class)->find($entry->workspace_id, $entry->type) : null;
+
+        return array_values(array_map(fn ($f) => $f['key'], array_filter($type->fields ?? [], fn ($f) => in_array($f['kind'], ['secret', 'multiline'], true))));
+    }
+
     public function broker(string $method, string $path, array $body = []): array
     {
         try {
@@ -181,8 +194,10 @@ final class Operations
                 abort_unless($machine->executor ?? false, 404);
                 abort_unless(self::acceptsType($definition, $grant->entry_type), 422);
                 abort_if(self::leaseSeconds($definition) === null || ! empty($definition['mfa_selector']), 503);
+                // A handoff whose file is not confirmed gone (removal failed or not reported yet) still holds the
+                // entry, whatever its state: no second file of the same entry while the first may be readable.
                 abort_if(DB::table('operations')->where('entry_id', $entry)->whereIn('action', $this->handoffActions())
-                    ->whereIn('state', ['pending', 'approved', 'running', 'requires_user_action'])->where('expires_at', '>', now())->exists(), 429);
+                    ->where(fn ($q) => $q->where('handoff', 'written')->orWhere(fn ($q) => $q->whereIn('state', self::ACTIVE)->where('expires_at', '>', now())))->exists(), 429);
                 abort_if(DB::table('operations')->where('machine_id', $machine->id)->whereIn('action', $this->handoffActions())
                     ->where('created_at', '>', now()->subHour())->count() >= self::HANDOFFS_PER_HOUR, 429);
             }
@@ -209,9 +224,20 @@ final class Operations
     }
 
     /**
-     * Starts the claimed operation at the broker. A clear refusal before start (429, another 4xx, 503, connection
-     * refused) ends the operation as failed at once and answers 429 or 503; only an ambiguous outcome (timeout after
-     * sending, 5xx) leaves it running for status to settle.
+     * Whether a failed broker call certainly never reached the broker: no name (cURL 6, a stopped container is not in
+     * Docker's DNS), no connection (7: refused; 28 while connecting or resolving). A timeout after the request was
+     * sent, or anything else, may have started the operation.
+     */
+    public static function nothingSent(string $message): bool
+    {
+        return (bool) preg_match('/cURL error (6|7): |cURL error 28: (Connection|Resolving) timed out|Could not resolve host|Failed to connect to/', $message);
+    }
+
+    /**
+     * Starts the claimed operation at the broker. A clear refusal before start (429, another 4xx, 503, a broker that
+     * cannot be reached at all) ends the operation as failed at once and answers 429 or 503; only an ambiguous
+     * outcome (timeout after sending, 5xx) leaves it running for status to settle. A confirmed start is recorded
+     * (dispatched_at), so that status tells a start still on its way from an operation a restarted broker lost.
      */
     private function dispatch(object $op, object $machine): void
     {
@@ -219,14 +245,15 @@ final class Operations
             $response = Http::baseUrl(config('vault.broker_url'))->withToken(trim(file_get_contents(config('vault.broker_key'))))
                 ->timeout(8)->connectTimeout(2)->withoutRedirecting()->post('/operations', ['id' => $op->id, 'entry_id' => $op->entry_id, 'version' => $op->version, 'action' => $op->action]);
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            // cURL 7: the connection was refused, nothing was sent. Anything else (a timeout) may have started it.
-            abort_unless(str_contains($e->getMessage(), 'cURL error 7:'), 503);
+            abort_unless(self::nothingSent($e->getMessage()), 503);
             $this->terminal($op, 'failed', $machine, false);
             abort(503);
         } catch (\Throwable) {
             abort(503);
         }
         if ($response->successful()) {
+            DB::table('operations')->where('id', $op->id)->update(['dispatched_at' => now()]);
+
             return;
         }
         if ($response->clientError() || $response->status() === 503) {
@@ -267,7 +294,13 @@ final class Operations
                 $brokerReady = ($result['ready'] ?? false) === true;
                 $state = $result['state'] ?? 'failed';
                 abort_unless(in_array($state, ['running', 'requires_user_action', 'succeeded', 'failed', 'expired', 'revoked']), 503);
-                if (in_array($state, ['succeeded', 'failed', 'expired', 'revoked'])) {
+                // Unknown to the broker while the start is still on its way (a concurrent retry of the same
+                // request_id): not a failure yet. Unknown after a confirmed start, or long after the claim: lost.
+                $inFlight = ($result['known'] ?? true) === false && $op->dispatched_at === null
+                    && strtotime($op->updated_at.' UTC') > time() - self::DISPATCH_SECONDS;
+                if ($inFlight) {
+                    $state = $op->state;
+                } elseif (in_array($state, ['succeeded', 'failed', 'expired', 'revoked'])) {
                     $this->terminal($op, $state, $machine);
                 } else {
                     DB::table('operations')->where('id', $id)->whereIn('state', ['running', 'requires_user_action'])->update(['state' => $state, 'updated_at' => now()]);
@@ -275,7 +308,7 @@ final class Operations
             }
         }
         $op = DB::table('operations')->where('id', $id)->first();
-        $answer = ['id' => $id, 'state' => $op->state, 'ok' => $op->state === 'succeeded', 'expires_at' => $op->expires_at];
+        $answer = ['id' => $id, 'state' => $op->state, 'ok' => $op->state === 'succeeded', 'expires_at' => self::rfc3339($op->expires_at)];
         // A handoff also says when its file is ready (and until when). Ready rests on the same confirmation as the
         // broker's release: recorded here and group-readable there. Never the path, never a value.
         if (in_array($op->action, $this->handoffActions(), true)) {
@@ -332,10 +365,13 @@ final class Operations
         $machine = DB::table('machines')->where('id', $op->machine_id)->first();
         if (($body['event'] ?? null) === 'written') {
             $until = is_string($body['lease_expires_at'] ?? null) ? strtotime($body['lease_expires_at']) : false;
-            abort_unless($until !== false && $until > time() && $until <= strtotime($op->expires_at) + 5, 422);
-            $recorded = DB::transaction(function () use ($id, $until, $machine) {
+            abort_unless($until !== false && $until > time() && $until <= strtotime($op->expires_at.' UTC') + 5, 422);
+            $recorded = DB::transaction(function () use ($id, $until, $machine, $op) {
+                // The operation now ends with the lease (plus the broker's last check), not 180 s + ttl after the
+                // claim: a lost `removed` holds the entry and backups no longer than the lease itself.
+                $end = min(strtotime($op->expires_at.' UTC'), $until + 10);
                 $updated = $this->authorized($id) ? DB::table('operations')->where('id', $id)->where('state', 'running')->whereNull('handoff')
-                    ->update(['handoff' => 'written', 'lease_expires_at' => date('Y-m-d H:i:s', $until), 'updated_at' => now()]) : 0;
+                    ->update(['handoff' => 'written', 'lease_expires_at' => gmdate('Y-m-d H:i:s', $until), 'expires_at' => gmdate('Y-m-d H:i:s', $end), 'updated_at' => now()]) : 0;
                 if ($updated) {
                     $this->access->audit($machine->workspace_id, 'handoff.written', $id, 'ok', 'machine:'.$machine->id);
                 }

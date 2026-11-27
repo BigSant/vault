@@ -158,6 +158,9 @@ def storage_state(human, workspace, agent_machine, agent_token, entry):
     assert counts.get('/ps/img/moved.png', 0) >= 1 and counts.get('/ps/img/redirected.png', 0) == 0, 'static redirect followed'
     assert counts.get('deleteemployee', 0) == 0, 'state-changing GET as an image left the broker'
     assert counts.get('static-credentials', 0) == 0, 'static request carried the session'
+    assert counts.get('static-referer', 0) == 0, 'static request carried the page URL (Referer/Origin)'
+    assert counts.get('wishlist-left', 0) == 0 and counts.get('dashboard-xhr-left', 0) == 0, 'an ignored or late XHR left the broker'
+    print('PASS: XHR/fetch on document-ready (wishlist, notifications with _token, a widget) ignored, a timer after the login dropped; no Referer to statics')
     print('PASS: static files under static_paths without cookies, 3xx not followed, a back-office GET as an image dropped, XHR login with ?rand=, dashboard with &token=')
 
     # The CLI's release answer is checked for values like every other response.

@@ -42,6 +42,8 @@ class Target(BaseHTTPRequestHandler):
         if path.startswith(('/ps/themes/','/ps/js/','/ps/img/')):
             # A static file is fetched without the session or any credential.
             if cookie or self.headers.get('Authorization'):COUNTS['static-credentials']+=1
+            # Not even the page's URL (a back-office URL carries its token) reaches the static server.
+            if self.headers.get('Referer') or self.headers.get('Origin'):COUNTS['static-referer']+=1
             if 'c3ludGhldGlj' in path or 'synthetic' in path:COUNTS['static-leak']+=1
         if path=='/ps/themes/theme.css':return self.static('text/css',b'@font-face{font-family:s;src:url(/ps/themes/font.woff2)}body{font-family:s;background:url(/ps/img/bg.png)}')
         if path=='/ps/js/core.js':
@@ -51,8 +53,10 @@ class Target(BaseHTTPRequestHandler):
         if path=='/ps/img/moved.png':
             self.send_response(302);self.send_header('Location','/ps/img/redirected.png');self.end_headers();return
         if path in ('/ps/img/logo.png','/ps/img/bg.png','/ps/themes/font.woff2','/ps/img/redirected.png'):return self.static('application/octet-stream',b'\x00')
+        if path=='/ps/module/blockwishlist/action':COUNTS['wishlist-left']+=1
         if path=='/ps/en/login':
-            return self.respond(200,'<html><head>'+STATIC+'</head><body><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email">'
+            # PrestaShop 8's wishlist module fetches on every page, before the login too.
+            return self.respond(200,'<html><head>'+STATIC+'<script>fetch("/ps/module/blockwishlist/action?action=getAllWishlist")</script></head><body><form method="post" action="/ps/en/login?back=my-account"><input name="email" id="field-email">'
                 '<input name="password" id="field-password" type="password"><button id="submit-login">Sign in</button></form></body></html>')
         if path=='/ps/en/my-account':
             return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-shop' in cookie else 'guest')+'</div>')
@@ -77,13 +81,20 @@ class Target(BaseHTTPRequestHandler):
             query=parse_qs(urlsplit(self.path).query)
             if query.get('controller')==['AdminLogin']:
                 return self.respond(200,'<html><head>'+STATIC+'</head><body><input id="email"><input id="passwd" type="password"><button id="submit_login">Log in</button><script>'+ADMIN_JS+'</script></body></html>')
+            if query.get('ajax')==['true']:COUNTS['dashboard-xhr-left']+=1
             if query.get('controller')==['AdminDashboard'] and query.get('token'):
                 # Logged in: the theme loads again (now with a session in the jar) and the page keeps UI state.
-                return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-admin' in cookie else 'guest')+'</div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x")</script>')
+                # As PrestaShop 8's dashboard: XHRs on document-ready (notifications with a Symfony CSRF token, a
+                # widget) and a timer after the login is confirmed. None of them is listed; none may fail the login.
+                return self.respond(200,STATIC+'<div id="account-state">'+('connected' if 'synthetic-session-admin' in cookie else 'guest')+'</div><script>localStorage.setItem("nav","collapsed");localStorage.setItem("draft","x");'
+                    'document.addEventListener("DOMContentLoaded",()=>{const x=new XMLHttpRequest();x.open("POST","/ps/admin/index.php/common/notifications?_token=BYOThSjgJf8LRsc3hJpVmYwYWBfWm5hEUoWRhBXw56Q&rand="+Date.now());x.send("type=order");'
+                    'fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=refreshDashboard&module=dashactivity")});'
+                    'setTimeout(()=>fetch("/ps/admin/index.php?controller=AdminDashboard&ajax=true&action=late",{method:"POST"}),1500)</script>')
         return self.respond(404,'not found')
 
     def shop_post(self, data):
         path=urlsplit(self.path).path
+        if path.startswith('/ps/admin/index.php/common/') or 'ajax=true' in self.path:COUNTS['dashboard-xhr-left']+=1
         credentials=data.get('email')==['synthetic-user-sensitive'] and data.get('password' if path=='/ps/en/login' else 'passwd')==['synthetic-password']
         if path=='/ps/en/login-echo':
             # A hostile site: its own HttpOnly cookie carries the password (base64). The broker refuses the state.

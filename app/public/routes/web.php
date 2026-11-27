@@ -35,7 +35,10 @@ Route::get('/internal/operations/{id}', function (Request $r, string $id, Operat
         $op = null;
     }
 
-    return $op ? ['allowed' => true, 'entry_id' => $op->entry_id, 'version' => (int) $op->version, 'action' => $op->action] : ['allowed' => false];
+    // secret_fields: the names (never values) of the entry type's secret and multi-line fields. The broker's leak
+    // checks look for those and the typed password; text fields (a URL, a shop name) are not secrets.
+    return $op ? ['allowed' => true, 'entry_id' => $op->entry_id, 'version' => (int) $op->version, 'action' => $op->action,
+        'secret_fields' => $ops->secretFields($op)] : ['allowed' => false];
 })->whereUuid('id');
 Route::middleware('vault.auth')->group(function () {
     Route::get('/', [Workspace::class, 'index']);
