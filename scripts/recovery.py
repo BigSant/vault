@@ -59,6 +59,18 @@ class Recovery:
         finally:
             partial.unlink(missing_ok=True)
 
+    def resume(self):
+        """After a backup that was killed (systemd timeout, SIGKILL): PHP and the broker run again and maintenance is
+        lifted. Does nothing unless a backup left its marker, so it never lifts a maintenance someone else set."""
+        quiesced=self.data/'.backup-quiesced'
+        if not quiesced.exists():
+            return False
+        self.run(['docker','start',self.php,self.broker])
+        self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+        quiesced.unlink(missing_ok=True)
+        print('Services resumed after an interrupted backup.')
+        return True
+
     def backup(self):
         lock=open(self.data/'.backup.lock','a')
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -70,7 +82,11 @@ class Recovery:
         directory=self.root/'backups';directory.mkdir(mode=0o700,exist_ok=True)
         target=directory/(self.env+'-'+time.strftime('%Y%m%dT%H%M%SZ',time.gmtime())+'-'+secrets.token_hex(3)+'.vault')
         down=False;stopped=False
+        # A marker for `bin/vault backup-resume` (the unit's ExecStopPost): if this process is killed before its
+        # finally runs, the next resume starts PHP and the broker again and lifts maintenance.
+        quiesced=self.data/'.backup-quiesced'
         try:
+            quiesced.write_text('1')
             self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','down']);down=True
             stopped=True;self.run(['docker','stop',self.php,self.broker])
             active=self.sql("SELECT COUNT(*) FROM operations WHERE state IN ('pending','approved','running','requires_user_action') AND expires_at>UTC_TIMESTAMP()",self.dbname())
@@ -94,6 +110,7 @@ class Recovery:
         finally:
             if stopped:self.run(['docker','start',self.php,self.broker])
             if down:self.run(['docker','exec','-w','/var/www/html',self.php,'php','artisan','up'])
+            quiesced.unlink(missing_ok=True)
             lock.close()
         print('Encrypted consistent backup:',target)
         print('Keep backup.key AND OpenBao recovery shares separately from the backup.')

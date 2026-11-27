@@ -58,8 +58,10 @@ def handoff_directory():
     path = Path(configured) if configured else DATA/'handoff'
     if not path.is_absolute():
         raise RuntimeError('VAULT_HANDOFF_DIRECTORY must be an absolute path')
+    created = False
     if not configured and not os.path.lexists(path):
         path.mkdir(mode=0o700)
+        created = True
     if not configured and path.is_dir() and not path.is_symlink() and path.stat().st_uid == os.getuid():
         # A default directory made earlier (or by Docker's bind mount for this user) gets the strict mode.
         # 0700, or 2710 with the vault-handoff group (search only: a reader must know the operation ID). Never
@@ -81,10 +83,15 @@ def handoff_directory():
     expected = env_setting('VAULT_HANDOFF_GID')
     if expected and info.st_gid != int(expected):
         raise RuntimeError('Handoff directory group differs from VAULT_HANDOFF_GID')
-    # The marker tells the broker this is the handoff directory: without it the broker writes and removes nothing.
+    # The marker tells the broker this is the handoff directory: without it the broker writes and removes nothing,
+    # and at start it deletes every <uuid>.json in a marked one. So it is made here only in a directory made here
+    # just now; in any other (a configured one, or an older default) the administrator makes it, knowing the
+    # directory holds nothing else (tmpfiles.d does, docs/operations.md).
     marker = path/'.vault-handoff'
-    if not os.path.lexists(marker):
+    if created:
         os.close(os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600))
+    if not os.path.lexists(marker):
+        raise RuntimeError('Handoff directory has no marker .vault-handoff; make it yourself (as in docs/operations.md) once you know the directory holds nothing else, since the broker removes every <uuid>.json in a marked directory')
     if not stat.S_ISREG(os.lstat(marker).st_mode) or os.lstat(marker).st_uid != os.getuid():
         raise RuntimeError('Handoff directory marker must be a regular file owned by this user')
 
@@ -201,11 +208,12 @@ def main():
         prepare(); initialize()
     elif command == 'database':
         database()
-    elif command in ('backup','restore-verify','restore'):
+    elif command in ('backup','backup-resume','restore-verify','restore'):
         sys.path.insert(0,str(ROOT/'scripts'))
         from recovery import Recovery
         recovery=Recovery(globals())
         if command=='backup':recovery.backup()
+        elif command=='backup-resume':recovery.resume()
         elif command=='restore-verify':recovery.verify(sys.argv[2])
         else:recovery.restore(sys.argv[2])
     elif command == 'rotate-service-credentials':
@@ -244,11 +252,14 @@ def main():
         initialize()
         subprocess.run(['docker','exec','-w','/var/www/html',f'vault-{ENV}-php-fpm','php','artisan','migrate','--force'],check=True)
     else:
-        print('bin/vault prepare | initialize | install | database | backup | restore-verify FILE | restore FILE | rotate-service-credentials | rotate-encryption-key (VAULT_ENV=local|test|stage|prod)')
+        print('bin/vault prepare | initialize | install | database | backup | backup-resume | restore-verify FILE | restore FILE | rotate-service-credentials | rotate-encryption-key (VAULT_ENV=local|test|stage|prod)')
 
 
 if __name__ == '__main__':
+    import signal
     os.umask(0o077)
+    # SIGTERM (systemd stopping the unit) unwinds like an error: every finally runs (PHP and the broker start again).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
         main()
     except RuntimeError as error:

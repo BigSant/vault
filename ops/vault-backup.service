@@ -2,13 +2,19 @@
 # VAULT_ENV the unit fails instead of backing up the local environment.
 # A backup refuses to start while operations are active (a handoff lease lasts up to 30 min) or another backup runs:
 # bin/vault then exits 75 and this unit tries again 20 minutes later, at most 11 more times (12 attempts, about
-# 3 h 40 min). Any other failure ends the unit at once. The retry is a loop, not Restart=, so the unit loads on every
-# systemd version (Ubuntu 22.04 ships 249). Schedule the timer outside the executor's run window.
+# 3 h 40 min of waiting). Any other failure ends the unit at once. After the last busy attempt it says so in the
+# journal and fails with 75 (systemctl --user --failed shows it; add OnFailure= to your own notifier if you have one).
+# The retry is a loop rather than Restart=on-failure (allowed for oneshot since systemd 244), so that every wait and
+# every attempt is one start of the unit with a clear end.
+# There is no start timeout: the waits are not work, and a timeout could kill an attempt while PHP and the broker are
+# stopped. Should the process be killed anyway, ExecStopPost runs `bin/vault backup-resume`, which starts them again
+# and lifts maintenance, but only when a backup left its marker. Schedule the timer outside the executor's run window.
 [Unit]
 Description=Vault encrypted backup
 [Service]
 Type=oneshot
 EnvironmentFile=%E/vault/units.env
-ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" || exit 1; n=1; while :; do bin/vault backup; rc=$$?; if [ "$$rc" -ne 75 ] || [ "$$n" -ge 12 ]; then exit "$$rc"; fi; n=$$((n+1)); sleep 1200; done'
-TimeoutStartSec=5h
+ExecStart=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" || exit 1; n=1; while :; do bin/vault backup; rc=$$?; if [ "$$rc" -ne 75 ]; then exit "$$rc"; fi; if [ "$$n" -ge 12 ]; then echo "vault-backup: still busy after 12 attempts; no backup made today" >&2; exit 75; fi; n=$$((n+1)); sleep 1200; done'
+ExecStopPost=/bin/sh -c ': "$${VAULT_ENV:?}"; cd "$${VAULT_CHECKOUT:?}" && bin/vault backup-resume'
+TimeoutStartSec=infinity
 UMask=0077

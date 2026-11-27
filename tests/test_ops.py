@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -59,7 +60,7 @@ class UnitTests(unittest.TestCase):
         return result.returncode, calls, sleeps
 
     def test_no_unit_uses_restart_with_oneshot(self):
-        # systemd before 244/254 refuses Restart= on Type=oneshot; the production host runs 249.
+        # The backup retry is the loop in ExecStart (one start, a clear end), not Restart=.
         for unit in (ROOT/'ops').glob('*.service'):
             text = unit.read_text()
             self.assertIn('Type=oneshot', text, unit.name)
@@ -84,11 +85,51 @@ class UnitTests(unittest.TestCase):
         code, calls, sleeps = self.run_unit('vault-backup.service', [1, 0])
         self.assertEqual((1, 1, []), (code, len(calls), sleeps))
 
-    def test_backup_gives_up_after_twelve_attempts(self):
-        code, calls, sleeps = self.run_unit('vault-backup.service', [75] * 20)
-        self.assertEqual((75, 12, 11), (code, len(calls), len(sleeps)))
-        comment = (ROOT/'ops/vault-backup.service').read_text()
-        self.assertIn('12 attempts', comment)
+    def test_backup_gives_up_after_twelve_attempts_and_says_so(self):
+        Path(self.tmp.name, 'codes').write_text('75\n' * 20)
+        base = {'PATH': str(self.bin) + ':/usr/bin:/bin', 'VAULT_ENV': 'prod', 'VAULT_CHECKOUT': str(self.checkout)}
+        result = subprocess.run(['/bin/sh', '-c', exec_start('vault-backup.service')], env=base, capture_output=True)
+        self.assertEqual(75, result.returncode)
+        self.assertEqual(12, len(self.log.read_text().splitlines()))
+        self.assertIn(b'still busy after 12 attempts', result.stderr)
+        self.assertIn('12 attempts', (ROOT/'ops/vault-backup.service').read_text())
+
+    def test_backup_has_no_start_timeout_and_resumes_services_after_a_kill(self):
+        text = (ROOT/'ops/vault-backup.service').read_text()
+        self.assertRegex(text, r'(?m)^TimeoutStartSec=infinity$')
+        line = next(l for l in text.splitlines() if l.startswith('ExecStopPost='))
+        self.log.unlink(missing_ok=True)
+        Path(self.tmp.name, 'codes').write_text('0\n')
+        base = {'PATH': str(self.bin) + ':/usr/bin:/bin', 'VAULT_ENV': 'prod', 'VAULT_CHECKOUT': str(self.checkout)}
+        subprocess.run(['/bin/sh', '-c', line[len('ExecStopPost='):].replace('$$', '$')], env=base, check=True)
+        self.assertEqual(['backup-resume'], self.log.read_text().splitlines())
+
+
+class ExitCodeTests(unittest.TestCase):
+    """The real bin/vault __main__ block: Busy exits 75, any other failure 1, SIGTERM unwinds (finally runs)."""
+    def run_vault(self, body):
+        script = ('import os,runpy,sys\nsys.path.insert(0,%r)\nimport recovery\n' % str(ROOT/'scripts') + body +
+                  '\nsys.argv=["vault","backup"]\nrunpy.run_path(%r,run_name="__main__")\n' % str(ROOT/'bin/vault'))
+        return subprocess.run([sys.executable, '-c', script], env={'PATH': '/usr/bin:/bin', 'VAULT_ENV': 'test', 'HOME': tempfile.gettempdir()},
+                              capture_output=True, timeout=30)
+
+    def test_busy_is_75_and_other_errors_are_1(self):
+        busy = self.run_vault('def backup(self):raise recovery.Busy("Active operations must finish before backup")\nrecovery.Recovery.backup=backup')
+        self.assertEqual(75, busy.returncode)
+        self.assertIn(b'Active operations', busy.stderr)
+        other = self.run_vault('def backup(self):raise RuntimeError("Recovery subprocess failed")\nrecovery.Recovery.backup=backup')
+        self.assertEqual(1, other.returncode)
+        crash = self.run_vault('def backup(self):raise KeyError("x")\nrecovery.Recovery.backup=backup')
+        self.assertEqual(1, crash.returncode)
+        self.assertNotIn(b"'x'", crash.stderr)
+
+    def test_sigterm_runs_the_finally(self):
+        marker = Path(tempfile.mkdtemp())/'finally'
+        body = ('import signal,time\ndef backup(self):\n    try:\n        os.kill(os.getpid(),signal.SIGTERM);time.sleep(5)\n'
+                '    finally:\n        open(%r,"w").write("ran")\nrecovery.Recovery.backup=backup' % str(marker))
+        result = self.run_vault(body)
+        self.assertEqual(143, result.returncode)
+        self.assertEqual('ran', marker.read_text())
 
 
 class HandoffDirectoryTests(unittest.TestCase):
@@ -129,12 +170,31 @@ class HandoffDirectoryTests(unittest.TestCase):
         configured = Path(self.tmp.name)/'run'
         configured.mkdir(mode=0o700)
         os.chmod(configured, 0o2750)
+        (configured/'.vault-handoff').write_bytes(b'')
         with patch.object(self.vault, 'env_setting', lambda name: str(configured) if name == 'VAULT_HANDOFF_DIRECTORY' else None):
             with self.assertRaisesRegex(RuntimeError, '2710'):
                 self.vault.handoff_directory()
             os.chmod(configured, 0o2710)
             self.vault.handoff_directory()
-        self.assertTrue((configured/'.vault-handoff').exists())
+
+    def test_prepare_never_marks_a_directory_it_did_not_just_make(self):
+        # Another directory of the Vault user (0700, the right group) named by mistake: no marker is made, so the
+        # broker never removes the <uuid>.json files in it.
+        configured = Path(self.tmp.name)/'other'
+        configured.mkdir(mode=0o700)
+        keep = configured/'0f8fad5b-d9cb-469f-a165-70867728950e.json'
+        keep.write_text('{}')
+        with patch.object(self.vault, 'env_setting', lambda name: str(configured) if name == 'VAULT_HANDOFF_DIRECTORY' else None):
+            with self.assertRaisesRegex(RuntimeError, 'marker'):
+                self.vault.handoff_directory()
+        self.assertFalse((configured/'.vault-handoff').exists())
+        # The same for a default directory that already existed without one.
+        default = Path(self.tmp.name)/'handoff'
+        default.mkdir(mode=0o700)
+        with patch.object(grp, 'getgrnam', side_effect=KeyError), self.assertRaisesRegex(RuntimeError, 'marker'):
+            self.vault.handoff_directory()
+        self.assertFalse((default/'.vault-handoff').exists())
+        self.assertTrue(keep.exists())
 
     def test_tmpfiles_makes_a_search_only_marked_directory(self):
         lines = [l.split() for l in (ROOT/'ops/vault-handoff.tmpfiles.conf').read_text().splitlines() if l and not l.startswith('#')]
