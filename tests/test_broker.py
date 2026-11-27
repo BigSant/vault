@@ -1013,10 +1013,11 @@ class RoundFiveRouterTests(RouterTests):
 
     async def test_the_login_rule_is_recognised_even_after_a_broader_rule(self):
         # Another rule that also matches the login POST (a variable query) comes first: the credential rule still decides.
-        action=dict(self.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login?x=1','variable_query':{'x':'digits'}},
+        action=dict(self.action,allowed_requests=[{'method':'POST','url':'https://shop.invalid/login','variable_query':{'x':'digits'}},
                                                   {'method':'POST','url':'https://shop.invalid/login?x=1','credential_fields':['password']}])
         router=server.Router(self.op,action,[PASSWORD],None,lambda:'main')
         route=FakeRoute(FakeRequest('https://shop.invalid/login?x=1','POST',navigation=True,headers={'content-type':'application/x-www-form-urlencoded'},body=('password='+PASSWORD).encode()))
+        self.assertIs(action['allowed_requests'][1],server.matching_rule(action,'https://shop.invalid/login?x=1','POST'))
         await router.route(route);self.assertEqual('fulfill',route.outcome);self.assertNotIn('policy_denied',self.op)
 
     def test_a_login_names_exactly_one_post_with_its_credential_fields(self):
@@ -1159,6 +1160,10 @@ class RoundFiveStateTests(StorageStateBase):
         self.assertEqual([good],list(server.handoff.load_journal()))
         server.restore_journal()
         self.assertEqual([good],list(server.undelivered));self.assertEqual(('ttl','leak'),(server.undelivered[good]['reason'],server.undelivered[good]['failure']))
+        # restore_journal checks the reason itself too, whatever load_journal let through.
+        server.undelivered.clear()
+        with patch.object(server.handoff,'load_journal',lambda:{good:{'reason':'bogus','since':time.time()}}):server.restore_journal()
+        self.assertEqual({},server.undelivered)
         (self.dir/server.handoff.JOURNAL).write_text('{not json')
         self.assertEqual({},server.handoff.load_journal())
 

@@ -149,6 +149,7 @@ class RecoveryResumeTests(unittest.TestCase):
         self.interrupt = None
         self.broken = set()
         self.has_handoff = 1
+        self.stuck = False
         self.marker = self.data/'.backup-quiesced'
         test = self
 
@@ -181,7 +182,7 @@ class RecoveryResumeTests(unittest.TestCase):
                     elif name == 'up':
                         if test.state['php'] != 'running':
                             raise RuntimeError('Recovery subprocess failed')
-                        test.maintenance = False
+                        test.maintenance = test.stuck
                     elif name == 'inspect':
                         return ''.join(('true' if test.state[c] != 'stopped' else 'false') + '\n' for c in ('php', 'broker')).encode()
                     return b''
@@ -241,6 +242,12 @@ class RecoveryResumeTests(unittest.TestCase):
         self.state['broker'] = 'stopped'
         self.broken = {'broker'}
         with self.assertRaisesRegex(RuntimeError, 'not running'):
+            self.vault.resume()
+        self.assertTrue(self.marker.exists())
+        # Both run, `artisan up` exits 0, but the application is still in maintenance: not verified either.
+        self.broken = set()
+        self.stuck = True
+        with self.assertRaisesRegex(RuntimeError, 'maintenance is still on'):
             self.vault.resume()
         self.assertTrue(self.marker.exists())
 
